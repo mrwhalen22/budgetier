@@ -376,6 +376,9 @@ class Budget:
         return {"count": len(hits), "total": sum(r["cents"] for r in hits) / 100,
                 "share": len(hits) / len(self.ledger.rows) if self.ledger.rows else 0, "examples": examples}
 
+    def suggest_rule(self, merchant: str, descriptions: list[str]) -> dict:
+        return {"text": analyze.match_text(merchant, descriptions)}
+
     def _write_rule_lines(self, lines: list[str]) -> None:
         write_files({self.rules_path: "\n".join(lines) + "\n"})
         self.refresh()

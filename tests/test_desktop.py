@@ -28,6 +28,7 @@ class Bridge(unittest.TestCase):
         calls = {
             "inspect": (["a.csv"],), "remove_import": ("a.csv",), "remove_account": ("x",),
             "update_account": ("x", "Name", "credit", "", ""), "preview_rule": ("COFFEE", False),
+            "suggest_rule": ("Coffee", ["SQ *COFFEE"]),
             "save_rule": (None, "COFFEE", "Dining", "", False), "delete_rule": ("line",),
             "save_budget": ("Dining", "amount", "50"), "delete_budget": ("Dining",),
         }

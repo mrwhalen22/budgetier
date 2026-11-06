@@ -107,6 +107,10 @@ class Api:
         return self._budget.preview_rule(text, advanced)
 
     @_reply
+    def suggest_rule(self, merchant, descriptions):
+        return self._budget.suggest_rule(merchant, descriptions)
+
+    @_reply
     def save_rule(self, original, text, category, merchant, advanced=False):
         self._budget.save_rule(original, text, category, merchant, advanced)
 
