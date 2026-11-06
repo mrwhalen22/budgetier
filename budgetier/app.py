@@ -86,6 +86,14 @@ class Api:
         self._budget.delete_rule(line)
 
     @_reply
+    def save_budget(self, category, mode, value):
+        self._budget.save_budget(category, mode, value)
+
+    @_reply
+    def delete_budget(self, category):
+        self._budget.delete_budget(category)
+
+    @_reply
     def export_workbook(self):
         chosen = self._window.create_file_dialog(
             webview.FileDialog.SAVE, save_filename="Budgetier.xlsx",

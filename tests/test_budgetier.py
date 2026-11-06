@@ -1000,6 +1000,106 @@ class Rules(AppCase):
         self.assertIn("Hobbies", self.budget.html_path.read_text(encoding="utf-8"))
 
 
+class Budgets(Tmp):
+    ACCOUNTS = {"bank-4001": {"name": "Checking", "type": "checking"}, "card-4002": {"name": "Card", "type": "credit"}}
+
+    def row(self, day, cents, category="Groceries", kind="expense", account="bank-4001"):
+        return {"date": date.fromisoformat(day), "cents": cents, "category": category, "kind": kind, "account": account}
+
+    def report(self, rows, budgets):
+        return analyze.budget_report(rows, self.ACCOUNTS, budgets)
+
+    def test_amount_target_stays_the_same_each_month(self):
+        rows = [self.row("2026-01-05", -10000), self.row("2026-02-27", -30000)]
+        months = self.report(rows, {"Groceries": {"mode": "amount", "value": 25000}})["months"]
+        self.assertEqual([m["targets"]["Groceries"] for m in months], [250, 250])
+        self.assertEqual([m["spent"]["Groceries"] for m in months], [100, 300])
+
+    def test_percent_target_follows_that_months_income(self):
+        rows = [self.row("2026-01-01", 400000, "Income", "income"), self.row("2026-02-27", 600000, "Income", "income")]
+        months = self.report(rows, {"Groceries": {"mode": "percent", "value": 10}})["months"]
+        self.assertEqual([m["targets"]["Groceries"] for m in months], [400, 600])
+
+    def test_month_in_progress_uses_recent_income(self):
+        rows = [self.row(f"2026-0{m}-15", m * 100000, "Income", "income") for m in range(1, 6)]
+        rows.append(self.row("2026-06-03", -500))
+        last = self.report(rows, {"Groceries": {"mode": "percent", "value": 10}})["months"][-1]
+        self.assertTrue(last["partial"])
+        self.assertEqual((last["income"], last["base"], last["targets"]["Groceries"]), (0, 4000, 400))
+
+    def test_first_month_in_progress_has_only_its_own_income(self):
+        rows = [self.row("2026-01-02", 100000, "Income", "income")]
+        month = self.report(rows, {"Groceries": {"mode": "percent", "value": 25}})["months"][0]
+        self.assertEqual(month["targets"]["Groceries"], 250)
+
+    def test_refunds_net_against_the_category(self):
+        rows = [self.row("2026-01-02", -5000), self.row("2026-01-03", 2000, kind="refund")]
+        self.assertEqual(self.report(rows, {})["months"][0]["spent"]["Groceries"], 30)
+
+    def test_transfers_are_not_spending(self):
+        rows = [self.row("2026-01-02", -5000, "Transfer", "transfer")]
+        self.assertEqual(self.report(rows, {})["months"][0]["spent"], {})
+
+    def test_months_before_checking_history_are_left_out(self):
+        rows = [self.row("2026-01-02", -5000, account="card-4002"), self.row("2026-02-02", -5000)]
+        self.assertEqual([m["month"] for m in self.report(rows, {})["months"]], ["2026-02"])
+
+    def test_a_month_with_nothing_in_it_still_appears(self):
+        rows = [self.row("2026-01-02", -5000), self.row("2026-03-02", -5000)]
+        months = self.report(rows, {"Groceries": {"mode": "amount", "value": 100}})["months"]
+        self.assertEqual([m["month"] for m in months], ["2026-01", "2026-02", "2026-03"])
+        self.assertEqual(months[1]["spent"], {})
+
+    def test_no_transactions_keeps_the_targets(self):
+        report = self.report([], {"Groceries": {"mode": "amount", "value": 12345}})
+        self.assertEqual(report, {"targets": [{"category": "Groceries", "mode": "amount", "value": 123.45}], "months": []})
+
+
+class SavingBudgets(Tmp):
+    def setUp(self):
+        super().setUp()
+        self.budget = service.Budget(self.dir / "home")
+        self.addCleanup(self.budget.cancel)
+
+    def test_amount_is_saved_in_cents(self):
+        self.budget.save_budget("Groceries", "amount", "$1,200.50")
+        self.assertEqual(self.budget.budgets(), {"Groceries": {"mode": "amount", "value": 120050}})
+
+    def test_percent_accepts_a_percent_sign(self):
+        self.budget.save_budget("Groceries", "percent", "12.5%")
+        self.assertEqual(self.budget.budgets(), {"Groceries": {"mode": "percent", "value": 12.5}})
+
+    def test_saving_again_replaces_the_target(self):
+        self.budget.save_budget("Groceries", "amount", "100")
+        self.budget.save_budget("Groceries", "percent", "10")
+        self.assertEqual(self.budget.budgets(), {"Groceries": {"mode": "percent", "value": 10.0}})
+
+    def test_budgets_survive_a_restart(self):
+        self.budget.save_budget("Groceries", "amount", "100")
+        self.assertEqual(service.Budget(self.dir / "home").budgets(), self.budget.budgets())
+
+    def test_bad_targets_are_refused_and_nothing_is_saved(self):
+        for category, mode, value in (("", "amount", "100"), ("Groceries", "amount", "0"), ("Groceries", "amount", "-5"),
+                                      ("Groceries", "amount", "lots"), ("Groceries", "percent", "0"),
+                                      ("Groceries", "percent", "101"), ("Groceries", "percent", "nan"),
+                                      ("Groceries", "percent", "ten"), ("Groceries", "share", "10"),
+                                      ("Income", "amount", "100"), ("Transfer", "percent", "10")):
+            with self.assertRaises(service.BudgetError, msg=(category, mode, value)):
+                self.budget.save_budget(category, mode, value)
+        self.assertEqual(self.budget.budgets(), {})
+
+    def test_delete(self):
+        self.budget.save_budget("Groceries", "amount", "100")
+        self.budget.delete_budget("Groceries")
+        self.assertEqual(self.budget.budgets(), {})
+        with self.assertRaises(service.BudgetError):
+            self.budget.delete_budget("Groceries")
+
+    def test_saved_budget_reaches_the_page(self):
+        self.budget.save_budget("Groceries", "amount", "100")
+        self.assertIn('"category":"Groceries"', self.budget.html_path.read_text(encoding="utf-8"))
+
+
 _bump = importlib.util.spec_from_file_location(
     "bump_version", Path(__file__).resolve().parents[1] / "packaging" / "bump_version.py")
 bump_version = importlib.util.module_from_spec(_bump)

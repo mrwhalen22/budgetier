@@ -21,6 +21,10 @@ Then open **Budgetier** from the Start menu or desktop.
 - **Rules** lists merchants that need a category. Choose **Categorize**, or select any row
   on the Transactions tab, to give it a name and category. Rules apply to all your
   history and to future imports.
+- **Budgets** sets a monthly target for a category, as a dollar amount or a percent of
+  income, and shows what's left. A percent target follows each month's income. While a
+  month is still in progress it uses the average of the last 3 complete months instead,
+  because your pay may not have landed yet.
 - **Accounts** is where you edit an account, set a balance, remove one imported file or
   a whole account, export the Excel workbook, and open the data folder.
 - **Help** shows which banks work, tips for accurate numbers, and a short tour.

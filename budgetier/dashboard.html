@@ -319,6 +319,21 @@ main { max-width: none; padding: 8px clamp(24px, 2.6vw, 56px) 56px; }
 .field.full { grid-column: 1 / -1; }
 .rule-text { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 12.5px; }
 
+/* budgets */
+.budget-head { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+.budget-head select { max-width: 200px; }
+.budget { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 2px 14px; padding: 12px 0; border-top: 1px solid var(--grid); }
+.budget:first-of-type { border-top: 0; }
+.budget .goal { color: var(--muted); font-size: 12.5px; }
+.budget .left { font-weight: 600; text-align: right; font-variant-numeric: tabular-nums; }
+.budget .used { color: var(--muted); font-size: 12.5px; text-align: right; font-variant-numeric: tabular-nums; }
+.budget .row-actions { grid-column: 1 / -1; justify-content: flex-end; margin-top: 6px; }
+.meter { grid-column: 1 / -1; height: 8px; margin-top: 7px; background: var(--grid); border-radius: 4px; overflow: hidden; }
+.meter i { display: block; height: 100%; border-radius: 4px; background: var(--income); }
+.meter i.near { background: var(--accent); }
+.meter i.over { background: var(--spending); }
+td.missed { color: var(--neg-ink); font-weight: 600; }
+
 /* help and first run */
 .welcome { max-width: min(1040px, 100%); margin: clamp(32px, 16vh, 220px) auto 0; text-align: left; }
 .welcome > h2, .welcome > p { text-align: center; }
@@ -375,11 +390,12 @@ main { max-width: none; padding: 8px clamp(24px, 2.6vw, 56px) 56px; }
 const D = JSON.parse(document.getElementById("data").textContent);
 const TX = D.txns.map((t, i) => ({i, date: t[0], month: t[0].slice(0, 7), acct: t[1], desc: t[2], merchant: t[3], cat: t[4], kind: t[5], amt: t[6]}));
 const ACCT = {}; D.accounts.forEach(a => ACCT[a.index] = a);
-const TABS = ["Overview", "Spending", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help"];
+const TABS = ["Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help"];
 const icon = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
 const ICONS = {
   Overview: '<rect x="3.5" y="3.5" width="7" height="8" rx="1.5"/><rect x="13.5" y="3.5" width="7" height="5" rx="1.5"/><rect x="13.5" y="11.5" width="7" height="9" rx="1.5"/><rect x="3.5" y="14.5" width="7" height="6" rx="1.5"/>',
   Spending: '<circle cx="12" cy="12" r="8.5"/><path d="M12 3.5V12l6 6"/>',
+  Budgets: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12h.01"/>',
   Recurring: '<path d="M4 11a8 8 0 0 1 13.7-5.2L20 8"/><path d="M20 3.5V8h-4.5"/><path d="M20 13a8 8 0 0 1-13.7 5.2L4 16"/><path d="M4 20.5V16h4.5"/>',
   Largest: '<path d="M4 20h16"/><path d="M7 16V10"/><path d="M12 16V5"/><path d="M17 16v-3"/>',
   Savings: '<path d="M3.5 17 9.5 11l4 4 7-8"/><path d="M15.5 7h5v5"/>',
@@ -751,8 +767,83 @@ function txTable() {
   if (more) more.onclick = () => { S.txshow += 500; txTable(); };
 }
 
-const VIEWS = {Overview: overview, Spending: spending, Recurring: recurring, Largest: largest, Savings: savings, Accounts: accounts, Transactions: transactions, Rules: rules, Help: help};
-const fullHistory = new Set(["Recurring", "Accounts", "Rules", "Help"]);
+/* ---------- budgets ---------- */
+const UNBUDGETED = ["Income", "Transfer", "Savings & Investing", "Card Payments (no detail)", "Uncategorized"];
+const B = D.budgets || {targets: [], months: []};
+const budgetChoices = () => [...new Set([...(D.allCategories || []), ...D.categories])].filter(c => !UNBUDGETED.includes(c) && !B.targets.some(t => t.category === c)).sort();
+const completeMonths = () => { const c = B.months.filter(m => !m.partial).slice(-6); return c.length ? c : B.months; };
+const budgetGoal = t => t.mode === "percent" ? `${t.value}% of income` : `${money(t.value)} a month`;
+function budgetRow(t, m) {
+  const goal = m.targets[t.category] || 0, spent = m.spent[t.category] || 0, left = goal - spent;
+  const used = goal > 0 ? spent / goal : spent > 0 ? 2 : 0, state = used > 1 ? "over" : used >= .9 ? "near" : "";
+  return `<div class="budget"><div>${chip(t.category)}<div class="goal">${esc(budgetGoal(t))}</div></div>
+    <div><div class="left ${left < 0 ? "neg" : "pos"}">${money(Math.abs(left))} ${left < 0 ? "over" : "left"}</div><div class="used">${money(spent)} of ${money(goal)}</div></div>
+    <div class="meter" role="img" aria-label="${Math.round(used * 100)}% used"><i class="${state}" style="width:${Math.min(Math.max(used, 0), 1) * 100}%"></i></div>
+    <div class="row-actions"><button class="btn small" data-act="budget-edit" data-cat-name="${esc(t.category)}">Edit</button><button class="btn small danger" data-act="budget-delete" data-cat-name="${esc(t.category)}">Delete</button></div></div>`;
+}
+function budgetHistory(months) {
+  return `<div class="card"><h2>Recent months</h2><p class="sub">What you spent in each category. Amounts in red went over that month's target.</p>
+    <div class="scroll"><table><thead><tr><th>Category</th>${months.map(m => `<th class="num">${mName(m.month, false)}</th>`).join("")}</tr></thead><tbody>
+    ${B.targets.map(t => `<tr><td>${chip(t.category)}</td>${months.map(m => { const v = m.spent[t.category] || 0; return `<td class="num ${v > (m.targets[t.category] || 0) ? "missed" : ""}">${v ? short(v) : ""}</td>`; }).join("")}</tr>`).join("")}
+    </tbody></table></div></div>`;
+}
+function budgets() {
+  const add = `<button class="btn primary" data-act="budget-new">${icon(PLUS)}Add budget</button>`;
+  if (!B.targets.length) {
+    V.innerHTML = `<div class="card"><h2>Set your first budget</h2><p class="sub">Choose a category and give it a monthly target: a dollar amount, or a percent of your income. Budgetier shows what's left each month.</p>${add}</div>`;
+    return;
+  }
+  const m = B.months.find(x => x.month === S.budgetMonth) || B.months[B.months.length - 1];
+  const goal = sum(B.targets, t => m.targets[t.category] || 0), spent = sum(B.targets, t => m.spent[t.category] || 0), left = goal - spent;
+  const budgeted = new Set(B.targets.map(t => t.category));
+  const other = sum(Object.entries(m.spent).filter(([c]) => !budgeted.has(c)), e => e[1]);
+  const share = t => (m.spent[t.category] || 0) / (m.targets[t.category] || 1);
+  const rows = B.targets.slice().sort((a, b) => share(b) - share(a));
+  const uses = B.targets.some(t => t.mode === "percent");
+  const note = m.partial ? `Month in progress, data through ${dName(D.end)}.${uses ? ` Percent targets use your recent income, ${money(m.base)} a month, until the month is complete.` : ""}`
+    : uses ? `Percent targets use this month's income of ${money(m.base)}.` : "";
+  V.innerHTML = `<div class="budget-head"><select id="budgetMonth" aria-label="Month">${B.months.slice().reverse().map(x => `<option value="${x.month}"${x === m ? " selected" : ""}>${mName(x.month)}</option>`).join("")}</select>${add}</div>
+    <div class="tiles">
+      ${tile("Budgeted", money(goal), m.base > 0 ? `${Math.round(goal / m.base * 100)}% of income` : "")}
+      ${tile("Spent on budgets", money(spent), "", "neg")}
+      ${tile(left < 0 ? "Over budget" : "Left to spend", money(Math.abs(left)), m.partial ? "so far this month" : "", left < 0 ? "neg" : "pos")}
+      ${tile("Not budgeted", money(other), "other spending this month")}
+    </div>
+    <div class="card"><h2>${esc(mName(m.month))}</h2>${note ? `<p class="sub">${esc(note)}</p>` : ""}${rows.map(t => budgetRow(t, m)).join("")}</div>
+    ${budgetHistory(B.months.slice(-6))}`;
+  document.getElementById("budgetMonth").onchange = e => { S.budgetMonth = e.target.value; render(); };
+}
+function budgetForm(t) {
+  const cats = t ? [t.category] : budgetChoices();
+  if (!cats.length) return toast("Every category already has a budget.");
+  showModal(t ? "Edit budget" : "Add budget", "Targets apply to every month, including past ones.", `<div class="fields">
+      <label class="field full">Category<select id="bCat"${t ? " disabled" : ""}>${cats.map(c => `<option>${esc(c)}</option>`).join("")}</select></label>
+      <label class="field">Target type<select id="bMode"><option value="amount"${t && t.mode === "amount" ? " selected" : ""}>Dollar amount</option><option value="percent"${t && t.mode === "percent" ? " selected" : ""}>Percent of income</option></select></label>
+      <label class="field" id="bLabel"><span></span><input id="bValue" value="${t ? t.value : ""}" inputmode="decimal" autocomplete="off"></label>
+    </div><div class="preview" id="bPreview" aria-live="polite"></div>`,
+    `<button class="btn" data-modal="close">Cancel</button><button class="btn primary" data-modal="budget-save">Save</button>`);
+  ["bCat", "bMode"].forEach(id => document.getElementById(id).onchange = budgetPreview);
+  document.getElementById("bValue").oninput = budgetPreview;
+  budgetPreview();
+}
+function budgetPreview() {
+  const v = id => document.getElementById(id).value, mode = v("bMode"), months = completeMonths();
+  document.querySelector("#bLabel span").textContent = mode === "percent" ? "Percent of income" : "Dollars a month";
+  const n = months.length || 1, income = sum(months, m => m.income) / n, avg = sum(months, m => m.spent[v("bCat")] || 0) / n;
+  const amount = parseFloat(v("bValue").replace(/[$,]/g, "")), lines = [`You've averaged <b>${money(avg)}</b> a month here, and earned ${money(income)} a month.`];
+  if (mode === "percent" && amount > 0) lines.push(`${amount}% of that income is about <b>${money(income * amount / 100)}</b> a month.`);
+  if (mode === "amount" && amount > 0 && income > 0) lines.push(`That's about <b>${Math.round(amount / income * 100)}%</b> of your income.`);
+  document.getElementById("bPreview").innerHTML = lines.join(" ");
+}
+async function saveBudget() {
+  const v = id => document.getElementById(id).value;
+  const done = await api().save_budget(v("bCat"), v("bMode"), v("bValue"));
+  if (!done.ok) return modalError(done.error);
+  location.reload();
+}
+
+const VIEWS = {Overview: overview, Spending: spending, Budgets: budgets, Recurring: recurring, Largest: largest, Savings: savings, Accounts: accounts, Transactions: transactions, Rules: rules, Help: help};
+const fullHistory = new Set(["Budgets", "Recurring", "Accounts", "Rules", "Help"]);
 function render(moved = false) {
   hideTip();
   document.body.classList.toggle("empty-app", !TX.length);
@@ -788,10 +879,11 @@ function bankTable() {
 }
 function help() {
   V.innerHTML = `<div class="help">${TX.length ? "" : '<div class="controls"><button class="btn" data-act="home">Back</button></div>'}
-    <div class="card"><h2>Getting started</h2><p class="sub">Three steps, then repeat step 1 whenever you want fresh numbers.</p>
+    <div class="card"><h2>Getting started</h2><p class="sub">Four steps, then repeat step 1 whenever you want fresh numbers.</p>
       <ol><li><b>Download</b> transaction history from each bank's website. Look for Download, Export or Statements, and choose CSV. Ask for as much history as it offers.</li>
       <li><b>Add files</b> and check the review screen. Date ranges can overlap, because repeats are skipped automatically.</li>
-      <li><b>Tidy up</b> on the Rules tab by giving unknown purchases a name and category.</li></ol>
+      <li><b>Tidy up</b> on the Rules tab by giving unknown purchases a name and category.</li>
+      <li><b>Set budgets</b> on the Budgets tab, as a dollar amount or a percent of income.</li></ol>
       <div class="tools app-only"><button class="btn primary" data-act="tour">Take the tour</button></div></div>
     <div class="card"><h2>Which banks work</h2><p class="sub">Budgetier reads columns by name, so it isn't limited to this list. If a bank is new to it, the review screen asks what it can't tell.</p>${bankTable()}</div>
     <div class="card"><h2>Tips for good numbers</h2>
@@ -856,6 +948,7 @@ function rules() {
 const TOUR = [
   ["#addFiles", "Add your bank files", "Start here. Choose CSV exports or a Synchrony PDF. You check everything on a review screen before it's saved."],
   ['[data-tab="Overview"]', "See the big picture", "Spending, income and how much of each dollar you keep, by month."],
+  ['[data-tab="Budgets"]', "Set monthly budgets", "Give a category a target, in dollars or as a percent of income, and see what's left each month."],
   ['[data-tab="Recurring"]', "Spot regular bills", "Subscriptions and repeat payments are found automatically."],
   ['[data-tab="Rules"]', "Teach it your merchants", "Give unknown purchases a name and category. It applies to all your history and future imports."],
   ['[data-tab="Accounts"]', "Manage your accounts", "Set card balances, remove files or accounts, and export to Excel."],
@@ -997,6 +1090,12 @@ function initApp() {
         const r = D.rules[Number(act.dataset.i)];
         return confirmRemove("Delete this rule?", `Transactions matching "${r.text}" go back to their automatic category. You can add the rule again any time.`, () => removal(api().delete_rule(r.line)));
       }
+      if (act.dataset.act === "budget-new") return budgetForm();
+      if (act.dataset.act === "budget-edit") return budgetForm(B.targets.find(t => t.category === act.dataset.catName));
+      if (act.dataset.act === "budget-delete") {
+        const name = act.dataset.catName;
+        return confirmRemove(`Delete the ${name} budget?`, "Your transactions aren't affected. You can add the budget again any time.", () => removal(api().delete_budget(name)));
+      }
       if (act.dataset.act === "export") { const r = await api().export_workbook(); return toast(r.ok ? (r.saved ? `Saved ${r.saved}` : "") || "Not saved" : r.error); }
       if (act.dataset.act === "edit") return editAccount(id);
       if (act.dataset.act === "drop-import") return confirmRemove(`Remove ${file}?`, `This file added ${rows} transactions. Any that another imported file also covers will stay. To bring the rest back, import the file again.`, () => removal(api().remove_import(id)));
@@ -1013,6 +1112,7 @@ function initApp() {
       if (what === "import") return runImport(m);
       if (what === "save") return saveAccount();
       if (what === "rule-save") return saveRule();
+      if (what === "budget-save") return saveBudget();
       if (what === "confirm") { m.disabled = true; return modal.onConfirm(); }
     }
   });
@@ -1021,7 +1121,7 @@ function initApp() {
 /* ---------- controls ---------- */
 (function init() {
   const tabs = document.getElementById("tabs");
-  TABS.forEach(t => { const b = document.createElement("button"); b.innerHTML = `${icon(ICONS[t])}<span>${t}</span>`; b.dataset.tab = t; if (t === "Rules") b.className = "app-only"; b.setAttribute("role", "tab"); b.onclick = () => { S.tab = t; render(true); scrollTo(0, 0); }; tabs.append(b); });
+  TABS.forEach(t => { const b = document.createElement("button"); b.innerHTML = `${icon(ICONS[t])}<span>${t}</span>`; b.dataset.tab = t; if (t === "Rules" || t === "Budgets") b.className = "app-only"; b.setAttribute("role", "tab"); b.onclick = () => { S.tab = t; render(true); scrollTo(0, 0); }; tabs.append(b); });
 
   // The choice stays with this browser; the page works the same if storage is blocked.
   const root = document.documentElement, themeBtn = document.getElementById("theme");
