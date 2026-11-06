@@ -19,6 +19,46 @@ if sys.platform == "win32":
     _spec.loader.exec_module(uninstall_main)
 
 
+class FirstClick(unittest.TestCase):
+    def test_only_a_mac_needs_it(self):
+        with mock.patch.object(app.sys, "platform", "win32"), mock.patch.dict(app.sys.modules, {"objc": None}):
+            app._take_first_click()
+            self.assertTrue(app._first_click_taken(mock.Mock()))
+
+    def test_a_mac_answers_yes_to_the_first_click(self):
+        objc, cocoa = mock.Mock(_C_NSBOOL=b"Z"), mock.Mock()
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.dict(
+                app.sys.modules, {"objc": objc, "webview.platforms.cocoa": cocoa}):
+            app._take_first_click()
+        host = objc.classAddMethods.call_args[0][0]
+        self.assertIs(host, cocoa.BrowserView.WebKitHost)
+        kwargs = objc.selector.call_args[1]
+        self.assertEqual(kwargs["selector"], b"acceptsFirstMouse:")
+        self.assertIs(objc.selector.call_args[0][0](None, None), True)
+
+    def test_the_self_check_reports_what_the_window_says(self):
+        cocoa, window = mock.Mock(), mock.Mock(uid="w")
+        cocoa.BrowserView.instances = {"w": mock.Mock()}
+        answer = cocoa.BrowserView.instances["w"].webview.acceptsFirstMouse_
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.dict(app.sys.modules, {"webview.platforms.cocoa": cocoa}):
+            answer.return_value = True
+            self.assertIs(app._first_click_taken(window), True)
+            answer.return_value = False
+            self.assertIs(app._first_click_taken(window), False)
+
+    def test_the_self_check_survives_not_finding_the_window(self):
+        cocoa = mock.Mock()
+        cocoa.BrowserView.instances = {}
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.dict(app.sys.modules, {"webview.platforms.cocoa": cocoa}), \
+                self.assertLogs("budgetier", "ERROR"):
+            self.assertIs(app._first_click_taken(mock.Mock(uid="w")), False)
+
+    def test_failing_to_only_costs_the_first_click(self):
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.dict(app.sys.modules, {"objc": None}), \
+                self.assertLogs("budgetier", "ERROR"):
+            app._take_first_click()
+
+
 class Bridge(unittest.TestCase):
     def setUp(self):
         self.budget = mock.Mock(home=Path("home"))

@@ -105,7 +105,8 @@ matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyLook)
 /* ---- base ---- */
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
-body { margin: 0; background: var(--page); color: var(--ink); font: var(--text-md)/1.5 var(--body); -webkit-font-smoothing: antialiased; }
+button, summary, label, nav, th { -webkit-user-select: none; user-select: none; }
+body { margin: 0; cursor: default; background: var(--page); color: var(--ink); font: var(--text-md)/1.5 var(--body); -webkit-font-smoothing: antialiased; }
 h1, h2, h3 { font-family: var(--display); font-weight: 600; margin: 0; letter-spacing: -.01em; }
 h1 { font-size: var(--text-2xl); line-height: 1.15; letter-spacing: -.02em; }
 h2 { font-size: var(--text-lg); line-height: 1.3; }
