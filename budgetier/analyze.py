@@ -428,6 +428,8 @@ def _calculated(own: list[dict], info: dict) -> dict:
     anchor = info["balance_anchor"]
     pinned = date.fromisoformat(anchor["date"])
     start = round(anchor["amount"] * 100) * (-1 if info["type"] == "credit" else 1)
+    if not own:  # a linked account that's been quiet still has a balance
+        return {"months": {anchor["date"][:7]: start}, "current": start, "as_of": anchor["date"], "calculated": True}
 
     def on(day: date) -> int:
         after = sum(r["cents"] for r in own if pinned < r["date"] <= day)
@@ -446,7 +448,9 @@ def account_balances(rows: list[dict], accounts: dict) -> dict[str, dict]:
     found = {}
     for account, info in accounts.items():
         own = sorted((r for r in rows if r["account"] == account), key=lambda r: r["date"])
-        if account in exported:
+        if info.get("balance_anchor", {}).get("live"):
+            found[account] = {**_calculated(own, info), "live": True}  # the bank's figure beats an old export
+        elif account in exported:
             with_balance = [r for r in own if r["balance"] is not None]
             found[account] = {"months": exported[account], "current": with_balance[-1]["balance"],
                               "as_of": with_balance[-1]["date"].isoformat(), "calculated": False}

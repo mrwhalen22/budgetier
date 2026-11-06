@@ -25,9 +25,9 @@ PERCENT = '[Color10]0%;[Red]-0%;"-"'
 SPENT = '[Red]$#,##0.00;[Color10]-$#,##0.00;"-"'
 SPENT_WHOLE = '[Red]$#,##0;[Color10]-$#,##0;"-"'
 DATE = "mmm d, yyyy"
-INK = "1F2933"
-HEAD = PatternFill("solid", fgColor="1F4E79")
-BAND = PatternFill("solid", fgColor="EEF3F8")
+INK = "17201C"  # the same pine as the app's default theme
+HEAD = PatternFill("solid", fgColor="1E3A30")
+BAND = PatternFill("solid", fgColor="F1EFE7")
 RULE = Border(bottom=Side(style="thin", color="C3C2B7"))
 
 
@@ -217,7 +217,8 @@ def _accounts(wb, rows, accounts) -> None:
         if not own:
             continue
         balance = balances.get(account)
-        basis = ("Not set" if not balance else "Calculated" if balance["calculated"] else "From export")
+        basis = ("Not set" if not balance else "From your bank" if balance.get("live") else
+                 "Calculated" if balance["calculated"] else "From export")
         data.append([info["name"], info["bank"], info["number"], info["type"], len(own),
                      own[0]["date"], own[-1]["date"], balance["current"] / 100 if balance else None,
                      basis, _day(balance["as_of"]) if balance else None])

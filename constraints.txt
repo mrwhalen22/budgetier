@@ -7,7 +7,11 @@ charset-normalizer==3.5.2
 clr_loader==0.3.1
 cryptography==50.0.2
 et_xmlfile==2.0.0
+jaraco.classes==3.4.0
+jaraco.context==6.1.2
+jaraco.functools==4.6.0
 macholib==1.16.4
+more-itertools==11.2.1
 packaging==26.3
 pdfminer.six==20260107
 pefile==2024.8.26

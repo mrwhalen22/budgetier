@@ -15,6 +15,7 @@ from pathlib import Path
 
 import webview
 
+from . import credentials, simplefin
 from .service import Budget, BudgetError
 from .storage import DataError, app_home, hold_lock
 
@@ -122,6 +123,26 @@ class Api:
         self._budget.delete_budget(category)
 
     @_reply
+    def connect_bank(self, token):
+        return self._budget.sync.connect(token)
+
+    @_reply
+    def review_bank(self):
+        return self._budget.sync.review()
+
+    @_reply
+    def link_bank(self, choices):
+        return self._budget.sync.link(choices)
+
+    @_reply
+    def sync_bank(self, automatic=False):
+        return self._budget.sync.sync(automatic)
+
+    @_reply
+    def disconnect_bank(self):
+        self._budget.sync.disconnect()
+
+    @_reply
     def export_workbook(self):
         chosen = self._window.create_file_dialog(
             webview.FileDialog.SAVE, save_filename="Budgetier.xlsx",
@@ -148,7 +169,9 @@ def _self_check(window, result: str) -> None:
             report = ""
             log.info("self check not ready: %s", e)
             time.sleep(1)
-    Path(result).write_text(report or json.dumps({"failed": ["page never answered"]}), encoding="utf-8")
+    found = json.loads(report) if report else {"failed": ["page never answered"]}
+    found.update(secure_store=credentials.backend(), certificates=simplefin.certificate_count())
+    Path(result).write_text(json.dumps(found), encoding="utf-8")
     window.destroy()
 
 

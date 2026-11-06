@@ -12,6 +12,10 @@ else:
     import fcntl
 
 
+class BudgetError(Exception):
+    """A problem to show the person, in words they can act on."""
+
+
 class DataError(Exception):
     """A saved file can't be read. The text says which one and what to do."""
 

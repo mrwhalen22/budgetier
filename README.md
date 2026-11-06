@@ -2,8 +2,8 @@
 
 Merges CSV exports from your banks and cards into one continuous history per
 account, then shows your monthly spending, recurring payments, largest expenses
-and savings. Everything runs and stays on this machine; the dashboard is a single
-offline file that makes no network requests.
+and savings. Everything runs on this machine, and your data stays here unless you turn on
+[bank sync](#bank-sync). The dashboard is a single offline file that makes no network requests.
 
 ## Use it
 
@@ -41,6 +41,11 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
 
+## Appearance
+
+Choose **Appearance** at the bottom of the sidebar to pick a theme (Pine, Ocean or Plum) and
+light, dark or matching your system. The choice is remembered on this computer.
+
 ## Where things live
 
 | What | Where |
@@ -63,6 +68,29 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
 | `logs/app.log` | Details if something goes wrong |
+
+## Bank sync
+
+Instead of downloading files, you can update accounts through
+[SimpleFIN](https://www.simplefin.org/), a paid service. Open the Accounts tab, choose
+**Connect SimpleFIN**, and paste a setup token from your SimpleFIN account. Then match each
+bank account to an account in Budgetier, or add it as a new one. Budgetier syncs when it
+opens, at most every 6 hours, and whenever you press **Sync now**.
+
+- **Privacy:** with sync on, SimpleFIN and the services behind it handle your transactions.
+  Budgetier gets read-only access, sends SimpleFIN nothing but the request, and keeps the
+  connection in Windows Credential Manager or the macOS Keychain, not the data folder.
+- **History:** files stay the record for what they cover. A linked account only adds from
+  its last imported day on. Near that day, or if you import a file later, the same amount
+  within 3 days counts as the same transaction, because feeds word things differently.
+- **Pending transactions** are skipped until they post.
+- **Balances** come from the bank on every sync.
+- **Rules** match the feed's descriptions too, and those can differ from your exports, so
+  check Uncategorized after the first sync.
+- **Disconnect** keeps your transactions. To cut off access completely, disable it on the
+  SimpleFIN site as well.
+
+Accounts that SimpleFIN can't reach can still be imported from files.
 
 ## Telling accounts apart
 
@@ -189,6 +217,11 @@ Run the desktop app. It uses your real data folder, so close any installed copy 
 | `tests/` | The test suite |
 | `samples/` | A generator for fake bank exports |
 | `VERSION` | The current version |
+
+The look comes from the design system at the top of `budgetier/dashboard.html`: tokens for
+color, type, spacing and corners, then one button, field, card, panel, banner and table. To add
+a theme, add its light and dark palettes there and to `PALETTES`. `tests/test_design.py` fails
+on hard-coded colors or sizes, inline looks, and any theme with unreadable contrast.
 
 Run the tests:
 

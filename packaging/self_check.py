@@ -3,8 +3,9 @@
     python packaging/self_check.py
 
 Run after build_installer.py. Every tab must draw, the page must reach the app, and the
-monthly totals the page works out must match the workbook's to the cent. The data folder
-has a space in its name, as the real one on macOS does.
+monthly totals the page works out must match the workbook's to the cent. Bank sync's
+packaged parts must be present too: secure storage, and certificates for HTTPS. The data
+folder has a space in its name, as the real one on macOS does.
 """
 import json
 import os
@@ -57,7 +58,9 @@ def main() -> int:
     matched = report.get("months") == totals
     if not matched:
         print(f"Totals differ. Python: {totals}")
-    good = code == 0 and report.get("api") == "function" and report.get("rows", 0) > 0 and not report["failed"] and matched
+    syncing = report.get("certificates", 0) > 0 and "fail" not in report.get("secure_store", "fail").lower()
+    good = (code == 0 and report.get("api") == "function" and report.get("rows", 0) > 0 and not report["failed"]
+            and matched and syncing)
     print("Self check passed." if good else "Self check FAILED.")
     return 0 if good else 1
 
