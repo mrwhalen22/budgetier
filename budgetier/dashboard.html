@@ -963,14 +963,15 @@ function help() {
 
 /* ---------- rules ---------- */
 const ruleChoices = () => [...new Set([...(D.allCategories || []), ...D.categories])].filter(c => c !== "Uncategorized" && c !== "Card Payments (no detail)").sort();
-function suggestMatch(merchant, desc) {
-  const rows = TX.filter(t => t.merchant === merchant), word = merchant.toUpperCase();
-  if (rows.length && rows.every(t => t.desc.toUpperCase().includes(word))) return word;
-  return desc.toUpperCase().replace(/\s*[#*\d].*$/, "").trim() || desc.toUpperCase();
+async function categorize(merchant, desc, category) {
+  const descriptions = [...new Set([desc, ...TX.filter(t => t.merchant === merchant).map(t => t.desc)])];
+  const found = await api().suggest_rule(merchant, descriptions);
+  ruleForm({text: found.ok ? found.text : "", merchant, category, desc});
 }
 function ruleForm(o) {
   const cats = ruleChoices(), known = cats.includes(o.category);
   showModal(o.line ? "Edit rule" : "Categorize", o.line ? "" : "Applies to every matching transaction, past and future.", `<div class="fields">
+      ${o.desc ? `<div class="field full">The bank's description<span class="dim code">${esc(o.desc)}</span></div>` : ""}
       <label class="field full">When the bank's description contains<input id="rMatch" value="${esc(o.text)}" autocomplete="off"${o.advanced ? ' class="code"' : ""}></label>
       <label class="field">Show as<input id="rName" value="${esc(o.merchant)}" placeholder="Name to display" autocomplete="off"></label>
       <label class="field">Category<select id="rCat"><option value="">Choose...</option>${cats.map(c => `<option${c === o.category ? " selected" : ""}>${esc(c)}</option>`).join("")}<option value="__new"${o.category && !known ? " selected" : ""}>New category...</option></select></label>
@@ -988,6 +989,7 @@ async function previewRule() {
   const box = document.getElementById("rPreview"), text = document.getElementById("rMatch").value;
   const r = await api().preview_rule(text, !!modal.dataset.advanced);
   if (!r.ok) { box.textContent = r.error; return; }
+  if (!r.count) { box.innerHTML = `<b>No transactions match yet.</b><p class="sub">Rules look for this exact text in the bank's description, which can differ from the name shown. Select a row on the Transactions tab to start from the bank's wording.</p>`; return; }
   const cat = document.getElementById("rCat").value;
   box.innerHTML = `<b>${r.count.toLocaleString()} transaction${r.count === 1 ? "" : "s"}</b> ${r.count === 1 ? "matches" : "match"}, totalling ${cents(r.total)}.${r.share > .25 ? '<span class="warn">That is a lot of your history. Try more specific text.</span>' : ""}${cat === "Transfer" ? '<span class="warn">Transfers don\'t count as spending or income.</span>' : ""}${r.examples.length ? `<ul>${r.examples.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}`;
 }
@@ -1276,7 +1278,7 @@ function initApp() {
     const txRow = e.target.closest("#tx tr[data-tx]");
     if (txRow && window.pywebview) {
       const t = TX[Number(txRow.dataset.tx)];
-      return ruleForm({text: suggestMatch(t.merchant, t.desc), merchant: t.merchant, category: t.cat === "Uncategorized" ? "" : t.cat});
+      return categorize(t.merchant, t.desc, t.cat === "Uncategorized" ? "" : t.cat);
     }
     if (e.target.closest("#addFiles") || (act && act.dataset.act === "add")) return addFiles();
     const bank = e.target.closest("#bankBtn");
@@ -1291,7 +1293,7 @@ function initApp() {
       if (act.dataset.act === "banks") { S.tab = "Help"; return render(); }
       if (act.dataset.act === "home") { S.tab = "Overview"; return render(); }
       if (act.dataset.act === "tour") return tour();
-      if (act.dataset.act === "categorize") return ruleForm({text: suggestMatch(act.dataset.merchant, act.dataset.desc), merchant: act.dataset.merchant, category: ""});
+      if (act.dataset.act === "categorize") return categorize(act.dataset.merchant, act.dataset.desc, "");
       if (act.dataset.act === "rule-new") return ruleForm({text: "", merchant: "", category: ""});
       if (act.dataset.act === "rule-edit") { const r = D.rules[Number(act.dataset.i)]; return ruleForm({...r}); }
       if (act.dataset.act === "rule-delete") {

@@ -144,7 +144,8 @@ _CARD_SIDE = re.compile(r"PAYMENT|AUTOPAY|THANK YOU|\bPYMT\b|\bPMT\b")
 _PREFIXES = re.compile(
     r"^(WEB INITIATED PAYMENT AT|DEBIT CARD PURCHASE AT|EARLY PAY:|PURCHASE AUTHORIZED ON \d\d/\d\d|RECURRING PAYMENT( AUTHORIZED ON \d\d/\d\d)?|"
     r"POS (DEBIT|PURCHASE|WITHDRAWAL)?|DEBIT CARD PURCHASE|CHECKCARD( \d+)?|CHECK CARD|"
-    r"ACH (DEBIT|CREDIT|WITHDRAWAL|DEPOSIT)?|PURCHASE|DEBIT|PAYPAL ?\*|PP ?\*|SQ ?\*|TST ?\*|SP )\s*")
+    r"ACH (DEBIT|CREDIT|WITHDRAWAL|DEPOSIT)?|PURCHASE|DEBIT|PAYPAL ?\*|PP ?\*|SQ ?\*|TST ?\*|SP ?\*|SP )\s*")
+_CARD_TAIL = re.compile(r" CARD \d{4}$")  # Wells Fargo ends each purchase with the card's last 4
 _STATES = set("AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE "
               "NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC".split())
 
@@ -178,6 +179,7 @@ def clean_merchant(description: str) -> str:
     text = description.upper()
     for _ in range(2):
         text = _PREFIXES.sub("", text).strip()
+    text = _CARD_TAIL.sub("", text)
     text = re.split(r"[*#,]", text)[0] or text
     text = re.sub(r"\.COM\b", "", text)
     text = re.sub(r" (ON \d{6}|FROM CARD|WEB PMTS?|EPAY|DEBITS|PAYMENT|PMT|P2P|CC|CREDIT CRD|CREDIT CARD).*$", "", text)
@@ -187,6 +189,29 @@ def clean_merchant(description: str) -> str:
         words.pop()
     name = " ".join(words[:3]).replace("'", "").replace("-", " ")  # Cane's / Canes, Hiko-A-Mon
     return " ".join(name.split()).title() or description.strip().title()
+
+
+def match_text(merchant: str, descriptions: list[str]) -> str:
+    """Text for a new rule to look for, in the bank's own spelling so it really matches.
+
+    The merchant's name if the bank uses it every time; otherwise the first description
+    without what changes from one purchase to the next: the bank's wording around it, which
+    can hold a date, and any store number or reference code.
+    """
+    texts = [d.upper() for d in descriptions]
+    name = merchant.upper()
+    if len(name) >= 3 and all(name in text for text in texts):
+        return name
+    text = _CARD_TAIL.sub("", texts[0])
+    for _ in range(2):
+        text = _PREFIXES.sub("", text).strip()
+    kept = []
+    for word in text.split():
+        if kept and re.search(r"\d{3}|\d/\d|^#", word):
+            break
+        kept.append(word)
+    found = " ".join(kept)
+    return found if len(found) >= 3 else " ".join(texts[0].split())
 
 
 def is_transfer(description: str, cents: int, account_type: str, bank_category: str = "") -> bool:
