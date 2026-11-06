@@ -219,6 +219,21 @@ class Rules(AppCase):
         self.assertEqual((rule["text"], rule["advanced"]), ("A.B (C)*", False))
         self.assertEqual(rule["count"], 0)
 
+    def test_a_name_with_special_characters_finds_itself(self):
+        path = self.file("Chase_4002.csv", self.CHASE, ["10/04/2026,10/04/2026,SQ *JOE'S (A&B) CAFE+ #1,,Sale,-5.00,\n"])
+        self.add(path, number="4002")
+        self.assertEqual(self.budget.preview_rule("sq *joe's (a&b) cafe+ #1")["count"], 1)
+        self.budget.save_rule(None, "SQ *JOE'S (A&B) CAFE+ #1", "Dining", "Joe's")
+        rule = self.budget.rules()[0]
+        self.assertEqual((rule["text"], rule["advanced"], rule["count"]), ("SQ *JOE'S (A&B) CAFE+ #1", False, 1))
+        self.assertEqual(self.categories()["SQ *JOE'S (A&B) CAFE+ #1"], ("Dining", "Joe's"))
+
+    def test_suggestion_previews_as_a_match(self):
+        path = self.file("Chase_4002.csv", self.CHASE, ["10/04/2026,10/04/2026,TST* A&B CAFE,,Sale,-5.00,\n"])
+        self.add(path, number="4002")
+        text = self.budget.suggest_rule("Whatever", ["TST* A&B CAFE"])["text"]
+        self.assertEqual(self.budget.preview_rule(text)["count"], 1)
+
     def test_commas_and_quotes_survive(self):
         self.budget.save_rule(None, "KROGER", "Food, Etc", 'Joe "K" Mart')
         rule = self.budget.rules()[0]

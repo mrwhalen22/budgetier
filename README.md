@@ -4,6 +4,7 @@ Merges CSV exports from your banks and cards into one continuous history per
 account, then shows your monthly spending, recurring payments, largest expenses
 and savings. Everything runs on this machine, and your data stays here unless you turn on
 [bank sync](#bank-sync). The dashboard is a single offline file that makes no network requests.
+The app itself asks GitHub for the latest version when it opens; see [Updates](#updates).
 
 ## Use it
 
@@ -40,6 +41,19 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
+
+## Updates
+
+When the installed app opens, it asks GitHub for the latest release. No financial data goes
+with that request, and being offline is fine. If there's a newer version, **Update to x.y.z**
+appears in the sidebar. Nothing downloads until you choose it, and the download must match the
+release's `SHA256SUMS.txt`.
+
+- **Windows:** Budgetier closes, Windows asks for permission, and it opens again when it's done.
+- **macOS:** the download opens, and you drag Budgetier to Applications to replace the old copy.
+
+Your data is kept apart from the program, so updating doesn't touch it. To stop the automatic
+check, or to check by hand, use the buttons at the bottom of the Help tab.
 
 ## Appearance
 

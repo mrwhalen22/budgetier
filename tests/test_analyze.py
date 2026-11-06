@@ -159,10 +159,45 @@ class Classify(unittest.TestCase):
         for text, want in [("TST* FUEGO TACOS AUSTIN TX", "Fuego Tacos Austin"),
                            ("PURCHASE AUTHORIZED ON 01/02 SQ *BLUE BOTTLE", "Blue Bottle"),
                            ("PAYPAL *SOMESHOP", "Someshop"),
+                           ("SP * SOME SHOP", "Some Shop"),
+                           ("PURCHASE AUTHORIZED ON 10/03 TST*HIKO-A-MON ATLANTA GA P000000123 CARD 1234", "Hiko A Mon Atlanta"),
                            ("JANE DOE P2P JANE DOE", "Jane Doe"),
                            ("EARLY PAY: ACME CORP WIDGETS PAYROLL XXXXXXXXXXX4006 050826", "Acme Corp Widgets"),
                            ("DEBIT CARD PURCHASE AT ACME GAMES.COM 425, BELLEVUE, WA ON 053026 FROM CARD#: XXXX4005", "Acme Games")]:
             self.assertEqual(analyze.clean_merchant(text), want)
+
+
+class MatchText(unittest.TestCase):
+    """What a new rule starts with: never just a bank's boilerplate or a payment service's code."""
+
+    def suggest(self, *descriptions):
+        return analyze.match_text(analyze.clean_merchant(descriptions[0]), list(descriptions))
+
+    def test_names_with_punctuation_keep_the_banks_spelling(self):
+        self.assertEqual(self.suggest("SQ *JOE'S COFFEE"), "JOE'S COFFEE")
+        self.assertEqual(self.suggest("TST*HIKO-A-MON ATLANTA GA P000000123"), "HIKO-A-MON ATLANTA GA")
+
+    def test_the_merchant_name_is_used_when_the_bank_always_uses_it(self):
+        self.assertEqual(self.suggest("SQ*CAFE & BAKERY"), "CAFE & BAKERY")
+        self.assertEqual(self.suggest("PAYPAL *SPOTIFY 4029357733 CA"), "SPOTIFY")
+
+    def test_wells_fargo_boilerplate_is_left_out(self):
+        for first in ("PURCHASE AUTHORIZED ON 10/01", "RECURRING PAYMENT AUTHORIZED ON 10/01"):
+            text = self.suggest(f"{first} SQ *JOE'S COFFEE SEATTLE WA S586274000000 CARD 1234")
+            self.assertEqual(text, "JOE'S COFFEE SEATTLE WA")
+
+    def test_it_matches_what_it_came_from(self):
+        for text in ("SQ *JOE'S COFFEE", "TST* A(B) [C] $5", "PURCHASE", "SQ *AB", "#12"):
+            self.assertIn(self.suggest(text), text.upper())
+
+    def test_a_number_can_start_a_name(self):
+        self.assertEqual(analyze.match_text("Renamed", ["SQ *1800 DINER #44"]), "1800 DINER")
+
+    def test_a_name_the_rule_gave_is_not_searched_for(self):
+        self.assertEqual(analyze.match_text("My Gym", ["ACH DEBIT PLANET FIT 123456"]), "PLANET FIT")
+
+    def test_a_name_must_appear_in_every_description(self):
+        self.assertEqual(analyze.match_text("Joe", ["SQ *JOE'S", "SQ *THE JOINT"]), "JOE'S")
 
 
 class Recurring(unittest.TestCase):

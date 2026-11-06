@@ -1,6 +1,7 @@
 """The desktop bridge and the Windows installer's steps, without touching the real system."""
 import importlib.util
 import sys
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -18,6 +19,46 @@ if sys.platform == "win32":
     _spec.loader.exec_module(uninstall_main)
 
 
+class FirstClick(unittest.TestCase):
+    def test_only_a_mac_needs_it(self):
+        with mock.patch.object(app.sys, "platform", "win32"), mock.patch.dict(app.sys.modules, {"objc": None}):
+            app._take_first_click()
+            self.assertTrue(app._first_click_taken(mock.Mock()))
+
+    def test_a_mac_answers_yes_to_the_first_click(self):
+        objc, cocoa = mock.Mock(_C_NSBOOL=b"Z"), mock.Mock()
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.dict(
+                app.sys.modules, {"objc": objc, "webview.platforms.cocoa": cocoa}):
+            app._take_first_click()
+        host = objc.classAddMethods.call_args[0][0]
+        self.assertIs(host, cocoa.BrowserView.WebKitHost)
+        kwargs = objc.selector.call_args[1]
+        self.assertEqual(kwargs["selector"], b"acceptsFirstMouse:")
+        self.assertIs(objc.selector.call_args[0][0](None, None), True)
+
+    def test_the_self_check_reports_what_the_window_says(self):
+        cocoa, window = mock.Mock(), mock.Mock(uid="w")
+        cocoa.BrowserView.instances = {"w": mock.Mock()}
+        answer = cocoa.BrowserView.instances["w"].webview.acceptsFirstMouse_
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.dict(app.sys.modules, {"webview.platforms.cocoa": cocoa}):
+            answer.return_value = True
+            self.assertIs(app._first_click_taken(window), True)
+            answer.return_value = False
+            self.assertIs(app._first_click_taken(window), False)
+
+    def test_the_self_check_survives_not_finding_the_window(self):
+        cocoa = mock.Mock()
+        cocoa.BrowserView.instances = {}
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.dict(app.sys.modules, {"webview.platforms.cocoa": cocoa}), \
+                self.assertLogs("budgetier", "ERROR"):
+            self.assertIs(app._first_click_taken(mock.Mock(uid="w")), False)
+
+    def test_failing_to_only_costs_the_first_click(self):
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.dict(app.sys.modules, {"objc": None}), \
+                self.assertLogs("budgetier", "ERROR"):
+            app._take_first_click()
+
+
 class Bridge(unittest.TestCase):
     def setUp(self):
         self.budget = mock.Mock(home=Path("home"))
@@ -28,6 +69,7 @@ class Bridge(unittest.TestCase):
         calls = {
             "inspect": (["a.csv"],), "remove_import": ("a.csv",), "remove_account": ("x",),
             "update_account": ("x", "Name", "credit", "", ""), "preview_rule": ("COFFEE", False),
+            "suggest_rule": ("Coffee", ["SQ *COFFEE"]),
             "save_rule": (None, "COFFEE", "Dining", "", False), "delete_rule": ("line",),
             "save_budget": ("Dining", "amount", "50"), "delete_budget": ("Dining",),
         }
@@ -35,6 +77,48 @@ class Bridge(unittest.TestCase):
             getattr(self.budget, name).return_value = {}
             self.assertTrue(getattr(self.api, name)(*args)["ok"], name)
             getattr(self.budget, name).assert_called_once_with(*args)
+
+    def test_a_slow_update_check_does_not_wait_its_turn(self):
+        self.budget.updates.check.return_value = {"available": False}
+        with self.api._turn:
+            self.assertEqual(self.api.check_update(True), {"ok": True, "available": False})
+        self.budget.updates.check.assert_called_once_with(True)
+
+    def test_a_failed_update_check_reaches_the_page(self):
+        self.budget.updates.check.side_effect = app.BudgetError("offline")
+        self.assertEqual(self.api.check_update(True), {"ok": False, "error": "offline"})
+
+    def test_the_window_closes_only_when_the_installer_took_over(self):
+        self.budget.updates.install.return_value = {"closing": True}
+        with mock.patch.object(app.threading, "Timer") as timer:
+            self.assertTrue(self.api.install_update()["closing"])
+        timer.assert_called_once_with(.5, self.api._window.destroy)
+        timer.return_value.start.assert_called_once()
+        self.budget.updates.install.side_effect = app.BudgetError("declined")
+        with mock.patch.object(app.threading, "Timer") as timer:
+            self.assertFalse(self.api.install_update()["ok"])
+        timer.assert_not_called()
+
+    def test_turning_the_check_off_is_saved(self):
+        self.assertTrue(self.api.set_update_check(False)["ok"])
+        self.budget.updates.set_automatic.assert_called_once_with(False)
+
+    def test_closing_waits_for_a_save_to_finish(self):
+        order = []
+        self.api._turn.acquire()
+        threading.Timer(.05, lambda: (order.append("saved"), self.api._turn.release())).start()
+        self.api._finish()
+        order.append("left")
+        self.assertEqual(order, ["saved", "left"])
+
+    def test_a_stuck_call_cannot_stop_the_app_closing(self):
+        with self.api._turn, mock.patch.object(app, "FINISH_WAIT", .01):
+            self.api._finish()
+
+    def test_leaving_does_not_wait_for_answers_to_the_page(self):
+        with mock.patch.object(app, "main", return_value=3), mock.patch.object(app.os, "_exit") as leave:
+            app.run()
+        leave.assert_called_once_with(3)
 
     def test_commit_and_cancel(self):
         self.budget.commit.return_value = [{"added": 1}]

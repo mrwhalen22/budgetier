@@ -20,6 +20,7 @@ from .service import Budget, BudgetError
 from .storage import DataError, app_home, hold_lock
 
 log = logging.getLogger("budgetier")
+FINISH_WAIT = 60  # seconds, longer than a sync's slowest request
 
 # Run in the page by the self check: every tab must draw, and the app must be reachable.
 SELF_CHECK = """JSON.stringify({
@@ -46,6 +47,36 @@ def _show_folder(folder: Path) -> None:
         subprocess.run(["open", str(folder)], check=True)
 
 
+def _take_first_click() -> None:
+    """On a Mac, a click on a window that isn't in front only brings it forward, so every
+    button needs a second click. This makes that first click reach the page as well."""
+    if sys.platform != "darwin":
+        return
+    try:
+        import objc
+        from webview.platforms.cocoa import BrowserView
+
+        def accepts_first_mouse(self, event):
+            return True
+
+        objc.classAddMethods(BrowserView.WebKitHost, [objc.selector(
+            accepts_first_mouse, selector=b"acceptsFirstMouse:", signature=objc._C_NSBOOL + b"@:@")])
+    except Exception:  # worth losing the first click, not worth stopping the app opening
+        log.exception("couldn't take the first click")
+
+
+def _first_click_taken(window) -> bool:
+    """For the self check: ask the real window, since this depends on the packaged libraries."""
+    if sys.platform != "darwin":
+        return True
+    try:
+        from webview.platforms.cocoa import BrowserView
+        return bool(BrowserView.instances[window.uid].webview.acceptsFirstMouse_(None))
+    except Exception:  # the check must still finish and report, not hang the build
+        log.exception("couldn't ask about the first click")
+        return False
+
+
 def _reply(method):
     """Everything the page calls returns {ok, ...}, so errors reach the screen. Each call
     arrives on its own thread, so they take turns: a double click mustn't race itself."""
@@ -70,6 +101,11 @@ class Api:
         self._budget = budget
         self._window = None
         self._turn = threading.Lock()
+
+    def _finish(self) -> None:
+        """Let anything still saving finish, since leaving won't wait for it."""
+        if self._turn.acquire(timeout=FINISH_WAIT):
+            self._turn.release()
 
     @_reply
     def pick_files(self):
@@ -107,6 +143,10 @@ class Api:
         return self._budget.preview_rule(text, advanced)
 
     @_reply
+    def suggest_rule(self, merchant, descriptions):
+        return self._budget.suggest_rule(merchant, descriptions)
+
+    @_reply
     def save_rule(self, original, text, category, merchant, advanced=False):
         self._budget.save_rule(original, text, category, merchant, advanced)
 
@@ -142,6 +182,27 @@ class Api:
     def disconnect_bank(self):
         self._budget.sync.disconnect()
 
+    def check_update(self, by_hand=False):
+        """Outside _reply's turns: a slow network mustn't hold up saving a rule."""
+        try:
+            return {"ok": True, **self._budget.updates.check(by_hand)}
+        except BudgetError as e:
+            return {"ok": False, "error": str(e)}
+        except Exception:
+            log.exception("update check failed")
+            return {"ok": False, "error": "Couldn't check for updates."}
+
+    @_reply
+    def install_update(self):
+        result = self._budget.updates.install()
+        if result["closing"]:  # after this reply reaches the page
+            threading.Timer(.5, self._window.destroy).start()
+        return result
+
+    @_reply
+    def set_update_check(self, on):
+        self._budget.updates.set_automatic(on)
+
     @_reply
     def export_workbook(self):
         chosen = self._window.create_file_dialog(
@@ -158,6 +219,15 @@ class Api:
         _show_folder(self._budget.home)
 
 
+def run() -> None:
+    """Leave without waiting for the page's calls. Each one's answer is delivered by a thread
+    Python won't exit without, and on a Mac that thread waits forever if the window has closed
+    first, which would leave the app running unseen and unable to reopen."""
+    code = main()
+    logging.shutdown()
+    os._exit(code)
+
+
 def _self_check(window, result: str) -> None:
     """For automated builds, where nobody can look at the window: write down what the
     page reports, then close. packaging/self_check.py judges the result."""
@@ -170,7 +240,8 @@ def _self_check(window, result: str) -> None:
             log.info("self check not ready: %s", e)
             time.sleep(1)
     found = json.loads(report) if report else {"failed": ["page never answered"]}
-    found.update(secure_store=credentials.backend(), certificates=simplefin.certificate_count())
+    found.update(secure_store=credentials.backend(), certificates=simplefin.certificate_count(),
+                 first_click=_first_click_taken(window))
     Path(result).write_text(json.dumps(found), encoding="utf-8")
     window.destroy()
 
@@ -188,15 +259,20 @@ def main() -> int:
         return 1
     try:
         budget = Budget(home)
+        budget.updates.clean()
         page = budget.refresh()
         api = Api(budget)
+        _take_first_click()
+        # text_select also stops pywebview making the whole page unselectable, which WebKit
+        # can carry into fields. The page says itself which controls shouldn't select.
         api._window = webview.create_window("Budgetier", url=page.as_uri(), js_api=api,
                                             width=1340, height=900, min_size=(900, 620),
-                                            background_color="#101A17")
+                                            background_color="#101A17", text_select=True)
         check = os.environ.get("BUDGETIER_SELF_CHECK")
         webview.start(_self_check if check else None, (api._window, check) if check else None,
                       gui="edgechromium" if sys.platform == "win32" else None,
                       private_mode=False, storage_path=str(home / "webview"))
+        api._finish()
     except DataError as e:
         log.error("saved data can't be read: %s", e)
         _alert(str(e))
@@ -211,4 +287,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    run()

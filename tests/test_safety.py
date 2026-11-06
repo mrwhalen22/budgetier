@@ -306,10 +306,15 @@ class Startup(Tmp):
     def run_main(self):
         with mock.patch.object(app, "app_home", return_value=self.dir), \
                 mock.patch.object(app, "_alert") as alert, \
-                mock.patch.object(app.webview, "create_window"), mock.patch.object(app.webview, "start"), \
+                mock.patch.object(app.webview, "create_window") as self.window, mock.patch.object(app.webview, "start"), \
                 mock.patch.object(app, "log"), mock.patch.object(app.logging, "basicConfig"), \
                 mock.patch.object(app.logging.handlers, "RotatingFileHandler"):
             return app.main(), alert
+
+    def test_the_whole_page_is_not_made_unselectable(self):
+        """pywebview does that by default, and WebKit can carry it into text fields."""
+        self.run_main()
+        self.assertIs(self.window.call_args[1]["text_select"], True)
 
     def test_a_second_copy_says_so(self):
         lock = storage.hold_lock(self.dir)
