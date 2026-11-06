@@ -1,3 +1,4 @@
+import re
 import unittest
 from datetime import date
 
@@ -5,7 +6,40 @@ from budgetier import analyze
 from tests.support import ACCOUNTS, Tmp, row
 
 
+class SingleEdits(unittest.TestCase):
+    ROWS = [row("card", 1, "COFFEE  SHOP", -500), row("card", 1, "coffee shop", -500), row("card", 2, "COFFEE SHOP", -500)]
+
+    def test_an_edit_beats_a_rule_for_that_row_alone(self):
+        key = analyze.edit_key(date(2026, 1, 2), "card", -500, "COFFEE SHOP", 0)
+        rules = [(re.compile("COFFEE"), "Dining", "Cafe")]
+        out = analyze.classify(self.ROWS, ACCOUNTS, rules, {key: {"category": "Gifts", "merchant": "Birthday"}})
+        self.assertEqual([(r["category"], r["merchant"], r["edited"]) for r in out],
+                         [("Dining", "Cafe", False), ("Dining", "Cafe", False), ("Gifts", "Birthday", True)])
+
+    def test_identical_rows_can_be_told_apart(self):
+        keys = analyze.edit_keys(self.ROWS)
+        self.assertEqual(len(set(keys)), 3)
+        out = analyze.classify(self.ROWS, ACCOUNTS, [], {keys[1]: {"category": "Gifts"}})
+        self.assertEqual([r["category"] == "Gifts" for r in out], [False, True, False])
+
+    def test_an_edit_can_say_a_row_is_a_transfer(self):
+        keys = analyze.edit_keys(self.ROWS)
+        self.assertEqual(analyze.classify(self.ROWS, ACCOUNTS, [], {keys[0]: {"category": "Transfer"}})[0]["kind"], "transfer")
+
+    def test_an_edited_row_isnt_claimed_as_the_other_half_of_a_transfer(self):
+        rows = [row("chk", 1, "ONLINE TRANSFER", -500), row("sav", 1, "DEPOSIT", 500)]
+        key = analyze.edit_keys(rows)[1]
+        out = analyze.classify(rows, ACCOUNTS, [], {key: {"category": "Income"}})
+        self.assertEqual((out[1]["kind"], out[1]["matched"]), ("income", False))
+
+
 class Classify(unittest.TestCase):
+    def test_a_bill_records_the_range_it_has_been(self):
+        rows = [row("card", 3, "NETFLIX", -cents, month=m) for m, cents in ((1, -1), (2, -1), (3, -1))]
+        rows = [{**r, "cents": c} for r, c in zip(rows, (-1500, -1500, -1700))]
+        found = analyze.find_recurring(analyze.classify(rows, ACCOUNTS, []))[0]
+        self.assertEqual((found["low"], found["high"]), (15.0, 17.0))
+
     def kinds(self, rows, rules=()):
         return [(r["kind"], r["category"]) for r in analyze.classify(rows, ACCOUNTS, list(rules))]
 
@@ -106,6 +140,23 @@ class Classify(unittest.TestCase):
         out = analyze.classify([row("card", 1, "PAYMENT THANK YOU", 50000),
                                 row("chk", 8, "CHASE CREDIT CRD EPAY", -50000)], ACCOUNTS, [])
         self.assertTrue(all(r["matched"] for r in out))
+
+    def test_a_card_payment_has_a_plain_name_on_the_card(self):
+        for text in ("AUTOMATIC PAYMENT - THANK YOU", "PAYMENT RECEIVED THANK YOU", "AUTOPAY 8841"):
+            out = analyze.classify([row("card", 1, text, 50000)], ACCOUNTS, [])
+            self.assertEqual((out[0]["merchant"], out[0]["kind"]), ("Card payment", "transfer"), text)
+
+    def test_the_bank_side_of_a_card_payment_still_says_which_card(self):
+        out = analyze.classify([row("chk", 1, "CHASE CREDIT CRD EPAY", -50000)], ACCOUNTS, [])
+        self.assertEqual(out[0]["merchant"], "Chase")
+
+    def test_your_rule_names_a_card_payment_over_the_plain_name(self):
+        rules = [(re.compile("AUTOPAY"), "Transfer", "Sapphire")]
+        self.assertEqual(analyze.classify([row("card", 1, "AUTOPAY 8841", 50000)], ACCOUNTS, rules)[0]["merchant"], "Sapphire")
+
+    def test_a_purchase_refund_on_a_card_keeps_its_name(self):
+        out = analyze.classify([row("card", 1, "KROGER #123", 500)], ACCOUNTS, [])
+        self.assertEqual(out[0]["merchant"], "Kroger")
 
     def test_income_words_never_apply_to_money_out(self):
         out = self.kinds([row("chk", 1, "GUSTO BISTRO", -3000)])

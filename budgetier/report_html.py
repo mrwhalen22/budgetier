@@ -50,7 +50,7 @@ def build_data(rows, accounts, recurring, checks, imports) -> dict:
         "accountCount": len(account_ids),
         "categories": categories,
         "txns": [[r["date"].isoformat(), index[r["account"]], r["description"], r["merchant"],
-                  r["category"], r["kind"], r["cents"] / 100] for r in rows],
+                  r["category"], r["kind"], r["cents"] / 100, *([1] if r.get("edited") else [])] for r in rows],
         "recurring": [{**e, "account": accounts[e["account"]]["name"]} for e in recurring],
         "checks": checks,
         "imports": [{**i, "key": i.get("stored") or i["file"], "account": accounts[i["account"]]["name"]}

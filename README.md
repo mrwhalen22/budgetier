@@ -28,9 +28,10 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 - **Add files** opens a file picker for CSV exports and Synchrony PDFs. Date ranges can
   overlap. You review each file before anything is saved, and your original files stay
   where they are.
-- **Rules** lists merchants that need a category. Choose **Categorize**, or select any row
-  on the Transactions tab, to give it a name and category. Rules apply to all your
-  history and to future imports.
+- **Rules** lists merchants that need a category. Choose **Categorize** and work down the
+  list with **Save and next**, or select any row on the Transactions tab to give it a name
+  and category. Rules apply to all your history and to future imports. To change one
+  transaction and nothing else, select its row and choose **Just this transaction**.
 - **Budgets** sets a monthly target for a category, as a dollar amount or a percent of
   income, and shows what's left. A percent target follows each month's income. While a
   month is still in progress it uses the average of the last 3 complete months instead,

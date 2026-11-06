@@ -176,9 +176,9 @@ details.acct label:hover { background: var(--hover); }
 .card h2 + .chart, .card h2 + .scroll { margin-top: var(--space-3); }
 .card > p + p { margin-top: var(--space-2); }
 .tile { padding: var(--space-4) var(--space-5); }
-.tile .k { font-size: var(--text-sm); font-weight: 500; color: var(--ink-2); }
-.tile .v { font: 600 var(--text-2xl)/1.2 var(--display); letter-spacing: -.02em; margin-top: var(--space-1); font-variant-numeric: tabular-nums; }
-.tile .s { font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-1); }
+.tile .k, .now .k { font-size: var(--text-sm); font-weight: 500; color: var(--ink-2); }
+.tile .v, .now .v { font: 600 var(--text-2xl)/1.2 var(--display); letter-spacing: -.02em; margin-top: var(--space-1); font-variant-numeric: tabular-nums; }
+.tile .s, .now .s { font-size: var(--text-xs); color: var(--muted); margin-top: var(--space-1); }
 .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: var(--space-4); margin-bottom: var(--space-4); }
 .tiles:empty { display: none; }
 .tile:only-child { max-width: 340px; }
@@ -233,11 +233,12 @@ details.banner:not([open]) .open::after { content: "Show"; }
 table { border-collapse: collapse; width: 100%; font-size: var(--text-sm); }
 th { text-align: left; font-size: var(--text-xs); font-weight: 500; color: var(--muted); padding: var(--space-2) var(--space-3); white-space: nowrap; border-bottom: 1px solid var(--line); }
 th.num { text-align: right; }
-th[data-sort] { cursor: pointer; user-select: none; }
-th[data-sort]:hover { color: var(--ink); }
+th button { all: unset; cursor: pointer; }
+th button:hover { color: var(--ink); }
+th button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 td { padding: var(--space-2) var(--space-3); border-bottom: 1px solid var(--line); }
 td.num { font-weight: 500; }
-.link { cursor: pointer; }
+.link, body.in-app tr[data-tx] { cursor: pointer; }
 td.missed { color: var(--bad); font-weight: 600; }
 tbody tr:last-child td { border-bottom: 0; }
 tbody tr:hover td { background: var(--hover); }
@@ -326,12 +327,13 @@ main.enter > * { animation: enter .26s ease both; }
 .flow { grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: var(--space-3); }
 .flow-bar { display: flex; gap: 3px; height: 8px; }
 .flow-bar span { border-radius: var(--radius-full); min-width: 2px; }
-.flow-bar .spent { background: var(--spending); }
+.flow-bar .spent { background: var(--accent); }
 .flow-bar .kept { background: var(--income); }
 .flow-key { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px var(--space-4); margin-top: var(--space-2); font-size: var(--text-sm); color: var(--ink-2); }
 .flow-key b { font-weight: 600; font-variant-numeric: tabular-nums; }
-.flow-key .a { color: var(--bad); }
 .flow-key .b { color: var(--good); }
+.now-head { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; justify-content: space-between; }
+.now-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--space-4); margin-top: var(--space-3); }
 .lead, .charts { display: grid; gap: var(--space-4); margin-bottom: var(--space-4); grid-template-columns: minmax(0, 1fr); }
 .lead > *, .charts > .card { margin-bottom: 0; }
 .two, .split { display: grid; gap: var(--space-4); grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); align-items: start; }
@@ -342,7 +344,7 @@ main.enter > * { animation: enter .26s ease both; }
 .chart svg { width: 100%; }
 .chart text { fill: var(--muted); font: var(--text-xs) var(--body); font-variant-numeric: tabular-nums; }
 .hit { fill: transparent; }
-.hit:hover { fill: var(--hover); }
+.hit:hover, .hit.on { fill: var(--hover); }
 .hbar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 1px var(--space-3); padding: var(--space-2); margin: 0 calc(-1 * var(--space-2)); border-radius: var(--radius-md); cursor: pointer; }
 .hbar:hover { background: var(--hover); }
 .hbar .name { display: flex; align-items: center; gap: var(--space-2); min-width: 0; font-weight: 500; }
@@ -424,10 +426,15 @@ main.enter > * { animation: enter .26s ease both; }
   #tx th:nth-child(3), #tx td:nth-child(3), #tx th:nth-child(4), #tx td:nth-child(4), #tx .mono { display: none; }
   #tx th, #tx td { padding-left: var(--space-1); padding-right: var(--space-1); }
 }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.skip { position: fixed; z-index: 50; left: var(--space-2); top: var(--space-2); transform: translateY(-200%); }
+.skip:focus { transform: none; }
+main:focus { outline: none; }
 [hidden] { display: none; }
 </style>
 </head>
 <body>
+<button class="btn skip" id="skip" type="button">Skip to content</button>
 <div class="app">
   <aside class="side">
     <div class="brand"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="12" width="4.5" height="9" rx="1.5"/><rect x="9.75" y="7" width="4.5" height="14" rx="1.5"/><rect x="16.5" y="3" width="4.5" height="18" rx="1.5"/></svg>Budgetier</div>
@@ -447,17 +454,18 @@ main.enter > * { animation: enter .26s ease both; }
         <details class="acct" id="acctBox"><summary id="acctLabel">All accounts</summary><div id="acctList"></div></details>
       </div>
     </header>
-    <main id="view"></main>
+    <main id="view" tabindex="-1"></main>
   </div>
 </div>
 <div id="tip"></div>
 <div id="toast" role="status"></div>
-<dialog id="modal"></dialog>
+<div id="say" class="sr" aria-live="polite"></div>
+<dialog id="modal" aria-labelledby="modalTitle"></dialog>
 <script id="data" type="application/json">/*__DATA__*/null</script>
 <script>
 "use strict";
 const D = JSON.parse(document.getElementById("data").textContent);
-const TX = D.txns.map((t, i) => ({i, date: t[0], month: t[0].slice(0, 7), acct: t[1], desc: t[2], merchant: t[3], cat: t[4], kind: t[5], amt: t[6]}));
+const TX = D.txns.map((t, i) => ({i, date: t[0], month: t[0].slice(0, 7), acct: t[1], desc: t[2], merchant: t[3], cat: t[4], kind: t[5], amt: t[6], edited: !!t[7]}));
 const ACCT = {}; D.accounts.forEach(a => ACCT[a.index] = a);
 const TABS = ["Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help"];
 const icon = p => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
@@ -479,7 +487,7 @@ const PLUS = '<path d="M12 5v14"/><path d="M5 12h14"/>';
 const FOLDER = '<path d="M3.5 7.5a2 2 0 0 1 2-2h4l2 2.5h7a2 2 0 0 1 2 2v7.5a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/>';
 const SHEET = '<rect x="4" y="3.5" width="16" height="17" rx="2"/><path d="M4 9.5h16"/><path d="M4 15h16"/><path d="M10 9.5v11"/>';
 const INFO = '<circle cx="12" cy="12" r="8.5"/><path d="M12 11v5"/><path d="M12 8h.01"/>';
-const S = {tab: "Overview", range: "12", accts: new Set(D.accounts.map(a => a.index)), txq: "", txcat: "", txkind: "", txsort: "date", txdir: -1, txshow: 200, recAll: false};
+const S = {tab: "Overview", range: "12", accts: new Set(D.accounts.map(a => a.index)), txq: "", txcat: "", txkind: "", txsort: "date", txdir: -1, txshow: 200, recAll: false, largeAll: false};
 const CSS = n => `var(--${n})`;
 const CAT_COLOR = {}; D.categories.slice(0, 8).forEach((c, i) => CAT_COLOR[c] = CSS("c" + i));
 const color = c => CAT_COLOR[c] || CSS("other");
@@ -488,6 +496,7 @@ const esc = s => String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">"
 const money = (n, d = 0) => (n < 0 ? "-" : "") + "$" + Math.abs(n).toLocaleString("en-US", {minimumFractionDigits: d, maximumFractionDigits: d});
 const cents = n => money(n, 2);
 const tone = n => n < 0 ? "neg" : n > 0 ? "pos" : "";
+const gain = n => n > 0 ? "pos" : "";  // ordinary spending isn't a problem, so it isn't red
 const short = n => { const a = Math.abs(n); return (n < 0 ? "-$" : "$") + (a >= 1000 ? (a / 1000).toFixed(1).replace(/\.0$/, "") + "k" : Math.round(a)); };
 const mName = (m, y = true) => new Date(+m.slice(0, 4), +m.slice(5) - 1, 1).toLocaleString("en-US", y ? {month: "short", year: "numeric"} : {month: "short"});
 const spanName = (a, b) => `${mName(a.slice(0, 7))} to ${mName(b.slice(0, 7))}`;
@@ -545,11 +554,32 @@ function showTip(e, title, rows) {
   tip.style.top = Math.min(e.clientY + 14, innerHeight - h - 8) + "px";
 }
 const hideTip = () => tip.style.display = "none";
-function bindTips(el, tips) {
-  el.querySelectorAll("[data-tip]").forEach(n => {
+function bindTips(el, tips, say) {
+  const hits = [...el.querySelectorAll("[data-tip]")], svg = el.querySelector("svg");
+  const mark = on => hits.forEach(h => h.classList.toggle("on", h === on));
+  let at = -1;
+  hits.forEach(n => {
     n.addEventListener("mousemove", e => { const t = tips[n.dataset.tip]; showTip(e, t.title, t.rows); });
     n.addEventListener("mouseleave", hideTip);
   });
+  // One stop on the Tab key however many months there are; the arrows walk through them.
+  svg.addEventListener("keydown", e => {
+    const move = {ArrowRight: 1, ArrowLeft: -1}[e.key];
+    if (!move) return;
+    e.preventDefault();
+    at = at < 0 && move < 0 ? hits.length - 1 : Math.min(Math.max(at + move, 0), hits.length - 1);
+    const n = hits[at], t = tips[n.dataset.tip], r = n.getBoundingClientRect();
+    mark(n);
+    showTip({clientX: r.left + r.width / 2, clientY: r.top + 12}, t.title, t.rows);
+    document.getElementById("say").textContent = say(t);
+  });
+  svg.addEventListener("blur", () => { at = -1; mark(null); hideTip(); });
+}
+function drawChart(el, f, body, tips, spoken = t => t.rows) {
+  const say = t => `${t.title}: ${spoken(t).map(r => `${r.k} ${r.v}`).join(", ")}`;
+  const label = `Use the left and right arrow keys to read each month. ${Object.values(tips).map(say).join(". ")}`;
+  el.innerHTML = `<svg viewBox="0 0 ${f.W} ${f.H}" height="${f.H}" role="img" tabindex="0" aria-label="${esc(label)}">${f.g}${body}</svg>`;
+  bindTips(el, tips, say);
 }
 function niceMax(v) {
   if (v <= 0) return 1;
@@ -566,7 +596,7 @@ function frame(el, height, months, lo, hi) {
   const x = i => L + band * i;
   let g = "";
   for (let v = bottom; v <= top + tick / 2; v += tick) {
-    g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? CSS("axis") : CSS("grid")}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${short(v)}</text>`;
+    g += `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? CSS("line") : CSS("line-soft")}"/><text x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${short(v)}</text>`;
   }
   const every = Math.ceil(months.length / Math.max(1, Math.floor((W - L - R) / 62)));
   months.forEach((m, i) => { if (i % every === 0) g += `<text x="${x(i) + band / 2}" y="${H - 6}" text-anchor="middle">${mName(m, months.length <= 6 || m.endsWith("-01"))}</text>`; });
@@ -604,8 +634,7 @@ function bars(el, {months, series, stacked = false, height = 260}) {
     if (stacked) tips[i].rows.push({k: "Total", v: money(sum(series, s => s.values[i]))});
     hits += `<rect class="hit" data-tip="${i}" x="${f.x(i)}" y="${f.T}" width="${f.band}" height="${f.H - f.T - f.B}"/>`;
   });
-  el.innerHTML = `<svg viewBox="0 0 ${f.W} ${f.H}" height="${f.H}" role="img">${f.g}${marks}${hits}</svg>`;
-  bindTips(el, tips);
+  drawChart(el, f, marks + hits, tips, stacked ? t => t.rows.slice(-1) : undefined);
 }
 function lines(el, {months, series, height = 260}) {
   const all = series.flatMap(s => s.values.filter(v => v !== null));
@@ -627,13 +656,12 @@ function lines(el, {months, series, height = 260}) {
     tips[i] = {title: mName(m), rows: series.filter(s => s.values[i] !== null).map(s => ({k: s.name, v: money(s.values[i]), c: s.color}))};
     hits += `<rect class="hit" data-tip="${i}" x="${f.x(i)}" y="${f.T}" width="${f.band}" height="${f.H - f.T - f.B}"/>`;
   });
-  el.innerHTML = `<svg viewBox="0 0 ${f.W} ${f.H}" height="${f.H}" role="img">${f.g}${marks}${hits}</svg>`;
-  bindTips(el, tips);
+  drawChart(el, f, marks + hits, tips);
 }
 function hbars(items, fmt, barColor) {
   const max = Math.max(...items.map(i => i.value), 1), total = sum(items, i => i.value);
   return items.map(i => `<div class="hbar" role="button" tabindex="0" data-cat="${esc(i.cat || "")}" data-q="${esc(i.q || "")}"><div class="name">${i.color ? `<i style="background:${i.color}"></i>` : ""}<span title="${esc(i.name)}">${esc(i.name)}</span></div>
-    <div class="num"><span class="pct">${Math.round(i.value / total * 100)}%</span><span class="neg">${fmt(i.value)}</span></div>
+    <div class="num"><span class="pct">${Math.round(i.value / total * 100)}%</span><span>${fmt(i.value)}</span></div>
     <div class="track"><div class="fill" style="width:${Math.max(i.value / max * 100, .5)}%;background:${i.color || barColor}"></div></div></div>`).join("");
 }
 const mono = (name, c) => `<span class="mono" style="--m:${c}" aria-hidden="true">${esc(name.split(/\s+/).slice(0, 2).map(w => w[0] || "").join("").toUpperCase())}</span>`;
@@ -645,12 +673,16 @@ function drillDown(root) {
     Object.assign(S, {txcat: n.dataset.cat || "", txq: n.dataset.q || "", txkind: "", txshow: 200, tab: "Transactions"});
     render(true);
   }));
-  root.querySelectorAll(".hbar").forEach(n => n.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); n.click(); } }));
+  root.querySelectorAll(".hbar, .link").forEach(n => {
+    n.tabIndex = 0;
+    n.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); n.click(); } });
+  });
 }
 
 /* ---------- views ---------- */
 const V = document.getElementById("view");
-function tile(k, v, s, t = "") { return `<div class="tile"><div class="k">${esc(k)}</div><div class="v ${t}">${esc(v)}</div>${s ? `<div class="s">${esc(s)}</div>` : ""}</div>`; }
+const stat = (k, v, s, t = "") => `<div class="k">${esc(k)}</div><div class="v ${t}">${esc(v)}</div>${s ? `<div class="s">${esc(s)}</div>` : ""}`;
+function tile(k, v, s, t = "") { return `<div class="tile">${stat(k, v, s, t)}</div>`; }
 function checksHtml(list) { return list.map(c => `<div class="banner ${c.level === "warning" ? "warn" : "info"}">${icon(c.level === "warning" ? ALERT : INFO)}<div><b>${esc(c.title)}</b>${esc(c.detail)}</div></div>`).join(""); }
 function noticeBar(list) {
   if (!list.length) return "";
@@ -667,13 +699,33 @@ function owedTile() {
   const cards = D.accounts.filter(a => a.type === "credit"), known = cards.filter(a => a.balance !== null);
   if (!known.length) return "";
   const owed = sum(known, a => a.balance), missing = cards.length - known.length;
-  return tile("Owed on cards", money(owed), missing ? `${missing} card${missing === 1 ? "" : "s"} not set` : "calculated from what you entered", tone(owed));
+  return tile("Owed on cards", money(owed), missing ? `${missing} card${missing === 1 ? "" : "s"} not set` : "calculated from what you entered", gain(owed));
 }
 function activeRecurring() { return D.recurring.filter(r => r.active && r.kind === "expense"); }
 function periodNote(rows) {
   if (rows.length === 1) return "";
   const n = completed(rows).length, early = rows.filter(r => !hasBills(r.month)).length;
   return `average of ${n} complete month${n === 1 ? "" : "s"}` + (early ? `; ${early} earlier skipped, no checking history` : "");
+}
+
+// What the charts' averages can't say: how the newest month is going so far.
+function thisMonth() {
+  if (rangeMonths().length === 1) return "";
+  const month = MONTHS[MONTHS.length - 1], last = MONTHS[MONTHS.length - 2], open = month === D.partialMonth;
+  const mine = TX.filter(t => S.accts.has(t.acct)), day = D.end.slice(8), [now] = monthly(mine, [month]);
+  const stats = [stat(open ? "Spent so far" : "Spent", money(now.spending), ""), stat(open ? "Income so far" : "Income", money(now.income), "", gain(now.income))];
+  if (open && last && hasBills(last)) {
+    const [then] = monthly(mine.filter(t => t.date.slice(8) <= day), [last]), gap = now.spending - then.spending;
+    stats.push(stat(`Compared with ${mName(last, false)}`, `${money(Math.abs(gap))} ${gap > 0 ? "more" : "less"}`, `by day ${Number(day)} of the month`));
+  }
+  const due = open ? activeRecurring().filter(r => r.next > D.end && r.next.startsWith(month)) : [];
+  if (due.length) stats.push(stat("Bills still to come", money(sum(due, r => r.amount)), `${due.length} expected this month`));
+  const plan = B.months.find(m => m.month === month);
+  if (plan && B.targets.length && S.accts.size === D.accounts.length) {
+    const left = sum(B.targets, t => (plan.targets[t.category] || 0) - (plan.spent[t.category] || 0));
+    stats.push(stat(left < 0 ? "Over budget" : "Left in budgets", money(Math.abs(left)), `${B.targets.length} budget${B.targets.length === 1 ? "" : "s"}`, left < 0 ? "neg" : "pos"));
+  }
+  return `<section class="card now"><div class="now-head"><div><h2>${esc(mName(month))}${open ? " so far" : ""}</h2><p class="dim">Data through ${esc(dName(D.end))}.</p></div><button class="btn small" data-act="see-month" data-month="${month}">See this month</button></div><div class="now-stats">${stats.map(s => `<div>${s}</div>`).join("")}</div></section>`;
 }
 
 function overview() {
@@ -686,20 +738,20 @@ function overview() {
   const warns = D.checks.filter(c => c.level === "warning");
   const peak = Math.max(...rows.map(r => r.spending), 1), spent = inc > 0 ? Math.min(sp / inc, 1) : 1, kept = inc - sp;
   const spark = rows.slice(-18).map(r => `<i class="${months_.has(r.month) ? "" : "off"}" style="height:${Math.max(r.spending / peak * 100, 2).toFixed(1)}%"></i>`).join("");
-  V.innerHTML = `${noticeBar(warns)}
+  V.innerHTML = `${noticeBar(warns)}${thisMonth()}
     <div class="lead"><section class="hero">
       <div><div class="k">${avg ? avg + "spending" : "Spending"}</div><div class="big">${money(sp)}</div>
         <div class="s">${esc((est > 0 ? `Includes ${money(est)} estimated from card payments. ` : "") + (note ? note[0].toUpperCase() + note.slice(1) + "." : ""))}</div></div>
       <div class="spark" aria-hidden="true">${one ? "" : spark}</div>
       <div class="flow">
         <div class="flow-bar"><span class="spent" style="flex:${spent.toFixed(3)}"></span>${kept > 0 ? `<span class="kept" style="flex:${(1 - spent).toFixed(3)}"></span>` : ""}</div>
-        <div class="flow-key"><span>Of every dollar earned</span><span><b class="a">${Math.round(spent * 100)}% spent</b>${kept > 0 ? ` &nbsp;·&nbsp; <b class="b">${100 - Math.round(spent * 100)}% kept</b>` : ""}</span></div>
+        <div class="flow-key"><span>Of every dollar earned</span><span><b class="${kept < 0 ? "neg" : ""}">${Math.round(spent * 100)}% spent</b>${kept > 0 ? ` &nbsp;·&nbsp; <b class="b">${100 - Math.round(spent * 100)}% kept</b>` : ""}</span></div>
       </div>
     </section>
     <div class="tiles">
       ${tile(avg ? avg + "income" : "Income", money(inc), one ? "" : "same months as spending", "pos")}
       ${tile("Savings rate", rate === null ? "n/a" : Math.round(rate * 100) + "%", money(inc - sp) + (one ? " kept" : " kept per month"), tone(inc - sp))}
-      ${tile("Recurring bills", money(rec) + "/mo", activeRecurring().length + " active", "neg")}
+      ${tile("Recurring bills", money(rec) + "/mo", activeRecurring().length + " active")}
       ${owedTile()}
     </div></div>
     <div class="split">
@@ -710,7 +762,7 @@ function overview() {
     {name: "Income", color: CSS("income"), values: rows.map(r => r.income)},
     {name: "Spending", color: CSS("spending"), values: rows.map(r => r.spending)}]});
   const cats = catTotals(rows).filter(c => c[1] > 0);
-  document.getElementById("cats").innerHTML = cats.length ? hbars(cats.slice(0, 8).map(([name, value]) => ({name, value, cat: name, color: color(name)})), money, CSS("spending")) : '<p class="empty">No spending in this period.</p>';
+  document.getElementById("cats").innerHTML = cats.length ? hbars(cats.slice(0, 8).map(([name, value]) => ({name, value, cat: name, color: color(name)})), money, CSS("accent")) : '<p class="empty">No spending in this period.</p>';
   drillDown(V);
 }
 
@@ -724,8 +776,8 @@ function spending() {
   const peak = Math.max(...rowsShown.flatMap(r => Object.values(r.cats)), 1);
   const body = cats.map(([c, total]) => `<tr><td class="link" data-cat="${esc(c)}">${chip(c)}</td>${rowsShown.map(r => {
       const v = r.cats[c] || 0, a = Math.sqrt(Math.max(v, 0) / peak) * 30;
-      return `<td class="num cell ${tone(-v)}" data-cat="${esc(c)}" style="background:color-mix(in srgb, var(--spending) ${a.toFixed(0)}%, transparent)">${v ? short(v) : ""}</td>`; }).join("")}
-    <td class="num ${tone(-total)}"><b>${money(total)}</b></td></tr>`).join("");
+      return `<td class="num cell ${gain(-v)}" data-cat="${esc(c)}" style="background:color-mix(in srgb, var(--accent) ${a.toFixed(0)}%, transparent)">${v ? short(v) : ""}</td>`; }).join("")}
+    <td class="num ${gain(-total)}"><b>${money(total)}</b></td></tr>`).join("");
   V.innerHTML = `<div class="card"><h2>Spending by category</h2>${legend(series)}<div class="chart" id="c1"></div></div>
     <div class="card"><h2>Category by month</h2><p class="sub">Darker means more spent${months.length > 12 ? "; showing the latest 12 months, totals cover the full period" : ""}. Refunds are netted out.</p>
     <div class="scroll"><table class="heat"><thead><tr><th>Category</th>${shown.map(m => `<th class="num">${mName(m, false)}</th>`).join("")}<th class="num">Total</th></tr></thead><tbody>${body}</tbody></table></div></div>`;
@@ -740,10 +792,10 @@ function recurring() {
   const row = r => {
     const change = r.price_change ? `<span class="${(r.price_change > 0) === (r.kind === "expense") ? "up" : "down"}">${r.price_change > 0 ? "▲ up" : "▼ down"} ${cents(Math.abs(r.price_change))}</span>` : "";
     return `<tr class="link" data-q="${esc(r.merchant)}"><td><div class="who">${mono(r.merchant, color(r.category))}<span>${esc(r.merchant)}</span>${r.active ? "" : '<span class="badge">stopped</span>'}</div></td><td>${chip(r.category)}</td><td class="dim">${r.cadence}</td>
-      <td class="num ${r.kind === "income" ? "pos" : "neg"}">${r.variable ? "~" : ""}${cents(r.amount)}</td><td class="num ${r.kind === "income" ? "pos" : "neg"}">${cents(r.per_month)}</td><td>${change}</td><td class="dim">${dName(r.last)}</td><td class="dim">${r.active ? dName(r.next) : ""}</td><td class="dim clip">${esc(r.account)}</td></tr>`; };
+      <td class="num ${r.kind === "income" ? "pos" : ""}">${r.variable ? "~" : ""}${cents(r.amount)}</td><td class="num ${r.kind === "income" ? "pos" : ""}">${cents(r.per_month)}</td><td>${change}</td><td class="dim">${dName(r.last)}</td><td class="dim">${r.active ? dName(r.next) : ""}</td><td class="dim clip">${esc(r.account)}</td></tr>`; };
   const table = rows => rows.length ? `<div class="scroll"><table><thead><tr><th>Name</th><th>Category</th><th>Every</th><th class="num">Amount</th><th class="num">Monthly</th><th>Change</th><th>Last</th><th>Next</th><th>Account</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table></div>` : '<p class="empty">None found.</p>';
-  V.innerHTML = `<div class="tiles">${tile("Recurring bills", money(sum(bills, r => r.per_month)) + "/mo", money(sum(bills, r => r.per_month) * 12) + " a year", "neg")}
-      ${tile("Subscriptions", money(sum(subs, r => r.per_month)) + "/mo", subs.length + " active", "neg")}
+  V.innerHTML = `<div class="tiles">${tile("Recurring bills", money(sum(bills, r => r.per_month)) + "/mo", money(sum(bills, r => r.per_month) * 12) + " a year")}
+      ${tile("Subscriptions", money(sum(subs, r => r.per_month)) + "/mo", subs.length + " active")}
       ${tile("Regular income", money(sum(income, r => r.per_month)) + "/mo", income.length + " source" + (income.length === 1 ? "" : "s"), "pos")}</div>
     <div class="controls"><label class="f"><input type="checkbox" id="recAll" ${S.recAll ? "checked" : ""}> Include stopped payments</label></div>
     <div class="card"><h2>Bills and subscriptions</h2><p class="sub">~ means the amount varies. Found from the full history, so the period filter doesn't apply here.</p>${table(list.filter(r => r.kind === "expense"))}</div>
@@ -752,14 +804,20 @@ function recurring() {
   drillDown(V);
 }
 
+// Rent would fill the list, and bills are already on Recurring. A one-off from a merchant
+// that also bills you stays, because its amount is outside what the bill has ever been.
+const isBill = t => D.recurring.some(r => r.kind === "expense" && r.merchant === t.merchant && -t.amt >= r.low && -t.amt <= r.high);
 function largest() {
-  const tx = selected().filter(t => t.kind === "expense"), top = tx.slice().sort((a, b) => a.amt - b.amt).slice(0, 25);
+  const tx = selected().filter(t => t.kind === "expense"), shown = S.largeAll ? tx : tx.filter(t => !isBill(t));
+  const top = shown.slice().sort((a, b) => a.amt - b.amt).slice(0, 25), hidden = tx.length - shown.length;
   const by = {};
   tx.forEach(t => { const m = by[t.merchant] = by[t.merchant] || {name: t.merchant, value: 0, n: 0, q: t.merchant}; m.value -= t.amt; m.n++; });
   const merchants = Object.values(by).sort((a, b) => b.value - a.value).slice(0, 15);
-  V.innerHTML = `<div class="two"><div class="card"><h2>Top merchants</h2><p class="sub">By total spent.</p>${merchants.length ? hbars(merchants, money, CSS("spending")) : '<p class="empty">Nothing in this period.</p>'}</div>
-    <div class="card"><h2>Largest single expenses</h2><p class="sub">The 25 biggest in this period.</p><div class="scroll"><table><thead><tr><th>Merchant</th><th>Date</th><th class="num">Amount</th></tr></thead><tbody>
-    ${top.map(t => `<tr title="${esc(t.desc)}"><td class="clip">${who(t.merchant, t.cat)}</td><td class="dim">${dName(t.date)}</td><td class="num neg">${cents(-t.amt)}</td></tr>`).join("")}</tbody></table></div></div></div>`;
+  V.innerHTML = `<div class="two"><div class="card"><h2>Top merchants</h2><p class="sub">By total spent.</p>${merchants.length ? hbars(merchants, money, CSS("accent")) : '<p class="empty">Nothing in this period.</p>'}</div>
+    <div class="card"><h2>Largest single expenses</h2><p class="sub">The 25 biggest in this period${S.largeAll || !hidden ? "" : ", leaving out regular bills"}.<span class="app-only"> Select one to change it.</span></p>
+    <div class="controls"><label class="f"><input type="checkbox" id="largeAll" ${S.largeAll ? "checked" : ""}> Include regular bills</label></div><div class="scroll"><table><thead><tr><th>Merchant</th><th>Date</th><th class="num">Amount</th></tr></thead><tbody>
+    ${top.map(t => `<tr title="${esc(t.desc)}" data-tx="${t.i}"${rowFocus()}><td class="clip">${who(t.merchant, t.cat)}</td><td class="dim">${dName(t.date)}</td><td class="num">${cents(-t.amt)}</td></tr>`).join("")}</tbody></table>${top.length ? "" : '<p class="empty">Nothing else in this period.</p>'}</div></div></div>`;
+  document.getElementById("largeAll").onchange = e => { S.largeAll = e.target.checked; render(); };
   drillDown(V);
 }
 
@@ -778,18 +836,19 @@ function savings() {
   V.innerHTML = `<div class="tiles">${tile("Kept this period", money(total), "income minus spending" + (scope.length < rows.length ? ", from " + mName(scope[0].month) : ""), tone(total))}
       ${tile("Savings rate", inc > 0 ? Math.round((inc - sp) / inc * 100) + "%" : "n/a", periodNote(rows) ? "complete months" : "", tone(inc - sp))}
       ${tile("Moved to savings and investing", money(moved), "net of withdrawals", tone(moved))}
-      ${held.length ? tile("Savings balance", money(sum(held, a => a.balance)), "as of latest export", tone(sum(held, a => a.balance))) : ""}</div>
+      ${held.length ? tile("Savings balance", money(sum(held, a => a.balance)), "latest known balance", tone(sum(held, a => a.balance))) : ""}</div>
     <div class="charts pair"><div class="card"><h2>Kept each month</h2><p class="sub">Income minus spending. Red months spent more than came in.${scope.length < rows.length ? " Months before your checking history are left out." : ""}</p><div class="chart" id="c1"></div></div>
     <div class="card"><h2>Running total kept</h2><div class="chart" id="c2"></div></div></div>
     ${balSeries.length ? `<div class="card"><h2>Account balances</h2><p class="sub">Month-end balances. Exports supply some; the rest are calculated from a balance you entered.</p>${legend(balSeries)}<div class="chart" id="c3"></div></div>` : ""}`;
-  bars(document.getElementById("c1"), {months: scope.map(r => r.month), series: [{name: "Kept", colorFor: v => v < 0 ? CSS("neg") : CSS("income"), values: nets}]});
-  lines(document.getElementById("c2"), {months: scope.map(r => r.month), series: [{name: "Running total", color: CSS(run < 0 ? "neg" : "income"), values: cumulative}]});
+  bars(document.getElementById("c1"), {months: scope.map(r => r.month), series: [{name: "Kept", colorFor: v => v < 0 ? CSS("bad") : CSS("income"), values: nets}]});
+  lines(document.getElementById("c2"), {months: scope.map(r => r.month), series: [{name: "Running total", color: CSS(run < 0 ? "bad" : "income"), values: cumulative}]});
   if (balSeries.length) lines(document.getElementById("c3"), {months, series: balSeries});
 }
 
 function accounts() {
   const banked = D.accounts.filter(a => a.type !== "credit" && a.balance !== null), cash = sum(banked, a => a.balance);
   const net = cash + sum(D.accounts.filter(a => a.type === "credit" && a.balance !== null), a => a.balance);
+  const notes = D.checks.filter(c => c.level !== "warning");  // warnings are in the bar above
   V.innerHTML = `<div class="tiles">${banked.length ? tile("Cash and savings", money(cash), `${banked.length} of ${D.accounts.filter(a => a.type !== "credit").length} accounts`, tone(cash)) : ""}
       ${owedTile()}${banked.length && owedTile() ? tile("Net of cards", money(net), "cash and savings minus cards", tone(net)) : ""}</div>
     <div class="tools app-only">
@@ -799,38 +858,47 @@ function accounts() {
     ${noticeBar(D.checks.filter(c => c.level === "warning"))}
     ${syncCard()}
     <div class="accounts-grid"><div class="card"><h2>Accounts</h2><div class="scroll"><table><thead><tr><th>Account</th><th>Type</th><th>History</th><th class="num">Rows</th><th class="num">Latest balance</th><th class="app-only"></th></tr></thead><tbody>
-    ${D.accounts.map(a => `<tr><td><div class="who">${mono(a.bank, CSS(a.type === "credit" ? "c1" : a.type === "savings" ? "c2" : "c0"))}<span>${esc(a.name)}</span></div></td><td class="dim">${a.type === "credit" ? "Credit card" : a.type[0].toUpperCase() + a.type.slice(1)}</td><td class="dim">${a.first ? spanName(a.first, a.last) : "No recent activity"}</td><td class="num">${a.count.toLocaleString()}</td><td class="num ${a.balance === null ? "" : tone(a.balance)}">${a.balance === null ? '<span class="dim">not set</span>' : cents(a.balance)}${a.calculated ? `<div class="dim">${a.live ? "from your bank" : "calculated"}, ${dName(a.balanceAsOf)}</div>` : ""}</td><td class="app-only"><div class="row-actions"><button class="btn small" data-act="edit" data-id="${esc(a.id)}">Edit</button><button class="btn small danger-text" data-act="drop-account" data-id="${esc(a.id)}">Remove</button></div></td></tr>`).join("")}</tbody></table></div></div>
+    ${D.accounts.map(a => `<tr><td><div class="who">${mono(a.bank, CSS(a.type === "credit" ? "c1" : a.type === "savings" ? "c2" : "c0"))}<span>${esc(a.name)}</span></div></td><td class="dim">${a.type === "credit" ? "Credit card" : a.type[0].toUpperCase() + a.type.slice(1)}</td><td class="dim">${a.first ? spanName(a.first, a.last) : "No recent activity"}</td><td class="num">${a.count.toLocaleString()}</td><td class="num ${a.balance === null ? "" : a.type === "credit" ? gain(a.balance) : tone(a.balance)}">${a.balance === null ? '<span class="dim">not set</span>' : cents(a.balance)}${a.calculated ? `<div class="dim">${a.live ? "from your bank" : "calculated"}, ${dName(a.balanceAsOf)}</div>` : ""}</td><td class="app-only"><div class="row-actions"><button class="btn small" data-act="edit" data-id="${esc(a.id)}">Edit</button><button class="btn small danger-text" data-act="drop-account" data-id="${esc(a.id)}">Remove</button></div></td></tr>`).join("")}</tbody></table></div></div>
     <div class="card"><h2>Recent imports</h2><div class="scroll"><table><thead><tr><th>File</th><th>Account</th><th>Covers</th><th class="num">New</th><th class="num">Had</th><th class="app-only"></th></tr></thead><tbody>
     ${D.imports.map(i => `<tr><td class="clip" title="${esc(i.file)}">${esc(i.file)}</td><td class="dim clip">${esc(i.account)}</td><td class="dim">${spanName(i.first, i.last)}</td><td class="num">${i.added}</td><td class="num">${i.duplicates}</td><td class="app-only"><div class="row-actions"><button class="btn small danger-text" data-act="drop-import" data-id="${esc(i.key)}" data-file="${esc(i.file)}" data-rows="${esc(i.added)}">Remove</button></div></td></tr>`).join("")}</tbody></table></div></div></div>
-    ${D.checks.length ? `<div class="card"><h2>Worth checking</h2><p class="sub">Things that could make the numbers wrong.</p>${checksHtml(D.checks)}</div>` : ""}`;
+    ${notes.length ? `<div class="card"><h2>Worth checking</h2><p class="sub">Things that could make the numbers wrong.</p>${checksHtml(notes)}</div>` : ""}`;
 }
 
+const rowFocus = () => document.body.classList.contains("in-app") ? ' tabindex="0"' : "";
 function transactions() {
-  V.innerHTML = `<div class="card"><div class="controls"><input type="search" id="q" placeholder="Search merchant or description" value="${esc(S.txq)}">
-      <select id="cat"><option value="">All categories</option><option${S.txcat === "Transfer" ? " selected" : ""}>Transfer</option><option${S.txcat === "Savings & Investing" ? " selected" : ""}>Savings &amp; Investing</option><option${S.txcat === "Income" ? " selected" : ""}>Income</option>
+  V.innerHTML = `<div class="card"><div class="controls"><input type="search" id="q" aria-label="Search transactions" placeholder="Search merchant or description" value="${esc(S.txq)}">
+      <select id="cat" aria-label="Category"><option value="">All categories</option><option${S.txcat === "Transfer" ? " selected" : ""}>Transfer</option><option${S.txcat === "Savings & Investing" ? " selected" : ""}>Savings &amp; Investing</option><option${S.txcat === "Income" ? " selected" : ""}>Income</option>
       ${D.categories.filter(c => c !== "Income").map(c => `<option${S.txcat === c ? " selected" : ""}>${esc(c)}</option>`).join("")}</select>
-      <select id="kind">${[["", "All kinds"], ["expense", "Expenses"], ["refund", "Refunds"], ["estimate", "Estimated"], ["income", "Income"], ["transfer", "Transfers"]].map(([v, n]) => `<option value="${v}"${S.txkind === v ? " selected" : ""}>${n}</option>`).join("")}</select>
-      </div><div class="dim" id="count"></div><div class="scroll" id="tx"></div></div>`;
+      <select id="kind" aria-label="Kind">${[["", "All kinds"], ["expense", "Expenses"], ["refund", "Refunds"], ["estimate", "Estimated"], ["income", "Income"], ["transfer", "Transfers"]].map(([v, n]) => `<option value="${v}"${S.txkind === v ? " selected" : ""}>${n}</option>`).join("")}</select>
+      <button class="btn" id="clearTx" type="button">Clear filters</button>
+      </div><div class="dim" id="count"></div><p class="sub app-only">Select a row to change it, or everything like it.</p><div class="scroll" id="tx"></div></div>`;
   const q = document.getElementById("q");
   q.oninput = () => { S.txq = q.value; S.txshow = 200; txTable(); };
   document.getElementById("cat").onchange = e => { S.txcat = e.target.value; S.txshow = 200; txTable(); };
   document.getElementById("kind").onchange = e => { S.txkind = e.target.value; S.txshow = 200; txTable(); };
+  document.getElementById("clearTx").onclick = () => { Object.assign(S, {txq: "", txcat: "", txkind: "", txshow: 200}); transactions(); };
   txTable();
 }
 function txTable() {
   const q = S.txq.toLowerCase();
+  document.getElementById("clearTx").hidden = !(S.txq || S.txcat || S.txkind);
   const list = selected().filter(t => (!S.txcat || t.cat === S.txcat) && (!S.txkind || t.kind === S.txkind) && (!q || (t.desc + " " + t.merchant).toLowerCase().includes(q)));
   const key = {date: t => t.date, merchant: t => t.merchant.toLowerCase(), cat: t => t.cat, amt: t => t.amt, acct: t => ACCT[t.acct].name}[S.txsort];
   list.sort((a, b) => (key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0) * S.txdir);
   document.getElementById("count").textContent = `${list.length.toLocaleString()} transactions, net ${cents(sum(list, t => t.amt))}`;
-  const th = (k, n, c = "") => `<th data-sort="${k}" class="${c}">${n}${S.txsort === k ? (S.txdir > 0 ? " ▲" : " ▼") : ""}</th>`;
+  const th = (k, n, c = "") => {
+    const on = S.txsort === k;
+    return `<th class="${c}"${on ? ` aria-sort="${S.txdir > 0 ? "ascending" : "descending"}"` : ""}><button type="button" data-sort="${k}">${n}${on ? `<span aria-hidden="true">${S.txdir > 0 ? " ▲" : " ▼"}</span>` : ""}</button></th>`;
+  };
   const box = document.getElementById("tx");
   box.innerHTML = `<table><thead><tr>${th("date", "Date")}${th("merchant", "Merchant")}${th("cat", "Category")}${th("acct", "Account")}${th("amt", "Amount", "num")}</tr></thead><tbody>
-    ${list.slice(0, S.txshow).map(t => `<tr title="${esc(t.desc)}" data-tx="${t.i}"><td class="dim">${dName(t.date)}</td><td class="clip">${who(t.merchant, t.cat)}</td><td>${chip(t.cat)}</td><td class="dim clip">${esc(ACCT[t.acct].name)}</td><td class="num ${tone(t.amt)}">${t.amt > 0 ? "+" : ""}${cents(t.amt)}</td></tr>`).join("")}</tbody></table>
+    ${list.slice(0, S.txshow).map(t => `<tr title="${esc(t.desc)}" data-tx="${t.i}"${rowFocus()}><td class="dim">${dName(t.date)}</td><td class="clip">${who(t.merchant, t.cat)}</td><td>${chip(t.cat)}${t.edited ? ' <span class="badge">edited</span>' : ""}</td><td class="dim clip">${esc(ACCT[t.acct].name)}</td><td class="num ${gain(t.amt)}">${t.amt > 0 ? "+" : ""}${cents(t.amt)}</td></tr>`).join("")}</tbody></table>
     ${list.length > S.txshow ? '<button class="btn more" id="more">Show more</button>' : ""}${list.length ? "" : '<p class="empty">No transactions match.</p>'}`;
   box.querySelectorAll("[data-sort]").forEach(n => n.onclick = () => {
     if (S.txsort === n.dataset.sort) S.txdir *= -1; else { S.txsort = n.dataset.sort; S.txdir = n.dataset.sort === "date" ? -1 : 1; }
-    txTable(); });
+    const again = n.dataset.sort;
+    txTable();
+    box.querySelector(`[data-sort="${again}"]`).focus(); });
   const more = document.getElementById("more");
   if (more) more.onclick = () => { S.txshow += 500; txTable(); };
 }
@@ -873,7 +941,7 @@ function budgets() {
   V.innerHTML = `<div class="budget-head"><select id="budgetMonth" aria-label="Month">${B.months.slice().reverse().map(x => `<option value="${x.month}"${x === m ? " selected" : ""}>${mName(x.month)}</option>`).join("")}</select>${add}</div>
     <div class="tiles">
       ${tile("Budgeted", money(goal), m.base > 0 ? `${Math.round(goal / m.base * 100)}% of income` : "")}
-      ${tile("Spent on budgets", money(spent), "", "neg")}
+      ${tile("Spent on budgets", money(spent), "")}
       ${tile(left < 0 ? "Over budget" : "Left to spend", money(Math.abs(left)), m.partial ? "so far this month" : "", left < 0 ? "neg" : "pos")}
       ${tile("Not budgeted", money(other), "other spending this month")}
     </div>
@@ -907,7 +975,7 @@ async function saveBudget() {
   const v = id => document.getElementById(id).value;
   const done = await api().save_budget(v("bCat"), v("bMode"), v("bValue"));
   if (!done.ok) return modalError(done.error);
-  reload();
+  reload("Budget saved.");
 }
 
 const VIEWS = {Overview: overview, Spending: spending, Budgets: budgets, Recurring: recurring, Largest: largest, Savings: savings, Accounts: accounts, Transactions: transactions, Rules: rules, Help: help};
@@ -946,9 +1014,9 @@ function bankTable() {
 }
 function help() {
   V.innerHTML = `<div class="help">${TX.length ? "" : '<div class="controls"><button class="btn" data-act="home">Back</button></div>'}
-    <div class="card"><h2>Getting started</h2><p class="sub">Four steps, then repeat step 1 whenever you want fresh numbers.</p>
-      <ol><li><b>Download</b> transaction history from each bank's website. Look for Download, Export or Statements, and choose CSV. Ask for as much history as it offers.</li>
-      <li><b>Add files</b> and check the review screen. Date ranges can overlap, because repeats are skipped automatically.</li>
+    <div class="card"><h2>Getting started</h2><p class="sub">Four steps. With files, repeat the first two whenever you want fresh numbers.</p>
+      <ol><li><b>Connect or download.</b> Connect SimpleFIN to update accounts automatically, or download transaction history from each bank's website. Look for Download, Export or Statements, choose CSV, and ask for as much history as it offers.</li>
+      <li><b>Add files</b> if you downloaded any, and check the review screen. Date ranges can overlap, because repeats are skipped automatically.</li>
       <li><b>Tidy up</b> on the Rules tab by giving unknown purchases a name and category.</li>
       <li><b>Set budgets</b> on the Budgets tab, as a dollar amount or a percent of income.</li></ol>
       <div class="tools app-only"><button class="btn primary" data-act="tour">Take the tour</button></div></div>
@@ -958,6 +1026,7 @@ function help() {
       <h3>Import every account you pay from</h3><p>Paying a card from checking is a transfer, so the purchases only appear once that card is imported. Until then, the payment counts as estimated spending.</p>
       <h3>Export as far back as you can</h3><p>Averages skip months before your checking history starts, because those months have no rent or income in them.</p>
       <h3>Enter card balances</h3><p>Card exports don't include a balance. Use Edit on the Accounts tab to enter what you owe, and Budgetier keeps it updated from each import.</p>
+      <h3>Fix one transaction</h3><p>Select a row on the Transactions tab and choose Just this transaction. Rules won't change that row again, and you can undo it the same way.</p>
       <h3>How money is counted</h3><p>Expenses and estimates add to spending. Refunds reduce it. Income counts as income. Transfers between your own accounts count as neither.</p></div>
     <div class="card"><h2>Your data</h2><p>${D.sync && D.sync.connected ? "Your data is stored on this computer. Bank sync connects to SimpleFIN to fetch transactions, and nothing is sent to it except that request." : "Everything stays on this computer."} ${networkNote()} Removing a file keeps any transactions another file also covers. Your data is kept apart from the program, so updating doesn't change it.</p>
       <p class="dim">Budgetier${D.version ? " version " + esc(D.version) : ""}</p>
@@ -993,30 +1062,87 @@ async function installUpdate() {
 
 /* ---------- rules ---------- */
 const ruleChoices = () => [...new Set([...(D.allCategories || []), ...D.categories])].filter(c => c !== "Uncategorized" && c !== "Card Payments (no detail)").sort();
-async function categorize(merchant, desc, category) {
-  const descriptions = [...new Set([desc, ...TX.filter(t => t.merchant === merchant).map(t => t.desc)])];
-  const found = await api().suggest_rule(merchant, descriptions);
-  ruleForm({text: found.ok ? found.text : "", merchant, category, desc});
+const ruleSuggestion = (merchant, desc) => api().suggest_rule(merchant, [...new Set([desc, ...TX.filter(t => t.merchant === merchant).map(t => t.desc)])]);
+async function categorize(merchant, desc, category, tx) {
+  const found = await ruleSuggestion(merchant, desc);
+  const asEdited = tx && tx.edited ? {merchant, category} : {};
+  if (found.ok && found.rule) return ruleForm({...found.rule, desc, tx, ...asEdited});
+  ruleForm({text: found.ok ? found.text : "", merchant, category, desc, tx});
+}
+function uncategorized() {
+  const by = {};
+  TX.filter(t => t.cat === "Uncategorized").forEach(t => { const m = by[t.merchant] = by[t.merchant] || {merchant: t.merchant, desc: t.desc, n: 0, total: 0}; m.n++; m.total += t.amt; });
+  return Object.values(by).sort((a, b) => a.total - b.total);
+}
+// Working through a list shouldn't mean a full reload per merchant, so the page keeps its
+// data until the end, and asks before each one whether a rule just saved has covered it.
+let queue = null;
+function startQueue(merchant) {
+  const items = uncategorized();
+  queue = {items, at: items.findIndex(m => m.merchant === merchant), saved: 0, note: ""};
+  return nextInQueue();
+}
+async function nextInQueue() {
+  for (; queue.at < queue.items.length; queue.at++) {
+    const {merchant, desc} = queue.items[queue.at], found = await ruleSuggestion(merchant, desc);
+    if (found.ok && found.rule && queue.saved) continue;
+    if (found.ok && found.rule) return ruleForm({...found.rule, desc, queued: true});
+    return ruleForm({text: found.ok ? found.text : "", merchant, category: "", desc, queued: true});
+  }
+  endQueue();
+}
+function endQueue() {
+  const saved = queue.saved;
+  queue = null;
+  if (saved) reload(`Saved ${saved} rule${saved === 1 ? "" : "s"}.`); else closeModal();
+}
+function ruleFoot(o) {
+  if (!o.queued) return `<button class="btn" data-modal="close">Cancel</button>${o.tx && o.tx.edited ? '<button class="btn" data-modal="edit-clear">Undo change</button>' : ""}<button class="btn primary" data-modal="rule-save">Save</button>`;
+  const more = queue.at + 1 < queue.items.length;
+  return `<button class="btn" data-modal="queue-done">${queue.saved ? "Done" : "Cancel"}</button>${more ? '<button class="btn" data-modal="rule-skip">Skip</button>' : ""}<button class="btn primary" data-modal="rule-next">${more ? "Save and next" : "Save"}</button>`;
 }
 function ruleForm(o) {
-  const cats = ruleChoices(), known = cats.includes(o.category);
-  showModal(o.line ? "Edit rule" : "Categorize", o.line ? "" : "Applies to every matching transaction, past and future.", `<div class="fields">
+  const cats = ruleChoices(), known = cats.includes(o.category), one = o.tx && o.tx.edited;
+  const every = o.line ? (o.desc ? "A rule already covers this transaction. Changes apply to everything it matches." : "") : "Applies to every matching transaction, past and future.";
+  const place = o.queued ? `${queue.at + 1} of ${queue.items.length}` : "";
+  const lead = !o.queued ? every : queue.note ? `${queue.note} ${place}.` : `${place}. ${every}`;
+  showModal(o.line ? "Edit rule" : "Categorize", one ? JUST_THIS : lead, `${o.tx ? `<div class="ask" role="radiogroup" aria-label="What to change"><label><input type="radio" name="rScope" value="all"${one ? "" : " checked"}> Everything that matches</label><label><input type="radio" name="rScope" value="one"${one ? " checked" : ""}> Just this transaction</label></div>` : ""}<div class="fields">
       ${o.desc ? `<div class="field full">The bank's description<span class="dim code">${esc(o.desc)}</span></div>` : ""}
-      <label class="field full">When the bank's description contains<input id="rMatch" value="${esc(o.text)}" autocomplete="off"${o.advanced ? ' class="code"' : ""}></label>
+      <label class="field full" id="rMatchBox"${one ? " hidden" : ""}>When the bank's description contains<input id="rMatch" value="${esc(o.text)}" autocomplete="off"${o.advanced ? ' class="code"' : ""}></label>
       <label class="field">Show as<input id="rName" value="${esc(o.merchant)}" placeholder="Name to display" autocomplete="off"></label>
       <label class="field">Category<select id="rCat"><option value="">Choose...</option>${cats.map(c => `<option${c === o.category ? " selected" : ""}>${esc(c)}</option>`).join("")}<option value="__new"${o.category && !known ? " selected" : ""}>New category...</option></select></label>
       <label class="field full" id="rNewBox"${o.category && !known ? "" : " hidden"}>New category name<input id="rNew" value="${o.category && !known ? esc(o.category) : ""}" autocomplete="off"></label>
-    </div><div class="panel" id="rPreview" aria-live="polite"></div>`,
-    `<button class="btn" data-modal="close">Cancel</button><button class="btn primary" data-modal="rule-save">Save</button>`);
+    </div><div class="panel" id="rPreview" aria-live="polite"${one ? " hidden" : ""}></div>`, ruleFoot(o));
+  modal.tx = o.tx || null;
   modal.dataset.rule = o.line || "";
   modal.dataset.advanced = o.advanced ? "1" : "";
   const run = () => { clearTimeout(ruleForm.t); ruleForm.t = setTimeout(previewRule, 180); };
   document.getElementById("rMatch").oninput = run;
   document.getElementById("rCat").onchange = e => { document.getElementById("rNewBox").hidden = e.target.value !== "__new"; previewRule(); };
+  modal.querySelectorAll("[name=rScope]").forEach(r => r.onchange = () => {
+    const alone = justThisOne();
+    document.getElementById("rMatchBox").hidden = alone;
+    document.getElementById("rPreview").hidden = alone;
+    modal.querySelector(".modal-head p").textContent = alone ? JUST_THIS : every;
+  });
   previewRule();
+  if (o.queued) document.getElementById("rCat").focus();
+}
+const JUST_THIS = "Changes only this transaction. Rules won't change it again.";
+const justThisOne = () => !!modal.querySelector("[name=rScope][value=one]:checked");
+function txId(t) {
+  const words = s => s.toUpperCase().split(/\s+/).filter(Boolean).join(" ");
+  const n = TX.slice(0, t.i).filter(x => x.date === t.date && x.acct === t.acct && x.amt === t.amt && words(x.desc) === words(t.desc)).length;
+  return {date: t.date, account: ACCT[t.acct].id, cents: Math.round(t.amt * 100), description: t.desc, n};
+}
+async function clearEdit() {
+  const done = await api().clear_edit(txId(modal.tx));
+  if (!done.ok) return modalError(done.error);
+  reload("Change undone.");
 }
 async function previewRule() {
   const box = document.getElementById("rPreview"), text = document.getElementById("rMatch").value;
+  if (!text.trim()) { box.textContent = ""; return; }
   const r = await api().preview_rule(text, !!modal.dataset.advanced);
   if (!r.ok) { box.textContent = r.error; return; }
   if (!r.count) { box.innerHTML = `<b>No transactions match yet.</b><p class="sub">Rules look for this exact text in the bank's description, which can differ from the name shown. Select a row on the Transactions tab to start from the bank's wording.</p>`; return; }
@@ -1024,19 +1150,25 @@ async function previewRule() {
   box.innerHTML = `<b>${r.count.toLocaleString()} transaction${r.count === 1 ? "" : "s"}</b> ${r.count === 1 ? "matches" : "match"}, totalling ${cents(r.total)}.${r.share > .25 ? '<span class="warn">That is a lot of your history. Try more specific text.</span>' : ""}${cat === "Transfer" ? '<span class="warn">Transfers don\'t count as spending or income.</span>' : ""}${r.examples.length ? `<ul>${r.examples.map(e => `<li>${esc(e)}</li>`).join("")}</ul>` : ""}`;
 }
 async function saveRule() {
-  const v = id => document.getElementById(id).value, choice = v("rCat");
-  const done = await api().save_rule(modal.dataset.rule || null, v("rMatch"), choice === "__new" ? v("rNew") : choice, v("rName"), !!modal.dataset.advanced);
+  const v = id => document.getElementById(id).value, choice = v("rCat"), category = choice === "__new" ? v("rNew") : choice;
+  if (justThisOne()) {
+    const changed = await api().save_edit(txId(modal.tx), category, v("rName"));
+    if (!changed.ok) return modalError(changed.error);
+    return reload("Saved. Nothing else changed.");
+  }
+  const done = await api().save_rule(modal.dataset.rule || null, v("rMatch"), category, v("rName"), !!modal.dataset.advanced);
   if (!done.ok) return modalError(done.error);
-  reload();
+  const matched = `${done.count.toLocaleString()} transaction${done.count === 1 ? "" : "s"}`;
+  if (!queue) return reload(`Rule saved. It matches ${matched}.`);
+  queue.saved++; queue.at++; queue.note = `Saved. That rule matches ${matched}.`;
+  await nextInQueue();
 }
 function rules() {
-  const by = {};
-  TX.filter(t => t.cat === "Uncategorized").forEach(t => { const m = by[t.merchant] = by[t.merchant] || {merchant: t.merchant, desc: t.desc, n: 0, total: 0}; m.n++; m.total += t.amt; });
-  const open = Object.values(by).sort((a, b) => a.total - b.total), list = D.rules || [];
+  const open = uncategorized(), list = D.rules || [];
   V.innerHTML = `<div class="tiles"><div class="tile"><div class="k">Needs a category</div><div class="v">${open.length}</div><div class="s">${open.length === 1 ? "merchant" : "merchants"}, ${cents(Math.abs(sum(open, m => m.total)))} in total</div></div>
       <div class="tile"><div class="k">Your rules</div><div class="v">${list.length}</div><div class="s">applied across all history</div></div></div>
-    <div class="card"><h2>Needs a category</h2><p class="sub">Tip: select any row on the Transactions tab to rename or recategorize it too.</p>
-      ${open.length ? `<div class="scroll"><table><thead><tr><th>Merchant</th><th class="num">Transactions</th><th class="num">Total</th><th></th></tr></thead><tbody>${open.map(m => `<tr><td>${who(m.merchant, "Uncategorized")}<div class="dim clip">${esc(m.desc)}</div></td><td class="num">${m.n}</td><td class="num ${tone(m.total)}">${cents(m.total)}</td><td><div class="row-actions"><button class="btn small" data-act="categorize" data-merchant="${esc(m.merchant)}" data-desc="${esc(m.desc)}">Categorize</button></div></td></tr>`).join("")}</tbody></table></div>` : '<p class="empty">Everything has a category.</p>'}</div>
+    <div class="card"><h2>Needs a category</h2><p class="sub">Categorize one and you'll move through the rest. To change a single transaction, select its row on the Transactions tab.</p>
+      ${open.length ? `<div class="scroll"><table><thead><tr><th>Merchant</th><th class="num">Transactions</th><th class="num">Total</th><th></th></tr></thead><tbody>${open.map(m => `<tr><td>${who(m.merchant, "Uncategorized")}<div class="dim clip">${esc(m.desc)}</div></td><td class="num">${m.n}</td><td class="num ${gain(m.total)}">${cents(m.total)}</td><td><div class="row-actions"><button class="btn small" data-act="categorize" data-merchant="${esc(m.merchant)}">Categorize</button></div></td></tr>`).join("")}</tbody></table></div>` : '<p class="empty">Everything has a category.</p>'}</div>
     <div class="card"><h2>Your rules</h2><p class="sub">Rules run before anything built in. If two match, the higher one wins.</p>
       <div class="tools app-only"><button class="btn primary" data-act="rule-new">${icon(PLUS)}Add rule</button></div>
       ${list.length ? `<div class="scroll"><table><thead><tr><th>Description contains</th><th>Shows as</th><th>Category</th><th class="num">Matches</th><th></th></tr></thead><tbody>${list.map((r, i) => `<tr><td class="clip ${r.advanced ? "rule-text" : ""}" title="${esc(r.text)}">${esc(r.text)}${r.broken ? ' <span class="badge">not valid</span>' : ""}</td><td>${esc(r.merchant) || '<span class="dim">unchanged</span>'}</td><td>${chip(r.category)}</td><td class="num">${r.count.toLocaleString()}</td><td><div class="row-actions"><button class="btn small" data-act="rule-edit" data-i="${i}">Edit</button><button class="btn small danger-text" data-act="rule-delete" data-i="${i}">Remove</button></div></td></tr>`).join("")}</tbody></table></div>` : '<p class="empty">No rules yet.</p>'}</div>`;
@@ -1062,10 +1194,11 @@ function tour(n = 0) {
   const el = document.querySelector(step[0]);
   if (!el || !el.offsetParent) return tour(n + 1);
   let spot = document.getElementById("spot"), coach = document.getElementById("coach");
-  if (!spot) { spot = document.createElement("div"); spot.id = "spot"; document.body.append(spot); coach = document.createElement("div"); coach.id = "coach"; coach.setAttribute("role", "dialog"); document.body.append(coach); }
+  if (!spot) { spot = document.createElement("div"); spot.id = "spot"; document.body.append(spot); coach = document.createElement("div"); coach.id = "coach"; coach.setAttribute("role", "dialog"); coach.setAttribute("aria-label", "Tour"); document.body.append(coach); }
   const r = el.getBoundingClientRect(), pad = 5;
   Object.assign(spot.style, {left: r.left - pad + "px", top: r.top - pad + "px", width: r.width + pad * 2 + "px", height: r.height + pad * 2 + "px"});
   coach.innerHTML = `<h3>${step[1]}</h3><p>${step[2]}</p><div class="row"><span class="count">${n + 1} of ${TOUR.length}</span><button class="btn small" data-tour="end">Skip</button><button class="btn small primary" data-tour="${n + 1}">${n + 1 === TOUR.length ? "Done" : "Next"}</button></div>`;
+  coach.querySelector(".primary").focus({preventScroll: true});
   const narrow = innerWidth < 880;
   coach.style.left = (narrow ? 16 : Math.min(r.right + 16, innerWidth - 356)) + "px";
   coach.style.top = (narrow ? Math.min(r.bottom + 14, innerHeight - 190) : Math.min(r.top, innerHeight - 190)) + "px";
@@ -1102,11 +1235,25 @@ function toast(text) {
 }
 function showModal(title, sub, body, foot) {
   if (document.getElementById("coach")) endTour();
-  modal.innerHTML = `<div class="modal"><div class="modal-head"><h2>${esc(title)}</h2>${sub ? `<p>${esc(sub)}</p>` : ""}</div><div class="modal-body">${body}</div><div class="modal-foot"><span class="msg" id="modalMsg"></span>${foot}</div></div>`;
+  modal.innerHTML = `<div class="modal"><div class="modal-head"><h2 id="modalTitle">${esc(title)}</h2>${sub ? `<p>${esc(sub)}</p>` : ""}</div><div class="modal-body">${body}</div><div class="modal-foot"><span class="msg" id="modalMsg" role="alert"></span>${foot}</div></div>`;
   if (!modal.open) modal.showModal();
 }
 const modalError = text => { document.getElementById("modalMsg").textContent = text; };
 const closeModal = () => modal.close();
+// Esc does what the dialog's first button does, because closing can have a job to finish:
+// a page to refresh, or files to let go of. While something is saving, it waits.
+function dismissModal() {
+  const buttons = [...modal.querySelectorAll(".modal-foot .btn")];
+  if (buttons.length && !buttons.some(b => b.disabled)) buttons[0].click();
+}
+const ENTER_SAVES = ["rule-next", "rule-save", "budget-save", "save", "bank-connect"];
+modal.addEventListener("cancel", e => { e.preventDefault(); dismissModal(); });
+modal.addEventListener("keydown", e => {
+  if (e.key === "Escape") { e.preventDefault(); return dismissModal(); }
+  if (e.key !== "Enter" || e.isComposing || !e.target.matches("input")) return;
+  const save = ENTER_SAVES.map(name => modal.querySelector(`[data-modal="${name}"]`)).find(Boolean);
+  if (save) { e.preventDefault(); save.click(); }
+});
 
 // A note that stays up until the work is done, for steps that can take a while.
 function progress(text) {
@@ -1149,7 +1296,6 @@ function connectBankForm() {
   showModal("Connect SimpleFIN", "Paste the setup token from your SimpleFIN account. It only works once.", `<label class="field">Setup token<input id="sToken" type="password" autocomplete="off" spellcheck="false" autofocus></label>
     <p class="dim">Budgetier keeps this connection in this computer's secure storage. It can read your transactions and balances, but can't move money. SimpleFIN and the services behind it will handle your transactions.</p>`,
     '<button class="btn" data-modal="close">Cancel</button><button class="btn primary" data-modal="bank-connect">Connect</button>');
-  document.getElementById("sToken").onkeydown = e => { if (e.key === "Enter") modal.querySelector("[data-modal=bank-connect]").click(); };
 }
 async function connectBank() {
   const done = await api().connect_bank(document.getElementById("sToken").value);
@@ -1205,7 +1351,7 @@ async function autoSync() {
   });
 }
 
-const VIEW_KEY = "budgetier-view", VIEW_FIELDS = ["range", "txq", "txcat", "txkind", "txsort", "txdir", "txshow", "recAll"];
+const VIEW_KEY = "budgetier-view", VIEW_FIELDS = ["range", "txq", "txcat", "txkind", "txsort", "txdir", "txshow", "recAll", "largeAll"];
 function reload(note = "") {
   const view = Object.fromEntries(VIEW_FIELDS.map(k => [k, S[k]]));
   view.y = scrollY;
@@ -1268,10 +1414,10 @@ function confirmRemove(title, body, run, action = "Remove") {
   showModal(title, "", `<p>${esc(body)}</p>`, `<button class="btn" data-modal="close">Cancel</button><button class="btn danger" data-modal="confirm">${action}</button>`);
   modal.onConfirm = run;
 }
-async function removal(call) {
+async function removal(call, note = "Removed.") {
   const done = await call;
   if (!done.ok) return modalError(done.error);
-  reload();
+  reload(note);
 }
 function editAccount(id) {
   const a = D.accounts.find(x => x.id === id), owed = a.type === "credit";
@@ -1288,7 +1434,7 @@ async function saveAccount() {
   const v = id => { const f = document.getElementById(id); return f ? f.value : ""; };
   const done = await api().update_account(modal.dataset.account, v("eName"), v("eType"), v("eBalance"), v("eDate"));
   if (!done.ok) return modalError(done.error);
-  reload();
+  reload("Account saved.");
 }
 function initApp() {
   const ready = () => {
@@ -1301,15 +1447,18 @@ function initApp() {
     checkUpdate();
   };
   if (window.pywebview && window.pywebview.api) ready(); else addEventListener("pywebviewready", ready);
+  document.addEventListener("keydown", e => {
+    if ((e.key === "Enter" || e.key === " ") && e.target.matches("tr[data-tx]")) { e.preventDefault(); e.target.click(); }
+  });
   document.addEventListener("click", async e => {
     const act = e.target.closest("[data-act]"), m = e.target.closest("[data-modal]"), step = e.target.closest("[data-tour]");
     if (step) return step.dataset.tour === "end" ? endTour() : tour(Number(step.dataset.tour));
     const look = e.target.closest("[data-look-mode], [data-look-palette]");
     if (look) return setLook(look.dataset.lookMode ? {mode: look.dataset.lookMode} : {palette: look.dataset.lookPalette});
-    const txRow = e.target.closest("#tx tr[data-tx]");
+    const txRow = e.target.closest("tr[data-tx]");
     if (txRow && window.pywebview) {
       const t = TX[Number(txRow.dataset.tx)];
-      return categorize(t.merchant, t.desc, t.cat === "Uncategorized" ? "" : t.cat);
+      return categorize(t.merchant, t.desc, t.cat === "Uncategorized" ? "" : t.cat, t);
     }
     if (e.target.closest("#addFiles") || (act && act.dataset.act === "add")) return addFiles();
     if (e.target.closest("#updateBtn")) return updateForm();
@@ -1323,11 +1472,12 @@ function initApp() {
       if (act.dataset.act === "update-check") return hold(act, "Checking...", () => checkUpdate(true));
       if (act.dataset.act === "update-auto") { const on = !D.updates.automatic, done = await api().set_update_check(on); if (!done.ok) return toast(done.error); D.updates.automatic = on; return render(); }
       if (act.dataset.act === "bank-review") return hold(act, "Checking...", openBankReview);
-      if (act.dataset.act === "bank-disconnect") return confirmRemove("Disconnect SimpleFIN?", "Budgetier stops syncing and forgets the connection. Your transactions stay. To cut off access completely, disable it on the SimpleFIN site too.", () => removal(api().disconnect_bank()), "Disconnect");
+      if (act.dataset.act === "bank-disconnect") return confirmRemove("Disconnect SimpleFIN?", "Budgetier stops syncing and forgets the connection. Your transactions stay. To cut off access completely, disable it on the SimpleFIN site too.", () => removal(api().disconnect_bank(), "Disconnected."), "Disconnect");
       if (act.dataset.act === "banks") { S.tab = "Help"; return render(); }
       if (act.dataset.act === "home") { S.tab = "Overview"; return render(); }
       if (act.dataset.act === "tour") return tour();
-      if (act.dataset.act === "categorize") return categorize(act.dataset.merchant, act.dataset.desc, "");
+      if (act.dataset.act === "categorize") return startQueue(act.dataset.merchant);
+      if (act.dataset.act === "see-month") { S.range = document.getElementById("range").value = act.dataset.month; return render(true); }
       if (act.dataset.act === "rule-new") return ruleForm({text: "", merchant: "", category: ""});
       if (act.dataset.act === "rule-edit") { const r = D.rules[Number(act.dataset.i)]; return ruleForm({...r}); }
       if (act.dataset.act === "rule-delete") {
@@ -1355,7 +1505,10 @@ function initApp() {
       if (what === "reload") return reload();
       if (what === "import") return hold(m, "Adding...", () => runImport(m));
       if (what === "save") return hold(m, "Saving...", saveAccount);
-      if (what === "rule-save") return hold(m, "Saving...", saveRule);
+      if (what === "rule-save" || what === "rule-next") return hold(m, "Saving...", saveRule);
+      if (what === "rule-skip") { queue.at++; return hold(m, "Skipping...", nextInQueue); }
+      if (what === "queue-done") return endQueue();
+      if (what === "edit-clear") return hold(m, "Working...", clearEdit);
       if (what === "update-install") return hold(m, "Downloading...", installUpdate);
       if (what === "budget-save") return hold(m, "Saving...", saveBudget);
       if (what === "bank-connect") return hold(m, "Connecting...", connectBank);
@@ -1370,6 +1523,7 @@ function initApp() {
   const tabs = document.getElementById("tabs");
   TABS.forEach(t => { const b = document.createElement("button"); b.innerHTML = `${icon(ICONS[t])}<span>${t}</span>`; b.dataset.tab = t; if (t === "Rules" || t === "Budgets") b.className = "app-only"; b.setAttribute("role", "tab"); b.onclick = () => { S.tab = t; render(true); scrollTo(0, 0); }; tabs.append(b); });
 
+  document.getElementById("skip").onclick = () => document.getElementById("view").focus();
   document.getElementById("theme").innerHTML = `${icon(SUN)}Appearance`;
   document.getElementById("theme").onclick = appearance;
 

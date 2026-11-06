@@ -15,13 +15,15 @@ Every row gets a kind, and the totals depend on it:
 from __future__ import annotations
 
 import calendar
+import json
 import re
 import statistics
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
 from .rules import read as read_rules
+from .storage import read_text
 
 # Tried in order against the upper-cased description; first hit wins.
 DEFAULT_RULES = [
@@ -115,6 +117,8 @@ BANK_CATEGORIES = [
     ("gift", "Gifts & Donations"), ("donation", "Gifts & Donations"), ("insurance", "Insurance"),
 ]
 
+EDITS_FILE = "edits.json"
+CARD_PAYMENT = "Card payment"  # banks word these so many ways that the words say nothing
 UNCATEGORIZED = "Uncategorized"
 SAVED = "Savings & Investing"
 ESTIMATED = "Card Payments (no detail)"
@@ -167,6 +171,36 @@ def load_rules(path: Path) -> list[tuple]:
             continue  # a typo in a hand-edited rule mustn't stop the app opening
         compiled.append((pattern, rule.category, rule.merchant or None))
     return compiled
+
+
+def valid_edit(edit) -> bool:
+    return (isinstance(edit, dict) and isinstance(edit.get("category"), str) and bool(edit["category"].strip())
+            and isinstance(edit.get("merchant", ""), str))
+
+
+def load_edits(path: Path) -> dict[str, dict]:
+    """Single transactions changed by hand. A damaged file mustn't stop a report."""
+    try:
+        saved = json.loads(read_text(path)) if path.exists() else {}
+    except ValueError:
+        return {}
+    return {k: e for k, e in saved.items() if valid_edit(e)} if isinstance(saved, dict) else {}
+
+
+def edit_key(day, account: str, cents: int, description: str, n: int) -> str:
+    """A name for one transaction that survives rebuilding its account from files, which
+    a position wouldn't. n counts identical rows, so two $5 coffees stay two."""
+    return f"{day}|{account}|{cents}|{' '.join(description.upper().split())}|{n}"
+
+
+def edit_keys(rows: list[dict]) -> list[str]:
+    seen: Counter = Counter()
+    keys = []
+    for r in rows:
+        same = edit_key(r["date"], r["account"], r["cents"], r["description"], 0)
+        keys.append(edit_key(r["date"], r["account"], r["cents"], r["description"], seen[same]))
+        seen[same] += 1
+    return keys
 
 
 def category_names() -> list[str]:
@@ -254,19 +288,23 @@ def _kind(category: str, cents: int, account_type: str) -> str:
     return "refund"
 
 
-def classify(rows: list[dict], accounts: dict, user_rules: list[tuple]) -> list[dict]:
+def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: dict | None = None) -> list[dict]:
+    """A transaction changed by hand beats everything, then your rules, then what's built in."""
+    keys = edit_keys(rows) if edits else [""] * len(rows)
     default_rules = [(re.compile(p), c, m) for p, c, m in DEFAULT_RULES]
     saved_at = [(re.compile(p), SAVED, m) for p, m in _SAVED_AT]
     out = []
-    for r in rows:
+    for r, key in zip(rows, keys):
         account_type = accounts[r["account"]]["type"]
         text = r["description"].upper()
-        hit = next((rule for rule in user_rules if rule[0].search(text)), None)
+        edit = (edits or {}).get(key)
+        hit = (None, edit["category"], edit.get("merchant") or None) if edit else \
+            next((rule for rule in user_rules if rule[0].search(text)), None)
         ruled = hit is not None
         if not hit:
             hit = next((rule for rule in saved_at if rule[0].search(text)), None)
         if not hit and is_transfer(text, r["cents"], account_type, r["bank_category"]):
-            hit = (None, "Transfer", None)
+            hit = (None, "Transfer", CARD_PAYMENT if account_type == "credit" else None)
         if not hit:  # money out is never income, whatever the name: GUSTO'S PIZZA, a pay reversal
             hit = next((rule for rule in default_rules if rule[0].search(text)
                         and (rule[1] != "Income" or r["cents"] > 0)), None)
@@ -276,7 +314,7 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple]) -> list[
             "date": r["date"], "account": r["account"], "description": r["description"],
             "merchant": merchant, "category": category, "cents": r["cents"],
             "balance": r["balance"], "kind": _kind(category, r["cents"], account_type),
-            "ruled": ruled, "matched": False, "source": r.get("source", ""),
+            "ruled": ruled, "edited": bool(edit), "matched": False, "source": r.get("source", ""),
         })
     _pair_transfers(out, accounts)
     first_seen: dict[str, date] = {}
@@ -362,6 +400,7 @@ def _recurring_entry(group: list[dict], cadence: tuple, last_seen: dict) -> dict
         "merchant": latest["merchant"], "category": latest["category"],
         "kind": latest["kind"], "cadence": name, "count": len(group),
         "amount": typical / 100, "per_month": typical * per_month / 100,
+        "low": min(amounts) / 100, "high": max(amounts) / 100,
         "first": group[0]["date"].isoformat(), "last": latest["date"].isoformat(),
         "next": (latest["date"] + timedelta(days=span)).isoformat(),
         "active": (last_seen[latest["account"]] - latest["date"]).days <= span * 1.5 + tolerance,
