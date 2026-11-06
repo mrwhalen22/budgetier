@@ -10,6 +10,7 @@ from __future__ import annotations
 import csv
 import dataclasses
 import io
+import json
 import os
 import re
 import shutil
@@ -62,6 +63,7 @@ class Budget:
         self.output = self.home / "output"
         self.html_path = self.output / "budget.html"
         self.rules_path = self.home / "rules.csv"
+        self.budgets_path = self.home / "budgets.json"
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
         if not self.rules_path.exists():
@@ -80,6 +82,7 @@ class Budget:
         rows, recurring, checks = self._analysis()
         report_html.write(self.html_path, rows, self.ledger.accounts, recurring, checks, self.ledger.imports,
                           {"rules": self.rules(), "version": app_version(),
+                           "budgets": analyze.budget_report(rows, self.ledger.accounts, self.budgets()),
                            "allCategories": sorted({*analyze.category_names(), *(r["category"] for r in self.rules()),
                                                     "Transfer", analyze.SAVED})})
         return self.html_path
@@ -399,6 +402,48 @@ class Budget:
             raise BudgetError("That rule is already gone.")
         lines.remove(line)
         self._write_rule_lines(lines)
+
+    # ---- budgets
+
+    def budgets(self) -> dict[str, dict]:
+        """Category to target: an amount in cents, or a percent of income."""
+        if not self.budgets_path.exists():
+            return {}
+        return json.loads(self.budgets_path.read_text(encoding="utf-8"))
+
+    def _write_budgets(self, budgets: dict[str, dict]) -> None:
+        tmp = self.budgets_path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(budgets, indent=2, sort_keys=True), encoding="utf-8")
+        os.replace(tmp, self.budgets_path)
+        self.refresh()
+
+    def save_budget(self, category: str, mode: str, value: str) -> None:
+        category = category.strip()
+        if not category:
+            raise BudgetError("Choose a category.")
+        if category in analyze.NOT_BUDGETED:
+            raise BudgetError(f"{category} isn't spending, so it can't have a budget.")
+        if mode == "amount":
+            target = parse_money(value)
+            if target is None or target <= 0:
+                raise BudgetError("Enter a dollar amount above zero.")
+        elif mode == "percent":
+            try:
+                target = float(value.strip().rstrip("%"))
+            except ValueError as e:
+                raise BudgetError("Enter a percentage, like 10.") from e
+            if not 0 < target <= 100:
+                raise BudgetError("Enter a percentage above 0, up to 100.")
+        else:
+            raise BudgetError("Choose a dollar amount or a percent of income.")
+        self._write_budgets({**self.budgets(), category: {"mode": mode, "value": target}})
+
+    def delete_budget(self, category: str) -> None:
+        budgets = self.budgets()
+        if category not in budgets:
+            raise BudgetError("That budget is already gone.")
+        del budgets[category]
+        self._write_budgets(budgets)
 
     # ---- account details
 
