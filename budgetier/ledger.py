@@ -5,19 +5,25 @@ files, so changing a rule applies to the whole history.
 """
 from __future__ import annotations
 
+import copy
 import csv
+import io
 import json
-import os
 import re
 import shutil
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
 from .parse import RawRow
+from .storage import DataError, read_text, write_files
 
-FIELDS = ["date", "account", "description", "amount", "balance", "bank_category", "source"]
-IMPORT_FIELDS = ["imported_at", "file", "account", "first", "last", "rows", "added", "duplicates", "stored"]
+FIELDS = ["date", "account", "description", "amount", "balance", "bank_category", "source", "sync_id"]
+IMPORT_FIELDS = ["imported_at", "file", "account", "first", "last", "rows", "added", "duplicates", "stored",
+                 "file_account"]
+
+
+NEAR_DAYS = 3
 
 
 def _money(cents: int | None) -> str:
@@ -39,13 +45,37 @@ def _key(day: date, cents: int, description: str) -> tuple:
     return day, cents, re.sub(r"\s+", " ", description).strip().upper()
 
 
-def _write_csv(path: Path, fields: list[str], rows: list[dict]) -> None:
-    tmp = path.with_suffix(".tmp")
-    with tmp.open("w", newline="", encoding="utf-8") as f:
-        writer = csv.DictWriter(f, fieldnames=fields)
-        writer.writeheader()
-        writer.writerows(rows)
-    os.replace(tmp, path)
+def _not_near(incoming: list[RawRow], rows: list[dict]) -> list[RawRow]:
+    """A file and a bank feed word the same transaction differently and may date it a day
+    or two apart, so across the two, the same amount on nearby dates is the same
+    transaction. Each row can only match once, so real repeats survive."""
+    dates = defaultdict(list)
+    for r in rows:
+        dates[r["cents"]].append(r["date"])
+    kept = []
+    for raw in sorted(incoming, key=lambda r: r.date):
+        hit = next((d for d in dates[raw.cents] if abs((d - raw.date).days) <= NEAR_DAYS), None)
+        if hit is None:
+            kept.append(raw)
+        else:
+            dates[raw.cents].remove(hit)
+    return kept
+
+
+def _csv_text(fields: list[str], rows: list[dict]) -> str:
+    out = io.StringIO(newline="")
+    writer = csv.DictWriter(out, fieldnames=fields)
+    writer.writeheader()
+    writer.writerows(rows)
+    return out.getvalue()
+
+
+def _damaged(path: Path, error: Exception) -> DataError:
+    backup = path.with_name(path.name + ".bak")
+    remedy = (f"A copy from before your last change is beside it, named {backup.name}. Replace the damaged "
+              "file with that copy, then open Budgetier again." if backup.exists()
+              else "If you edited it, undo that change and open Budgetier again.")
+    return DataError(f"{path.name} in {path.parent} can't be read, so your data can't be opened ({error}). {remedy}")
 
 
 class Ledger:
@@ -58,58 +88,95 @@ class Ledger:
         self.accounts_path = home / "accounts.json"
         self.rows = self._load_rows()
         self.imports = self._load_imports()
-        self.accounts: dict[str, dict] = (
-            json.loads(self.accounts_path.read_text(encoding="utf-8"))
-            if self.accounts_path.exists() else {})
+        self.accounts = self._load_accounts()
+        self._recover_accounts()
 
     def _load_rows(self) -> list[dict]:
         if not self.path.exists():
             return []
-        with self.path.open(newline="", encoding="utf-8") as f:
+        try:
             return [{**r, "date": date.fromisoformat(r["date"]),
-                     "cents": _cents(r["amount"]), "balance": _cents(r["balance"])}
-                    for r in csv.DictReader(f)]
+                     "cents": _cents(r["amount"]), "balance": _cents(r["balance"]),
+                     "sync_id": r.get("sync_id") or ""}
+                    for r in csv.DictReader(io.StringIO(read_text(self.path), newline=""))]
+        except (ValueError, KeyError, TypeError, AttributeError, csv.Error) as e:
+            raise _damaged(self.path, e) from e
 
     def _load_imports(self) -> list[dict]:
         if not self.imports_path.exists():
             return []
-        with self.imports_path.open(newline="", encoding="utf-8") as f:
-            return list(csv.DictReader(f))
+        try:
+            return list(csv.DictReader(io.StringIO(read_text(self.imports_path), newline="")))
+        except csv.Error as e:
+            raise _damaged(self.imports_path, e) from e
 
-    def count_new(self, account_id: str, incoming: list[RawRow]) -> int:
-        """How many of these rows merge() would add. Changes nothing."""
+    def _load_accounts(self) -> dict[str, dict]:
+        if not self.accounts_path.exists():
+            return {}
+        try:
+            accounts = json.loads(read_text(self.accounts_path))
+            if not all(isinstance(info, dict) for info in accounts.values()):
+                raise ValueError("an account isn't in the expected form")
+        except (ValueError, AttributeError) as e:
+            raise _damaged(self.accounts_path, e) from e
+        return accounts
+
+    def _recover_accounts(self) -> None:
+        """Rows without an account would stop every report. The rows are what matter, so
+        keep them under a stand-in the person can rename; a check points it out."""
+        used = {r["account"] for r in self.rows} | {i["account"] for i in self.imports}
+        for account in sorted(used - set(self.accounts)):
+            number = account.rsplit("-", 1)[-1]
+            self.accounts[account] = {"name": f"Recovered account {number}", "bank": "Unknown", "number": number,
+                                      "type": "checking", "invert_sign": False, "recovered": True}
+
+    def snapshot(self) -> tuple:
+        return list(self.rows), copy.deepcopy(self.imports), copy.deepcopy(self.accounts)
+
+    def restore(self, snapshot: tuple) -> None:
+        self.rows, self.imports, self.accounts = snapshot
+
+    def _new_rows(self, account_id: str, incoming: list[RawRow]) -> list[RawRow]:
+        """Identical rows are legitimate (two $5 coffees in a day), so this compares
+        counts: if a file shows a row three times and the ledger has it twice, one is
+        new. That keeps overlapping exports from doubling up and keeps real repeats, and
+        importing the same file again adds nothing."""
         have = Counter(_key(r["date"], r["cents"], r["description"])
                        for r in self.rows if r["account"] == account_id)
         seen: Counter = Counter()
-        new = 0
-        for raw in incoming:
-            key = _key(raw.date, raw.cents, raw.description)
-            seen[key] += 1
-            new += seen[key] > have[key]
-        return new
-
-    def merge(self, account_id: str, incoming: list[RawRow], source: str) -> dict:
-        """Add what's new for one account.
-
-        Identical rows are legitimate (two $5 coffees in a day), so this compares
-        counts: if a file shows a row three times and the ledger has it twice, one
-        is added. That keeps overlapping exports from doubling up and keeps real
-        repeats, and importing the same file again changes nothing.
-        """
-        have = Counter(_key(r["date"], r["cents"], r["description"])
-                       for r in self.rows if r["account"] == account_id)
-        seen: Counter = Counter()
-        added = 0
+        new = []
         for raw in incoming:
             key = _key(raw.date, raw.cents, raw.description)
             seen[key] += 1
             if seen[key] > have[key]:
-                self.rows.append({
-                    "date": raw.date, "account": account_id, "description": raw.description,
-                    "amount": _money(raw.cents), "cents": raw.cents, "balance": raw.balance,
-                    "bank_category": raw.bank_category, "source": source,
-                })
-                added += 1
+                new.append(raw)
+        return _not_near(new, [r for r in self.rows if r["account"] == account_id and r["sync_id"]])
+
+    def count_new(self, account_id: str, incoming: list[RawRow]) -> int:
+        """How many of these rows merge() would add. Changes nothing."""
+        return len(self._new_rows(account_id, incoming))
+
+    @staticmethod
+    def _row(account_id: str, raw: RawRow, source: str) -> dict:
+        return {"date": raw.date, "account": account_id, "description": raw.description, "amount": _money(raw.cents),
+                "cents": raw.cents, "balance": raw.balance, "bank_category": raw.bank_category, "source": source,
+                "sync_id": raw.sync_id}
+
+    def merge_synced(self, account_id: str, incoming: list[RawRow], since: date | None) -> int:
+        """Add what a bank feed has that the ledger doesn't. Files already cover everything
+        before since. Returns how many rows were added."""
+        own = [r for r in self.rows if r["account"] == account_id]
+        have = {r["sync_id"] for r in own if r["sync_id"]}
+        fresh = {raw.sync_id: raw for raw in incoming if raw.sync_id not in have and (since is None or raw.date >= since)}
+        new = _not_near(list(fresh.values()), [r for r in own if not r["sync_id"]])
+        self.rows += [self._row(account_id, raw, "SimpleFIN") for raw in new]
+        return len(new)
+
+    def merge(self, account_id: str, incoming: list[RawRow], source: str) -> dict:
+        """Add what's new for one account."""
+        new = self._new_rows(account_id, incoming)
+        self.rows += [self._row(account_id, raw, source) for raw in new]
+        added = len(new)
         self.imports.append({
             "imported_at": datetime.now().isoformat(timespec="seconds"), "file": source,
             "account": account_id, "first": min(r.date for r in incoming).isoformat(),
@@ -118,15 +185,22 @@ class Ledger:
         })
         return self.imports[-1]
 
+    def _accounts_text(self) -> str:
+        return json.dumps(self.accounts, indent=2) + "\n"
+
     def save(self) -> None:
-        if self.path.exists():
-            shutil.copy2(self.path, self.path.with_suffix(".csv.bak"))
+        """Rows, imports and accounts refer to each other, so they're saved together."""
         self.rows.sort(key=lambda r: (r["date"], r["account"]))  # stable: keeps same-day order
-        _write_csv(self.path, FIELDS, [
-            {**{k: r[k] for k in FIELDS}, "date": r["date"].isoformat(),
-             "balance": _money(r["balance"])} for r in self.rows])
-        _write_csv(self.imports_path, IMPORT_FIELDS, self.imports)
-        self.save_accounts()
+        files = {
+            self.path: _csv_text(FIELDS, [{**{k: r[k] for k in FIELDS}, "date": r["date"].isoformat(),
+                                           "balance": _money(r["balance"])} for r in self.rows]),
+            self.imports_path: _csv_text(IMPORT_FIELDS, self.imports),
+            self.accounts_path: self._accounts_text(),
+        }
+        for path in files:
+            if path.exists():
+                shutil.copy2(path, path.with_name(path.name + ".bak"))
+        write_files(files)
 
     def save_accounts(self) -> None:
-        self.accounts_path.write_text(json.dumps(self.accounts, indent=2) + "\n", encoding="utf-8")
+        write_files({self.accounts_path: self._accounts_text()})

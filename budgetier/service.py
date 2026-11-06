@@ -11,36 +11,24 @@ import csv
 import dataclasses
 import io
 import json
-import os
+import logging
 import re
 import shutil
 import sys
 import tempfile
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
-from . import analyze, pdf2csv, report_html, report_xlsx
-from .cli import RULES_TEMPLATE, _purchases_look_positive, _slug
+from . import analyze, pdf2csv, report_html, report_xlsx, rules
+from .accounts import TYPES, account_id, account_name, pin_balance, purchases_look_positive, sample_row
 from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
+from .storage import BudgetError, app_home, read_text, unique_path, write_files
+from .sync import BankSync
 
-TYPES = ("checking", "savings", "credit")
-LABELS = {"credit": "Card", "savings": "Savings", "checking": "Checking"}
+__all__ = ["Budget", "BudgetError", "app_home", "app_version"]
 
-
-class BudgetError(Exception):
-    """A problem to show the person, in words they can act on."""
-
-
-def app_home() -> Path:
-    """User data lives here, not beside the program: ordinary programs can't write to
-    Program Files, and an update must never touch your history."""
-    override = os.environ.get("BUDGETIER_HOME")
-    if override:
-        return Path(override)
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "Budgetier"
-    return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Budgetier"
+log = logging.getLogger("budgetier")
 
 
 def app_version() -> str:
@@ -58,6 +46,11 @@ def literal(pattern: str) -> str | None:
     return None
 
 
+def _valid_target(target) -> bool:
+    return (isinstance(target, dict) and target.get("mode") in ("amount", "percent")
+            and type(target.get("value")) in (int, float) and target["value"] > 0)
+
+
 class Budget:
     def __init__(self, home: Path):
         self.home = Path(home)
@@ -69,22 +62,26 @@ class Budget:
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
         if not self.rules_path.exists():
-            self.rules_path.write_text(RULES_TEMPLATE, encoding="utf-8")
+            self.rules_path.write_text(rules.TEMPLATE, encoding="utf-8")
         self.ledger = Ledger(self.home)
+        self.notices: list[dict] = []  # problems found while loading, shown with the checks
         self._pending: dict[str, dict] = {}
         self._temp = None
+        self.sync = BankSync(self)
 
     # ---- reports
 
     def _analysis(self):
         rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path))
-        return rows, analyze.find_recurring(rows), analyze.checks(rows, self.ledger.accounts, self.ledger.imports)
+        checks = analyze.checks(rows, self.ledger.accounts, self.ledger.imports)
+        return rows, analyze.find_recurring(rows), self.notices + checks
 
     def refresh(self) -> Path:
+        budgets = self.budgets()  # first: a damaged file adds a notice to the checks
         rows, recurring, checks = self._analysis()
         report_html.write(self.html_path, rows, self.ledger.accounts, recurring, checks, self.ledger.imports,
-                          {"rules": self.rules(), "version": app_version(),
-                           "budgets": analyze.budget_report(rows, self.ledger.accounts, self.budgets()),
+                          {"rules": self.rules(), "version": app_version(), "sync": self.sync.status(),
+                           "budgets": analyze.budget_report(rows, self.ledger.accounts, budgets),
                            "allCategories": sorted({*analyze.category_names(), *(r["category"] for r in self.rules()),
                                                     "Transfer", analyze.SAVED})})
         return self.html_path
@@ -111,6 +108,9 @@ class Budget:
                 items += self._inspect_file(path)
             except (ParseError, pdf2csv.ConvertError, OSError) as e:
                 errors.append({"file": path.name, "error": str(e)})
+            except Exception:  # one odd file mustn't stop the others
+                log.exception("couldn't read an imported file")
+                errors.append({"file": path.name, "error": "this file couldn't be read"})
         return {"items": items, "errors": errors}
 
     def _inspect_file(self, path: Path) -> list[dict]:
@@ -129,23 +129,19 @@ class Budget:
         return [self._proposal(original, csv_path, parsed, number, rows, notes)
                 for number, rows in groups.items()]
 
-    def _account_id(self, bank: str, number: str) -> str:
-        return f"{_slug(bank)}-{number}"
-
     def _proposal(self, original, csv_path, parsed: ParsedFile, number, rows, notes) -> dict:
         token = f"{len(self._pending)}"
-        self._pending[token] = {"original": original, "csv": csv_path, "parsed": parsed, "rows": rows}
+        self._pending[token] = {"original": original, "csv": csv_path, "parsed": parsed, "rows": rows,
+                                "number": number}
         bank = parsed.bank or ""
-        account_id = self._account_id(bank, number) if bank and number else ""
-        info = self.ledger.accounts.get(account_id)
-        guessed = _purchases_look_positive(parsed, rows)
-        positive = [r for r in rows if r.cents > 0]
-        negative = [r for r in rows if r.cents < 0]
-        sample = (positive if len(positive) >= len(negative) else negative)[0]
+        account = account_id(bank, number) if bank and number else ""
+        info = self.ledger.accounts.get(account)
+        guessed = purchases_look_positive(parsed, rows)
+        sample = sample_row(rows)
         invert = info["invert_sign"] if info else (parsed.invert or guessed)
         new = len(rows)
         if info:
-            new = self.ledger.count_new(account_id, self._signed(rows, invert))
+            new = self.ledger.count_new(account, self._signed(rows, invert))
         return {
             "id": token, "file": original.name, "bank": bank, "number": number,
             "type": info["type"] if info else ("credit" if guessed else parsed.account_type),
@@ -163,23 +159,17 @@ class Budget:
     def _signed(rows, invert: bool) -> list:
         return [dataclasses.replace(r, cents=-r.cents) for r in rows] if invert else list(rows)
 
-    def _unique_store_name(self, name: str) -> Path:
-        target = self.imported / name
-        if target.exists():
-            stem, suffix = Path(name).stem, Path(name).suffix
-            target = self.imported / f"{stem}.{datetime.now():%Y%m%d-%H%M%S-%f}{suffix}"
-        return target
-
-    def _keep_copy(self, pending: dict) -> str:
+    def _keep_copy(self, pending: dict, copies: list[Path]) -> str:
         """Keep the file we can re-read later, plus an original PDF for your records."""
-        if "stored" in pending:
-            return pending["stored"]
         csv_path, original = Path(pending["csv"]), Path(pending["original"])
-        target = self._unique_store_name(csv_path.name)
-        shutil.copy2(csv_path, target)
-        if original != csv_path:
-            shutil.copy2(original, self._unique_store_name(original.name))
-        pending["stored"] = target.name
+        target = unique_path(self.imported, csv_path.name)
+        try:
+            for source, kept in ((csv_path, target), (original, unique_path(self.imported, original.name))):
+                if source != csv_path or kept == target:
+                    copies.append(kept)
+                    shutil.copy2(source, kept)
+        except OSError as e:
+            raise BudgetError(f"{original.name} couldn't be read. If it was moved, choose it again.") from e
         return target.name
 
     def _validated(self, answer: dict) -> dict:
@@ -208,42 +198,46 @@ class Budget:
                 raise BudgetError("That review has expired. Choose the files again.")
             reviewed.append((pending, self._validated({**answer, "file": pending["original"].name})))
 
-        results = []
-        for pending, answer in reviewed:
-            rows = pending["rows"]
-            account_id = self._account_id(answer["bank"], answer["number"])
-            info = self.ledger.accounts.get(account_id)
-            if info is None:
-                info = self._new_account(account_id, answer, pending)
-            if answer["balance"] is not None:
-                self._pin(info, answer["balance"], date.today())
-            before = len(self.ledger.rows)
-            result = self.ledger.merge(account_id, self._signed(rows, info["invert_sign"]), pending["original"].name)
-            added = len(self.ledger.rows) - before
-            if added:
-                result["stored"] = self._keep_copy(pending)
-            else:
-                self.ledger.imports.pop()  # nothing new, so nothing to list or remove later
-            results.append({"account": info["name"], "added": added, "duplicates": len(rows) - added})
-        self.ledger.save()
-        self.refresh()
+        results, copies = [], []
+
+        def change():
+            for pending, answer in reviewed:
+                rows = pending["rows"]
+                account = account_id(answer["bank"], answer["number"])
+                info = self.ledger.accounts.get(account)
+                if info is None:
+                    info = self._new_account(account, answer, pending)
+                if answer["balance"] is not None:
+                    pin_balance(info, answer["balance"], date.today())
+                before = len(self.ledger.rows)
+                result = self.ledger.merge(account, self._signed(rows, info["invert_sign"]), pending["original"].name)
+                added = len(self.ledger.rows) - before
+                if added:
+                    # The number as the file has it: review may have corrected it.
+                    result.update(stored=self._keep_copy(pending, copies), file_account=pending["number"])
+                else:
+                    self.ledger.imports.pop()  # nothing new, so nothing to list or remove later
+                results.append({"account": info["name"], "added": added, "duplicates": len(rows) - added})
+
+        def discard_copies():
+            for path in copies:
+                path.unlink(missing_ok=True)
+
+        self._transaction(change, discard_copies)
         self.cancel()
         return results
 
-    def _new_account(self, account_id: str, answer: dict, pending: dict) -> dict:
+    def _new_account(self, account: str, answer: dict, pending: dict) -> dict:
         parsed, rows = pending["parsed"], pending["rows"]
         spent = answer["spent"]
         if parsed.sign_known or spent is None:
-            invert = parsed.invert or (_purchases_look_positive(parsed, rows) and spent is None)
+            invert = parsed.invert or (purchases_look_positive(parsed, rows) and spent is None)
         else:
-            positive = [r for r in rows if r.cents > 0]
-            negative = [r for r in rows if r.cents < 0]
-            sample = (positive if len(positive) >= len(negative) else negative)[0]
-            invert = bool(spent) == (sample.cents > 0)
-        info = {"name": f"{answer['bank']} {LABELS[answer['type']]} {answer['number']}",
+            invert = bool(spent) == (sample_row(rows).cents > 0)
+        info = {"name": account_name(answer["bank"], answer["type"], answer["number"]),
                 "bank": answer["bank"], "number": answer["number"], "type": answer["type"],
                 "invert_sign": invert}
-        self.ledger.accounts[account_id] = info
+        self.ledger.accounts[account] = info
         return info
 
     def cancel(self) -> None:
@@ -261,34 +255,51 @@ class Budget:
     def _rebuild(self, account: str, keep: list[dict]) -> None:
         """Replay an account from its remaining files, so overlaps stay correct."""
         info = self.ledger.accounts[account]
-        self.ledger.rows = [r for r in self.ledger.rows if r["account"] != account]
+        # Rows from the bank feed never came from a file, so they stay.
+        self.ledger.rows = [r for r in self.ledger.rows if r["account"] != account or r["sync_id"]]
         self.ledger.imports = [i for i in self.ledger.imports if i["account"] != account]
         for entry in keep:
             path = self.imported / self._key(entry)
             if not path.exists():
                 raise BudgetError(f"The saved copy of {entry['file']} is missing, so this can't be "
                                   "undone safely. Nothing was changed.")
-            rows = [r for r in parse_file(path).rows if (r.account or info["number"]) == info["number"]]
+            rows = self._rows_for(parse_file(path), entry, info)
             result = self.ledger.merge(account, self._signed(rows, info["invert_sign"]), entry["file"])
-            result.update(imported_at=entry["imported_at"], stored=entry.get("stored", ""))
+            result.update(imported_at=entry["imported_at"], stored=entry.get("stored", ""),
+                          file_account=entry.get("file_account", ""))
+
+    @staticmethod
+    def _rows_for(parsed: ParsedFile, entry: dict, info: dict) -> list:
+        """Which rows of a saved file went into this account."""
+        wanted = entry.get("file_account")
+        if wanted:
+            rows = [r for r in parsed.rows if (r.account or parsed.account or "") == wanted]
+        else:  # imported before the file's own number was recorded
+            rows = [r for r in parsed.rows if (r.account or info["number"]) == info["number"]]
+            if not rows and len({r.account for r in parsed.rows}) == 1:
+                rows = parsed.rows  # a one-account file whose number was corrected in review
+        if not rows:
+            raise BudgetError(f"{entry['file']} no longer matches this account, so this can't be "
+                              "undone safely. Nothing was changed.")
+        return rows
 
     def _remove_stored(self, keys: set[str]) -> None:
         still_used = {self._key(i) for i in self.ledger.imports}
         for key in keys - still_used:
             (self.imported / key).unlink(missing_ok=True)
 
-    def _transaction(self, change) -> dict:
-        """Run a removal against a snapshot, so any failure leaves your data untouched."""
-        rows, imports = list(self.ledger.rows), list(self.ledger.imports)
-        before = len(rows)
+    def _transaction(self, change, undo=None) -> None:
+        """Change the ledger against a snapshot, so any failure leaves your data as it was."""
+        snapshot = self.ledger.snapshot()
         try:
             change()
-        except (BudgetError, ParseError, OSError):
-            self.ledger.rows, self.ledger.imports = rows, imports
+            self.ledger.save()
+        except Exception:
+            self.ledger.restore(snapshot)
+            if undo:
+                undo()
             raise
-        self.ledger.save()
         self.refresh()
-        return {"removed": before - len(self.ledger.rows)}
 
     def remove_import(self, key: str) -> dict:
         entries = [i for i in self.ledger.imports if self._key(i) == key]
@@ -299,12 +310,15 @@ class Budget:
             for account in {e["account"] for e in entries}:
                 keep = [i for i in self.ledger.imports if i["account"] == account and self._key(i) != key]
                 self._rebuild(account, keep)
-                if not keep:
+                if not keep and not any(r["account"] == account for r in self.ledger.rows):
                     del self.ledger.accounts[account]
 
-        result = self._transaction(change)
+        before = len(self.ledger.rows)
+        self._transaction(change)
+        for account in {e["account"] for e in entries} - set(self.ledger.accounts):
+            self.sync.forget_account(account)
         self._remove_stored({key})
-        return result
+        return {"removed": before - len(self.ledger.rows)}
 
     def remove_account(self, account: str) -> dict:
         if account not in self.ledger.accounts:
@@ -316,14 +330,13 @@ class Budget:
             self.ledger.imports = [i for i in self.ledger.imports if i["account"] != account]
             del self.ledger.accounts[account]
 
-        result = self._transaction(change)
+        before = len(self.ledger.rows)
+        self._transaction(change)
+        self.sync.forget_account(account)
         self._remove_stored(keys)
-        return result
+        return {"removed": before - len(self.ledger.rows)}
 
     # ---- rules
-
-    def _rule_lines(self) -> list[str]:
-        return self.rules_path.read_text(encoding="utf-8").splitlines()
 
     def _matching(self, pattern: str) -> list[dict]:
         compiled = re.compile(pattern, re.I)
@@ -332,24 +345,16 @@ class Budget:
     def rules(self) -> list[dict]:
         """Rules in the order they apply, newest first, each with what it matches."""
         found = []
-        for line in self._rule_lines():
-            if not line.strip() or line.lstrip().startswith("#"):
-                continue
-            row = next(csv.reader(io.StringIO(line)), [])
-            if len(row) < 2 or row[0].strip().lower() == "match":
-                continue
-            pattern = row[0].strip()
-            text = literal(pattern)
+        for rule in rules.read(self.rules_path):
+            text = literal(rule.pattern)
+            shared = {"line": rule.line, "category": rule.category, "merchant": rule.merchant}
             try:
-                hits = self._matching(pattern)
+                hits = self._matching(rule.pattern)
             except re.error:
-                found.append({"line": line, "text": pattern, "advanced": True, "broken": True, "category": row[1].strip(),
-                              "merchant": row[2].strip() if len(row) > 2 else "", "count": 0, "total": 0})
+                found.append({**shared, "text": rule.pattern, "advanced": True, "broken": True, "count": 0, "total": 0})
                 continue
-            found.append({"line": line, "text": pattern if text is None else text, "advanced": text is None,
-                          "broken": False, "category": row[1].strip(),
-                          "merchant": row[2].strip() if len(row) > 2 else "", "count": len(hits),
-                          "total": sum(r["cents"] for r in hits) / 100})
+            found.append({**shared, "text": rule.pattern if text is None else text, "advanced": text is None,
+                          "broken": False, "count": len(hits), "total": sum(r["cents"] for r in hits) / 100})
         return found
 
     @staticmethod
@@ -372,9 +377,7 @@ class Budget:
                 "share": len(hits) / len(self.ledger.rows) if self.ledger.rows else 0, "examples": examples}
 
     def _write_rule_lines(self, lines: list[str]) -> None:
-        tmp = self.rules_path.with_suffix(".tmp")
-        tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        os.replace(tmp, self.rules_path)
+        write_files({self.rules_path: "\n".join(lines) + "\n"})
         self.refresh()
 
     def save_rule(self, original: str | None, text: str, category: str, merchant: str, advanced: bool = False) -> None:
@@ -385,12 +388,11 @@ class Budget:
         out = io.StringIO()
         csv.writer(out, lineterminator="").writerow([pattern, category.strip(), merchant.strip()])
         line = out.getvalue()
-        lines = self._rule_lines()
+        lines = rules.lines(self.rules_path)
         if original and original in lines:
             lines[lines.index(original)] = line
         else:
-            lines = [existing for existing in lines
-                     if next(csv.reader(io.StringIO(existing)), [""])[0].strip() != pattern]
+            lines = [existing for existing in lines if (rules.cells(existing) or [""])[0].strip() != pattern]
             at = next((i + 1 for i, existing in enumerate(lines) if existing.strip().lower().startswith("match,")), None)
             if at is None:
                 lines.append("match,category,merchant")
@@ -399,7 +401,7 @@ class Budget:
         self._write_rule_lines(lines)
 
     def delete_rule(self, line: str) -> None:
-        lines = self._rule_lines()
+        lines = rules.lines(self.rules_path)
         if line not in lines:
             raise BudgetError("That rule is already gone.")
         lines.remove(line)
@@ -411,12 +413,27 @@ class Budget:
         """Category to target: an amount in cents, or a percent of income."""
         if not self.budgets_path.exists():
             return {}
-        return json.loads(self.budgets_path.read_text(encoding="utf-8"))
+        try:
+            saved = json.loads(read_text(self.budgets_path))
+        except ValueError:
+            saved = None
+        good = {c: t for c, t in saved.items() if _valid_target(t)} if isinstance(saved, dict) else {}
+        if saved != good:
+            self._set_aside_budgets(good)
+        return good
+
+    def _set_aside_budgets(self, good: dict[str, dict]) -> None:
+        """Budgets are worth less than a working app. Keep what's readable, keep the file
+        so nothing is lost, and say so."""
+        aside = unique_path(self.home, "budgets.damaged.json")
+        shutil.copy2(self.budgets_path, aside)
+        write_files({self.budgets_path: json.dumps(good, indent=2, sort_keys=True)})
+        self.notices.append({"level": "warning", "title": "Some budgets couldn't be read",
+                             "detail": f"Any that are missing need adding again. The damaged file is "
+                                       f"saved as {aside.name} in your data folder."})
 
     def _write_budgets(self, budgets: dict[str, dict]) -> None:
-        tmp = self.budgets_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(budgets, indent=2, sort_keys=True), encoding="utf-8")
-        os.replace(tmp, self.budgets_path)
+        write_files({self.budgets_path: json.dumps(budgets, indent=2, sort_keys=True)})
         self.refresh()
 
     def save_budget(self, category: str, mode: str, value: str) -> None:
@@ -449,11 +466,6 @@ class Budget:
 
     # ---- account details
 
-    @staticmethod
-    def _pin(info: dict, cents: int, day: date) -> None:
-        info["balance_anchor"] = {"date": day.isoformat(), "amount": cents / 100}
-        info.pop("balance_skipped", None)
-
     def update_account(self, account: str, name: str, kind: str, balance: str, as_of: str) -> None:
         info = self.ledger.accounts.get(account)
         if info is None:
@@ -462,7 +474,7 @@ class Budget:
             raise BudgetError("Give the account a name.")
         if kind not in TYPES:
             raise BudgetError("Choose checking, savings or credit card.")
-        info.update(name=name.strip(), type=kind)
+        cents, day = None, None
         if balance.strip():
             cents = parse_money(balance)
             if cents is None:
@@ -471,6 +483,9 @@ class Budget:
                 day = date.fromisoformat(as_of) if as_of else date.today()
             except ValueError as e:
                 raise BudgetError("That date doesn't look right.") from e
-            self._pin(info, cents, day)
+        info.update(name=name.strip(), type=kind)
+        info.pop("recovered", None)
+        if cents is not None:
+            pin_balance(info, cents, day)
         self.ledger.save_accounts()
         self.refresh()

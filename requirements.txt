@@ -1,3 +1,6 @@
+-c constraints.txt
+certifi==2026.10.23
+keyring==25.7.0
 openpyxl==3.1.5
 pdfplumber==0.11.10
 pywebview==6.2.1

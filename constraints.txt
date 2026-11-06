@@ -1,0 +1,32 @@
+# Exact versions of everything the requirements pull in, so a rebuild gets what was tested.
+# A line only applies where that package is needed, so Windows and macOS share this file.
+altgraph==0.17.5
+bottle==0.13.4
+cffi==2.1.1
+charset-normalizer==3.5.2
+clr_loader==0.3.1
+cryptography==50.0.2
+et_xmlfile==2.0.0
+jaraco.classes==3.4.0
+jaraco.context==6.1.2
+jaraco.functools==4.6.0
+macholib==1.16.4
+more-itertools==11.2.1
+packaging==26.3
+pdfminer.six==20260107
+pefile==2024.8.26
+pillow==13.0.0
+proxy_tools==0.1.0
+pycparser==3.12
+pyinstaller-hooks-contrib==2026.9
+pyobjc-core==13.0
+pyobjc-framework-Cocoa==13.0
+pyobjc-framework-Quartz==13.0
+pyobjc-framework-Security==13.0
+pyobjc-framework-UniformTypeIdentifiers==13.0
+pyobjc-framework-WebKit==13.0
+pypdfium2==5.14.0
+pythonnet==3.2.1
+pywin32-ctypes==0.2.3
+setuptools==84.2.1
+typing_extensions==4.16.0

@@ -2,20 +2,20 @@
 
 Merges CSV exports from your banks and cards into one continuous history per
 account, then shows your monthly spending, recurring payments, largest expenses
-and savings. Everything runs and stays on this machine; the dashboard is a single
-offline file that makes no network requests.
+and savings. Everything runs on this machine, and your data stays here unless you turn on
+[bank sync](#bank-sync). The dashboard is a single offline file that makes no network requests.
 
 ## Use it
 
 Download the installer for your system from the [latest release](../../releases/latest).
 
-**Windows:** run `BudgetierSetup.exe` and approve the admin prompt. It installs for everyone
+**Windows:** run `Budgetier-Windows.exe` and approve the admin prompt. It installs for everyone
 on the PC, with your choice of location and shortcuts, and appears in Windows' Installed
 Apps, where you can uninstall it. It needs Microsoft's WebView2 runtime, which comes with
 Windows 11. The installer isn't code signed, so Windows may warn you the first time; choose
 **More info**, then **Run anyway**. Then open **Budgetier** from the Start menu or desktop.
 
-**macOS:** choose `Budgetier-Apple-Silicon.dmg` for an M-series Mac, or `Budgetier-Intel.dmg`
+**macOS:** choose `Budgetier-macOS-Apple-Silicon.dmg` for an M-series Mac, or `Budgetier-macOS-Intel.dmg`
 for an Intel one. Apple menu > **About This Mac** shows which you have. Open the file and
 drag **Budgetier** onto **Applications**. To uninstall, move it from Applications to the
 Trash. The app isn't signed by Apple, so macOS blocks it the first time:
@@ -41,6 +41,11 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
 
+## Appearance
+
+Choose **Appearance** at the bottom of the sidebar to pick a theme (Pine, Ocean or Plum) and
+light, dark or matching your system. The choice is remembered on this computer.
+
 ## Where things live
 
 | What | Where |
@@ -52,7 +57,9 @@ file also covers stay.
 
 On Windows, Budgetier installs for the whole PC, which is why the installer asks for admin
 rights. Each person's data stays in their own profile, on both systems. Updating or
-uninstalling never touches it. To back up, copy the data folder. Inside it:
+uninstalling never touches it. To back up, copy the data folder. Budgetier also keeps the
+previous version of `ledger.csv`, `imports.csv` and `accounts.json` beside each one, ending
+in `.bak`, so if a file is ever damaged it tells you which one to put back. Inside the folder:
 
 | File | What it is |
 | --- | --- |
@@ -61,6 +68,29 @@ uninstalling never touches it. To back up, copy the data folder. Inside it:
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
 | `logs/app.log` | Details if something goes wrong |
+
+## Bank sync
+
+Instead of downloading files, you can update accounts through
+[SimpleFIN](https://www.simplefin.org/), a paid service. Open the Accounts tab, choose
+**Connect SimpleFIN**, and paste a setup token from your SimpleFIN account. Then match each
+bank account to an account in Budgetier, or add it as a new one. Budgetier syncs when it
+opens, at most every 6 hours, and whenever you press **Sync now**.
+
+- **Privacy:** with sync on, SimpleFIN and the services behind it handle your transactions.
+  Budgetier gets read-only access, sends SimpleFIN nothing but the request, and keeps the
+  connection in Windows Credential Manager or the macOS Keychain, not the data folder.
+- **History:** files stay the record for what they cover. A linked account only adds from
+  its last imported day on. Near that day, or if you import a file later, the same amount
+  within 3 days counts as the same transaction, because feeds word things differently.
+- **Pending transactions** are skipped until they post.
+- **Balances** come from the bank on every sync.
+- **Rules** match the feed's descriptions too, and those can differ from your exports, so
+  check Uncategorized after the first sync.
+- **Disconnect** keeps your transactions. To cut off access completely, disable it on the
+  SimpleFIN site as well.
+
+Accounts that SimpleFIN can't reach can still be imported from files.
 
 ## Telling accounts apart
 
@@ -188,10 +218,16 @@ Run the desktop app. It uses your real data folder, so close any installed copy 
 | `samples/` | A generator for fake bank exports |
 | `VERSION` | The current version |
 
+The look comes from the design system at the top of `budgetier/dashboard.html`: tokens for
+color, type, spacing and corners, then one button, field, card, panel, banner and table. To add
+a theme, add its light and dark palettes there and to `PALETTES`. `tests/test_design.py` fails
+on hard-coded colors or sizes, inline looks, and any theme with unreadable contrast.
+
 Run the tests:
 
 ```bash
-.venv/Scripts/python -m unittest tests.test_budgetier
+.venv/Scripts/python -m unittest discover -s tests -t .
+.venv/Scripts/python -m ruff check .
 ```
 
 Try the command-line version on fake data, kept apart from your real data:
@@ -202,7 +238,7 @@ Try the command-line version on fake data, kept apart from your real data:
 ```
 
 Build the installer, one file that holds the whole app. A build only works for the system
-it was made on. Windows makes `dist\BudgetierSetup.exe` with `build.bat`:
+it was made on. Windows makes `dist\Budgetier-Windows.exe` with `build.bat`:
 
 ```bash
 build.bat

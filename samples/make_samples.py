@@ -31,7 +31,7 @@ def add_month(d):
 
 month = START
 while month <= END:
-    def on(day):
+    def on(day, month=month):
         return month.replace(day=day)
 
     checking.append((on(1), "ACH DEBIT LAKESIDE APTS RENT", -1850.00))

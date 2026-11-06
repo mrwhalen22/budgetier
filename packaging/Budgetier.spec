@@ -5,7 +5,8 @@ from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all
 
-packages = ["webview", "pdfplumber"] + (["clr_loader", "pythonnet"] if sys.platform == "win32" else [])
+packages = ["webview", "pdfplumber", "keyring", "certifi"]
+packages += ["clr_loader", "pythonnet", "win32ctypes"] if sys.platform == "win32" else []
 datas, binaries, hiddenimports = [("../budgetier/dashboard.html", "budgetier"), ("../VERSION", ".")], [], []
 for package in packages:
     d, b, h = collect_all(package)

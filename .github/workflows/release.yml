@@ -84,13 +84,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: requirements*.txt
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
 
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
 
       - name: Run tests
-        run: python -m unittest tests.test_budgetier
+        run: python -m unittest discover -s tests -t .
 
       - name: Build installer
         run: python packaging/build_installer.py
@@ -104,7 +106,7 @@ jobs:
         with:
           name: installer-${{ matrix.os }}
           path: |
-            dist/BudgetierSetup.exe
+            dist/Budgetier-Windows.exe
             dist/Budgetier-*.dmg
           retention-days: 1
           if-no-files-found: error
