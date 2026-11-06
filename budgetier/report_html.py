@@ -6,7 +6,7 @@ from collections import Counter
 from datetime import date, datetime
 from pathlib import Path
 
-from .analyze import SPENDING_KINDS, account_balances, coverage_start
+from .analyze import SPENDING_KINDS, account_balances, coverage_start, partial_month
 
 
 def build_data(rows, accounts, recurring, checks, imports) -> dict:
@@ -43,7 +43,7 @@ def build_data(rows, accounts, recurring, checks, imports) -> dict:
     return {
         "generated": datetime.now().strftime("%b %d, %Y %I:%M %p"),
         "end": end.isoformat(),
-        "partialMonth": end.strftime("%Y-%m") if end.day < 26 else None,
+        "partialMonth": partial_month(end),
         "coverageFrom": coverage_start(rows, accounts),
         "accounts": summaries,
         "accountCount": len(account_ids),

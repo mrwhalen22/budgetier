@@ -119,6 +119,8 @@ SAVED = "Savings & Investing"
 ESTIMATED = "Card Payments (no detail)"
 SPENDING_KINDS = ("expense", "refund", "estimate")
 TRANSFER_CATEGORIES = ("Transfer", SAVED)
+NOT_BUDGETED = ("Income", "Transfer", SAVED, ESTIMATED, UNCATEGORIZED)
+INCOME_MONTHS = 3  # complete months averaged to stand in for a month still in progress
 _SAVED_AT = [
     (r"ROBINHOOD", "Robinhood"), (r"VANGUARD", "Vanguard"), (r"BETTERMENT", "Betterment"),
     (r"WEALTHFRONT", "Wealthfront"), (r"E\*TRADE", "E*TRADE"), (r"ACORNS", "Acorns"),
@@ -465,6 +467,40 @@ def coverage_start(rows: list[dict], accounts: dict) -> str | None:
     before it shows only card spending and would drag every average down."""
     months = [r["date"].strftime("%Y-%m") for r in rows if accounts[r["account"]]["type"] == "checking"]
     return min(months, default=None)
+
+
+def partial_month(end: date) -> str | None:
+    """The month still in progress, judged by the newest transaction."""
+    return end.strftime("%Y-%m") if end.day < 26 else None
+
+
+def budget_report(rows: list[dict], accounts: dict, budgets: dict[str, dict]) -> dict:
+    """Spending against each target, by month. A percent target follows that month's
+    income, except in the month in progress, where pay may not have landed yet: that
+    one uses recent income, or it would read as over budget until payday."""
+    targets = [{"category": c, "mode": b["mode"], "value": b["value"] / 100 if b["mode"] == "amount" else b["value"]}
+               for c, b in sorted(budgets.items())]
+    if not rows:
+        return {"targets": targets, "months": []}
+    summary = {m["month"]: m for m in monthly_summary(rows)}
+    start = coverage_start(rows, accounts) or ""
+    dates = [r["date"] for r in rows]
+    months = [m for m, _ in _month_ends(min(dates), max(dates)) if m >= start]
+    partial = partial_month(max(dates))
+    income = {m: summary[m]["income"] if m in summary else 0 for m in months}
+    recent = [income[m] for m in months if m != partial][-INCOME_MONTHS:]
+
+    report = []
+    for month in months:
+        base = sum(recent) // len(recent) if month == partial and recent else income[month]
+        spent = summary[month]["categories"] if month in summary else {}
+        report.append({
+            "month": month, "partial": month == partial, "income": income[month] / 100, "base": base / 100,
+            "spent": {c: cents / 100 for c, cents in spent.items()},
+            "targets": {c: (b["value"] if b["mode"] == "amount" else round(base * b["value"] / 100)) / 100
+                        for c, b in budgets.items()},
+        })
+    return {"targets": targets, "months": report}
 
 
 def month_end_balances(rows: list[dict]) -> dict[str, dict[str, int]]:
