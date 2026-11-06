@@ -47,6 +47,32 @@ def _show_folder(folder: Path) -> None:
         subprocess.run(["open", str(folder)], check=True)
 
 
+def _take_first_click() -> None:
+    """On a Mac, a click on a window that isn't in front only brings it forward, so every
+    button needs a second click. This makes that first click reach the page as well."""
+    if sys.platform != "darwin":
+        return
+    try:
+        import objc
+        from webview.platforms.cocoa import BrowserView
+
+        def accepts_first_mouse(self, event):
+            return True
+
+        objc.classAddMethods(BrowserView.WebKitHost, [objc.selector(
+            accepts_first_mouse, selector=b"acceptsFirstMouse:", signature=objc._C_NSBOOL + b"@:@")])
+    except Exception:  # worth losing the first click, not worth stopping the app opening
+        log.exception("couldn't take the first click")
+
+
+def _first_click_taken(window) -> bool:
+    """For the self check: ask the real window, since this depends on the packaged libraries."""
+    if sys.platform != "darwin":
+        return True
+    from webview.platforms.cocoa import BrowserView
+    return bool(BrowserView.instances[window.uid].webview.acceptsFirstMouse_(None))
+
+
 def _reply(method):
     """Everything the page calls returns {ok, ...}, so errors reach the screen. Each call
     arrives on its own thread, so they take turns: a double click mustn't race itself."""
@@ -210,7 +236,8 @@ def _self_check(window, result: str) -> None:
             log.info("self check not ready: %s", e)
             time.sleep(1)
     found = json.loads(report) if report else {"failed": ["page never answered"]}
-    found.update(secure_store=credentials.backend(), certificates=simplefin.certificate_count())
+    found.update(secure_store=credentials.backend(), certificates=simplefin.certificate_count(),
+                 first_click=_first_click_taken(window))
     Path(result).write_text(json.dumps(found), encoding="utf-8")
     window.destroy()
 
@@ -231,9 +258,12 @@ def main() -> int:
         budget.updates.clean()
         page = budget.refresh()
         api = Api(budget)
+        _take_first_click()
+        # text_select also stops pywebview making the whole page unselectable, which WebKit
+        # can carry into fields. The page says itself which controls shouldn't select.
         api._window = webview.create_window("Budgetier", url=page.as_uri(), js_api=api,
                                             width=1340, height=900, min_size=(900, 620),
-                                            background_color="#101A17")
+                                            background_color="#101A17", text_select=True)
         check = os.environ.get("BUDGETIER_SELF_CHECK")
         webview.start(_self_check if check else None, (api._window, check) if check else None,
                       gui="edgechromium" if sys.platform == "win32" else None,
