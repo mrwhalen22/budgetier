@@ -4,21 +4,19 @@ from __future__ import annotations
 import ctypes
 import json
 import logging
+import logging.handlers
 import os
 import subprocess
 import sys
+import threading
 import time
 from functools import wraps
 from pathlib import Path
 
 import webview
 
-from .service import Budget, BudgetError, app_home
-
-if sys.platform == "win32":
-    import msvcrt
-else:
-    import fcntl
+from .service import Budget, BudgetError
+from .storage import DataError, app_home, hold_lock
 
 log = logging.getLogger("budgetier")
 
@@ -26,6 +24,7 @@ log = logging.getLogger("budgetier")
 SELF_CHECK = """JSON.stringify({
   api: typeof window.pywebview.api.save_budget,
   rows: TX.length,
+  months: monthly(TX, MONTHS).map(m => [m.month, Math.round(m.income * 100), Math.round(m.spending * 100)]),
   failed: TABS.filter(t => { try { S.tab = t; render(); return false; } catch { return true; } }),
 })"""
 
@@ -47,17 +46,19 @@ def _show_folder(folder: Path) -> None:
 
 
 def _reply(method):
-    """Everything the page calls returns {ok, ...}, so errors reach the screen."""
+    """Everything the page calls returns {ok, ...}, so errors reach the screen. Each call
+    arrives on its own thread, so they take turns: a double click mustn't race itself."""
     @wraps(method)
     def call(self, *args):
-        try:
-            return {"ok": True, **(method(self, *args) or {})}
-        except BudgetError as e:
-            return {"ok": False, "error": str(e)}
-        except Exception:
-            log.exception("%s failed", method.__name__)
-            return {"ok": False, "error": "Something went wrong. Your data wasn't changed. "
-                                          f"Details are in {self._budget.home / 'logs'}."}
+        with self._turn:
+            try:
+                return {"ok": True, **(method(self, *args) or {})}
+            except BudgetError as e:
+                return {"ok": False, "error": str(e)}
+            except Exception:
+                log.exception("%s failed", method.__name__)
+                return {"ok": False, "error": "Something went wrong, so that didn't finish. "
+                                              f"Details are in {self._budget.home / 'logs'}."}
     return call
 
 
@@ -67,6 +68,7 @@ class Api:
     def __init__(self, budget: Budget):
         self._budget = budget
         self._window = None
+        self._turn = threading.Lock()
 
     @_reply
     def pick_files(self):
@@ -135,20 +137,6 @@ class Api:
         _show_folder(self._budget.home)
 
 
-def _hold_single_instance(home: Path):
-    """Two windows would each overwrite the other's saves."""
-    lock = (home / "app.lock").open("a+")
-    try:
-        if sys.platform == "win32":
-            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        lock.close()
-        return None
-    return lock
-
-
 def _self_check(window, result: str) -> None:
     """For automated builds, where nobody can look at the window: write down what the
     page reports, then close. packaging/self_check.py judges the result."""
@@ -168,9 +156,10 @@ def main() -> int:
     home = app_home()
     home.mkdir(parents=True, exist_ok=True)
     (home / "logs").mkdir(exist_ok=True)
-    logging.basicConfig(filename=home / "logs" / "app.log", level=logging.INFO,
-                        format="%(asctime)s %(levelname)s %(message)s")
-    lock = _hold_single_instance(home)
+    logging.basicConfig(handlers=[logging.handlers.RotatingFileHandler(
+                            home / "logs" / "app.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8")],
+                        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    lock = hold_lock(home)
     if lock is None:
         _alert("Budgetier is already open.")
         return 1
@@ -185,10 +174,16 @@ def main() -> int:
         webview.start(_self_check if check else None, (api._window, check) if check else None,
                       gui="edgechromium" if sys.platform == "win32" else None,
                       private_mode=False, storage_path=str(home / "webview"))
+    except DataError as e:
+        log.error("saved data can't be read: %s", e)
+        _alert(str(e))
+        return 1
     except Exception:
         log.exception("startup failed")
         _alert(f"Budgetier couldn't start. Details are in {home / 'logs' / 'app.log'}.")
         return 1
+    finally:
+        lock.close()
     return 0
 
 

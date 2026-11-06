@@ -13,7 +13,7 @@ import io
 import re
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
 ALIASES = {
@@ -141,6 +141,8 @@ def parse_money(text: str) -> int | None:
         value = Decimal(s.strip())
     except InvalidOperation:
         return None
+    if not value.is_finite():  # "NaN" and "Infinity" are valid decimals, but not amounts
+        return None
     return sign * int((value * 100).quantize(Decimal(1), rounding=ROUND_HALF_UP))
 
 
@@ -173,7 +175,7 @@ def last4(text: str) -> str:
 def _read_text(path: Path) -> str:
     raw = path.read_bytes()
     if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
-        return raw.decode("utf-16")
+        return raw.decode("utf-16", errors="replace")
     try:
         return raw.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -306,7 +308,10 @@ def _indicator_signs(body, cols) -> list[int] | None:
 
 def parse_file(path: Path) -> ParsedFile:
     text = _read_text(path)
-    body, header, header_at, cols = _table(text)
+    try:
+        body, header, header_at, cols = _table(text)
+    except csv.Error as e:  # such as a binary file renamed to .csv
+        raise ParseError("this doesn't look like a bank export") from e
     names = {h.strip().lower() for h in header}
     preamble = "\n".join(text.splitlines()[:header_at])
 

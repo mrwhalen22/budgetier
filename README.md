@@ -52,7 +52,9 @@ file also covers stay.
 
 On Windows, Budgetier installs for the whole PC, which is why the installer asks for admin
 rights. Each person's data stays in their own profile, on both systems. Updating or
-uninstalling never touches it. To back up, copy the data folder. Inside it:
+uninstalling never touches it. To back up, copy the data folder. Budgetier also keeps the
+previous version of `ledger.csv`, `imports.csv` and `accounts.json` beside each one, ending
+in `.bak`, so if a file is ever damaged it tells you which one to put back. Inside the folder:
 
 | File | What it is |
 | --- | --- |
@@ -191,7 +193,8 @@ Run the desktop app. It uses your real data folder, so close any installed copy 
 Run the tests:
 
 ```bash
-.venv/Scripts/python -m unittest tests.test_budgetier
+.venv/Scripts/python -m unittest discover -s tests -t .
+.venv/Scripts/python -m ruff check .
 ```
 
 Try the command-line version on fake data, kept apart from your real data:
