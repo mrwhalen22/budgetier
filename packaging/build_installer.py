@@ -1,16 +1,21 @@
-"""Build dist/BudgetierSetup.exe, the one file that installs Budgetier.
+"""Build the one file that installs Budgetier: dist/BudgetierSetup.exe on Windows, or
+a disk image on macOS. A build only works for the system it was made on.
 
-    .venv/Scripts/python packaging/build_installer.py
+    python packaging/build_installer.py
 
 Run from any folder. Needs the packages in requirements-dev.txt.
 """
+import platform
+import shutil
 import subprocess
 import sys
+import time
 import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD, DIST = ROOT / "build", ROOT / "dist"
+MAC_NAMES = {"arm64": "Budgetier-Apple-Silicon.dmg", "x86_64": "Budgetier-Intel.dmg"}
 
 
 def pyinstaller(spec: str, work: str, dist: Path = DIST) -> None:
@@ -18,7 +23,41 @@ def pyinstaller(spec: str, work: str, dist: Path = DIST) -> None:
                     "--distpath", str(dist), "--workpath", str(BUILD / work)], check=True, cwd=ROOT)
 
 
+def report(installer: Path) -> int:
+    print(f"\nInstaller: {installer} ({installer.stat().st_size / 1_048_576:.0f} MB)")
+    return 0
+
+
+def disk_image(folder: Path, image: Path) -> None:
+    """hdiutil sometimes reports the disk busy on a fresh machine, and then works."""
+    command = ["hdiutil", "create", "-volname", "Budgetier", "-srcfolder", str(folder),
+               "-format", "UDZO", "-ov", str(image)]
+    for attempt in range(4):
+        if attempt:
+            time.sleep(5)
+        if subprocess.run(command).returncode == 0:
+            return
+    raise SystemExit("hdiutil couldn't make the disk image.")
+
+
+def build_mac() -> int:
+    pyinstaller("Budgetier.spec", "app")
+    app = DIST / "Budgetier.app"
+    subprocess.run(["codesign", "--verify", "--deep", "--strict", str(app)], check=True)
+
+    stage = BUILD / "dmg"
+    shutil.rmtree(stage, ignore_errors=True)
+    stage.mkdir(parents=True)
+    subprocess.run(["ditto", str(app), str(stage / app.name)], check=True)
+    (stage / "Applications").symlink_to("/Applications")
+    image = DIST / MAC_NAMES[platform.machine()]
+    disk_image(stage, image)
+    return report(image)
+
+
 def main() -> int:
+    if sys.platform == "darwin":
+        return build_mac()
     pyinstaller("Budgetier.spec", "app")
     pyinstaller("Uninstall.spec", "uninstall", BUILD / "uninstaller")
 
@@ -30,9 +69,7 @@ def main() -> int:
         archive.write(BUILD / "uninstaller" / "uninstall.exe", "uninstall.exe")
 
     pyinstaller("Setup.spec", "setup")
-    setup = DIST / "BudgetierSetup.exe"
-    print(f"\nInstaller: {setup} ({setup.stat().st_size / 1_048_576:.0f} MB)")
-    return 0
+    return report(DIST / "BudgetierSetup.exe")
 
 
 if __name__ == "__main__":

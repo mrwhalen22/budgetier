@@ -7,13 +7,22 @@ offline file that makes no network requests.
 
 ## Use it
 
-Download `BudgetierSetup.exe` from the [latest release](../../releases/latest), run it,
-and approve the Windows admin prompt. It installs for everyone on the PC, with your choice
-of location and shortcuts, and appears in Windows' Installed Apps, where you can uninstall
-it. It needs Microsoft's WebView2 runtime, which comes with Windows 11. The installer isn't
-code signed, so Windows may warn you the first time; choose **More info**, then **Run anyway**.
+Download the installer for your system from the [latest release](../../releases/latest).
 
-Then open **Budgetier** from the Start menu or desktop.
+**Windows:** run `BudgetierSetup.exe` and approve the admin prompt. It installs for everyone
+on the PC, with your choice of location and shortcuts, and appears in Windows' Installed
+Apps, where you can uninstall it. It needs Microsoft's WebView2 runtime, which comes with
+Windows 11. The installer isn't code signed, so Windows may warn you the first time; choose
+**More info**, then **Run anyway**. Then open **Budgetier** from the Start menu or desktop.
+
+**macOS:** choose `Budgetier-Apple-Silicon.dmg` for an M-series Mac, or `Budgetier-Intel.dmg`
+for an Intel one. Apple menu > **About This Mac** shows which you have. Open the file and
+drag **Budgetier** onto **Applications**. To uninstall, move it from Applications to the
+Trash. The app isn't signed by Apple, so macOS blocks it the first time:
+
+1. Open **Budgetier** from Applications and dismiss the warning.
+2. Open **System Settings** > **Privacy & Security**, scroll down, and choose **Open Anyway**.
+3. Confirm with your password. After that it opens normally.
 
 - **Add files** opens a file picker for CSV exports and Synchrony PDFs. Date ranges can
   overlap. You review each file before anything is saved, and your original files stay
@@ -36,13 +45,14 @@ file also covers stay.
 
 | What | Where |
 | --- | --- |
-| The program | `C:\Program Files\Budgetier` |
-| Your data | `%LOCALAPPDATA%\Budgetier` |
+| The program on Windows | `C:\Program Files\Budgetier` |
+| Your data on Windows | `%LOCALAPPDATA%\Budgetier` |
+| The program on macOS | `/Applications/Budgetier.app` |
+| Your data on macOS | `~/Library/Application Support/Budgetier` |
 
-Budgetier installs for the whole PC, which is why the installer asks for admin rights.
-Windows doesn't let a running app write to Program Files, so each person's data stays in
-their own profile. Updating or uninstalling never touches it. To back up, copy the data
-folder. Inside it:
+On Windows, Budgetier installs for the whole PC, which is why the installer asks for admin
+rights. Each person's data stays in their own profile, on both systems. Updating or
+uninstalling never touches it. To back up, copy the data folder. Inside it:
 
 | File | What it is |
 | --- | --- |
@@ -155,11 +165,19 @@ spent" question the other way.
 
 ## Development
 
-Budgetier is Windows-only and needs Python 3.12.
+Budgetier runs on Windows and macOS and needs Python 3.12. Commands below use the Windows
+path `.venv/Scripts/python`; on macOS use `python3` to make the environment, then
+`.venv/bin/python`.
 
 ```bash
 python -m venv .venv
 .venv/Scripts/python -m pip install -r requirements-dev.txt
+```
+
+Run the desktop app. It uses your real data folder, so close any installed copy first:
+
+```bash
+.venv/Scripts/python run_app.py
 ```
 
 | Path | What's there |
@@ -183,10 +201,23 @@ Try the command-line version on fake data, kept apart from your real data:
 .venv/Scripts/python -m budgetier --home samples/demo --open
 ```
 
-Build `dist\BudgetierSetup.exe`, one file that holds the whole app:
+Build the installer, one file that holds the whole app. A build only works for the system
+it was made on. Windows makes `dist\BudgetierSetup.exe` with `build.bat`:
 
 ```bash
 build.bat
+```
+
+macOS makes a disk image in `dist` for that Mac's chip:
+
+```bash
+sh build.sh
+```
+
+After a macOS build, this opens the app on fake data and checks every tab:
+
+```bash
+.venv/bin/python packaging/self_check.py
 ```
 
 Never commit real bank files. `.gitignore` blocks the usual ones, and test data must be
@@ -194,18 +225,22 @@ invented, including account numbers, names and addresses.
 
 ## Releasing
 
-Work happens on `develop`, by pull request. CI runs the tests and builds the installer on
-every pull request and on every push to `develop` and `main`.
+Work happens on `develop`, by pull request. CI runs the tests and builds the installers on
+Windows and Apple Silicon macOS, on every pull request and on every push to `develop` and
+`main`. On macOS it also opens the built app.
 
 To release, open the **Actions** tab, choose **Release**, then **Run workflow**, and pick
 how to raise the version: `patch` for fixes, `minor` for features, `major` for big changes.
 The workflow:
 
-1. Merges `develop` into `main` and raises the number in `VERSION`.
-2. Runs the tests and builds the installer. If either fails, nothing is pushed.
+1. Merges `develop` into `main` and raises the number in `VERSION`, on a temporary
+   `release/vX.Y.Z` branch.
+2. Runs the tests and builds on Windows, Apple Silicon and Intel macOS. If any fail, `main`
+   and `develop` aren't touched.
 3. Pushes `main` and a `vX.Y.Z` tag.
-4. Publishes a GitHub release with `BudgetierSetup.exe` and its checksum.
-5. Merges `main` back into `develop`.
+4. Publishes a GitHub release with all three installers and their checksums.
+5. Merges `main` back into `develop` and removes the temporary branch.
 
-If `main` is a protected branch, add a `RELEASE_TOKEN` repository secret holding a token
-that's allowed to push to it.
+Add a `RELEASE_TOKEN` repository secret if `main` is protected, or if a release includes
+changes to the workflow files: GitHub won't let the built-in token push those. The token
+must be allowed to push to `main` and to change workflows.
