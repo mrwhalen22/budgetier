@@ -146,6 +146,27 @@ class Api:
     def disconnect_bank(self):
         self._budget.sync.disconnect()
 
+    def check_update(self, by_hand=False):
+        """Outside _reply's turns: a slow network mustn't hold up saving a rule."""
+        try:
+            return {"ok": True, **self._budget.updates.check(by_hand)}
+        except BudgetError as e:
+            return {"ok": False, "error": str(e)}
+        except Exception:
+            log.exception("update check failed")
+            return {"ok": False, "error": "Couldn't check for updates."}
+
+    @_reply
+    def install_update(self):
+        result = self._budget.updates.install()
+        if result["closing"]:  # after this reply reaches the page
+            threading.Timer(.5, self._window.destroy).start()
+        return result
+
+    @_reply
+    def set_update_check(self, on):
+        self._budget.updates.set_automatic(on)
+
     @_reply
     def export_workbook(self):
         chosen = self._window.create_file_dialog(
@@ -192,6 +213,7 @@ def main() -> int:
         return 1
     try:
         budget = Budget(home)
+        budget.updates.clean()
         page = budget.refresh()
         api = Api(budget)
         api._window = webview.create_window("Budgetier", url=page.as_uri(), js_api=api,

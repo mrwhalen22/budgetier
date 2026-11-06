@@ -37,6 +37,31 @@ class Bridge(unittest.TestCase):
             self.assertTrue(getattr(self.api, name)(*args)["ok"], name)
             getattr(self.budget, name).assert_called_once_with(*args)
 
+    def test_a_slow_update_check_does_not_wait_its_turn(self):
+        self.budget.updates.check.return_value = {"available": False}
+        with self.api._turn:
+            self.assertEqual(self.api.check_update(True), {"ok": True, "available": False})
+        self.budget.updates.check.assert_called_once_with(True)
+
+    def test_a_failed_update_check_reaches_the_page(self):
+        self.budget.updates.check.side_effect = app.BudgetError("offline")
+        self.assertEqual(self.api.check_update(True), {"ok": False, "error": "offline"})
+
+    def test_the_window_closes_only_when_the_installer_took_over(self):
+        self.budget.updates.install.return_value = {"closing": True}
+        with mock.patch.object(app.threading, "Timer") as timer:
+            self.assertTrue(self.api.install_update()["closing"])
+        timer.assert_called_once_with(.5, self.api._window.destroy)
+        timer.return_value.start.assert_called_once()
+        self.budget.updates.install.side_effect = app.BudgetError("declined")
+        with mock.patch.object(app.threading, "Timer") as timer:
+            self.assertFalse(self.api.install_update()["ok"])
+        timer.assert_not_called()
+
+    def test_turning_the_check_off_is_saved(self):
+        self.assertTrue(self.api.set_update_check(False)["ok"])
+        self.budget.updates.set_automatic.assert_called_once_with(False)
+
     def test_commit_and_cancel(self):
         self.budget.commit.return_value = [{"added": 1}]
         self.assertEqual(self.api.commit([{}]), {"ok": True, "results": [{"added": 1}]})

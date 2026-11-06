@@ -56,6 +56,17 @@ bump_version = importlib.util.module_from_spec(_bump)
 _bump.loader.exec_module(bump_version)
 
 
+class UpdateNames(unittest.TestCase):
+    def test_the_app_looks_for_the_files_a_release_publishes(self):
+        from budgetier import updates
+        with mock.patch.object(updates.sys, "platform", "darwin"):
+            for machine, name in build_installer.MAC_NAMES.items():
+                with mock.patch.object(updates.platform, "machine", return_value=machine):
+                    self.assertEqual(updates.installer_name(), name)
+        workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
+        self.assertIn(updates.CHECKSUMS, workflow)
+
+
 class Versioning(Tmp):
     def test_each_part_raises_and_resets_what_follows(self):
         for part, want in (("patch", "1.2.4"), ("minor", "1.3.0"), ("major", "2.0.0")):
@@ -81,6 +92,45 @@ class Versioning(Tmp):
 
 
 @unittest.skipUnless(sys.platform == "win32", "the Windows installer")
+class Updating(Tmp):
+    """The app starts the installer and closes, so the installer has to finish the job."""
+
+    def run_update(self, running=(False,), failure=None):
+        exe = self.dir / "Budgetier.exe"
+        exe.write_text("x")
+        with mock.patch.object(setup_main, "app_is_running", side_effect=[*running, False, False]), \
+                mock.patch.object(setup_main, "installed_location", return_value=self.dir), \
+                mock.patch.object(setup_main, "shortcut_state", return_value=(False, True)), \
+                mock.patch.object(setup_main, "install", side_effect=failure, return_value=self.dir) as install, \
+                mock.patch.object(setup_main, "launch") as launch, \
+                mock.patch.object(setup_main.time, "sleep"), \
+                mock.patch.object(setup_main.ctypes, "windll", create=True) as windll:
+            code = setup_main.update()
+        return code, install, launch, windll
+
+    def test_it_waits_for_the_app_and_keeps_your_shortcuts(self):
+        code, install, launch, _ = self.run_update(running=(True, True, False))
+        self.assertEqual(code, 0)
+        options = install.call_args[0][0]
+        self.assertEqual((options.desktop, options.start_menu), (False, True))
+        launch.assert_called_once_with(self.dir)
+
+    def test_a_failed_update_says_so_and_reopens_the_app(self):
+        code, _, launch, windll = self.run_update(failure=setup_main.SetupError("disk full"))
+        self.assertEqual(code, 1)
+        self.assertIn("disk full", windll.user32.MessageBoxW.call_args[0][1])
+        launch.assert_called_once_with(self.dir)
+
+    def test_the_flag_matches_what_the_app_sends(self):
+        from budgetier import updates
+        with mock.patch.object(setup_main, "update", return_value=0) as update, \
+                mock.patch.object(setup_main, "start_log"), mock.patch.object(setup_main, "window") as window, \
+                mock.patch.object(setup_main.sys, "argv", ["setup", updates.UPDATE_FLAG]):
+            setup_main.main()
+        update.assert_called_once()
+        window.assert_not_called()
+
+
 class Installer(Tmp):
     def payload(self, files, name="payload.zip"):
         path = self.dir / name

@@ -25,6 +25,7 @@ from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
 from .storage import BudgetError, app_home, read_text, unique_path, write_files
 from .sync import BankSync
+from .updates import Updater
 
 __all__ = ["Budget", "BudgetError", "app_home", "app_version"]
 
@@ -59,6 +60,7 @@ class Budget:
         self.html_path = self.output / "budget.html"
         self.rules_path = self.home / "rules.csv"
         self.budgets_path = self.home / "budgets.json"
+        self.updates = Updater(self.home, app_version())
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
         if not self.rules_path.exists():
@@ -81,6 +83,7 @@ class Budget:
         rows, recurring, checks = self._analysis()
         report_html.write(self.html_path, rows, self.ledger.accounts, recurring, checks, self.ledger.imports,
                           {"rules": self.rules(), "version": app_version(), "sync": self.sync.status(),
+                           "updates": self.updates.status(),
                            "budgets": analyze.budget_report(rows, self.ledger.accounts, budgets),
                            "allCategories": sorted({*analyze.category_names(), *(r["category"] for r in self.rules()),
                                                     "Transfer", analyze.SAVED})})

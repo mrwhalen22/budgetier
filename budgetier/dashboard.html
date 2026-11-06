@@ -433,6 +433,7 @@ main.enter > * { animation: enter .26s ease both; }
     <div class="side-actions">
       <button class="btn primary" id="addFiles" type="button"></button>
       <button class="btn" id="bankBtn" type="button"></button>
+      <button class="btn" id="updateBtn" type="button" hidden></button>
     </div>
     <nav id="tabs" role="tablist" aria-label="Views"></nav>
     <div class="side-foot"><button class="nav-link" id="theme" type="button"></button><p id="foot"></p></div>
@@ -957,8 +958,36 @@ function help() {
       <h3>Export as far back as you can</h3><p>Averages skip months before your checking history starts, because those months have no rent or income in them.</p>
       <h3>Enter card balances</h3><p>Card exports don't include a balance. Use Edit on the Accounts tab to enter what you owe, and Budgetier keeps it updated from each import.</p>
       <h3>How money is counted</h3><p>Expenses and estimates add to spending. Refunds reduce it. Income counts as income. Transfers between your own accounts count as neither.</p></div>
-    <div class="card"><h2>Your data</h2><p>${D.sync && D.sync.connected ? "Your data is stored on this computer. Bank sync connects to SimpleFIN to fetch transactions, and nothing is sent to it except that request." : "Everything stays on this computer, and Budgetier makes no network requests."} Removing a file keeps any transactions another file also covers. Your data is kept apart from the program, so updating doesn't change it.</p>
-      <p class="dim">Budgetier${D.version ? " version " + esc(D.version) : ""}</p></div></div>`;
+    <div class="card"><h2>Your data</h2><p>${D.sync && D.sync.connected ? "Your data is stored on this computer. Bank sync connects to SimpleFIN to fetch transactions, and nothing is sent to it except that request." : "Everything stays on this computer."} ${networkNote()} Removing a file keeps any transactions another file also covers. Your data is kept apart from the program, so updating doesn't change it.</p>
+      <p class="dim">Budgetier${D.version ? " version " + esc(D.version) : ""}</p>
+      ${D.updates && D.updates.supported ? `<div class="tools inset app-only"><button class="btn" data-act="update-check">Check for updates</button><button class="btn" data-act="update-auto">${D.updates.automatic ? "Stop checking automatically" : "Check automatically"}</button></div>` : ""}</div></div>`;
+}
+function networkNote() {
+  if (D.updates && D.updates.supported && D.updates.automatic) return "When it opens, Budgetier asks GitHub whether a new version is out, and no financial data goes with that request.";
+  return D.sync && D.sync.connected ? "" : "Budgetier makes no network requests.";
+}
+
+/* ---------- updates ---------- */
+let update = null;
+async function checkUpdate(byHand = false) {
+  const found = await api().check_update(byHand);
+  if (!found.ok) { if (byHand) toast(found.error); return; }
+  update = found.available ? found : null;
+  const button = document.getElementById("updateBtn");
+  button.hidden = !update;
+  if (update) button.textContent = `Update to ${update.version}`;
+  if (byHand) { if (update) updateForm(); else toast("You have the latest version."); }
+}
+function updateForm() {
+  const steps = update.reopens ? "Budgetier closes, Windows asks for your permission, and it opens again when the update is done." : "When the download opens, drag Budgetier to Applications and replace the old copy.";
+  showModal(`Update to ${update.version}`, `You have version ${D.version}.`, `<p>${esc(steps)} Your data isn't touched.</p>`,
+    '<button class="btn" data-modal="close">Cancel</button><button class="btn primary" data-modal="update-install">Update</button>');
+}
+async function installUpdate() {
+  const done = await api().install_update();
+  if (!done.ok) return modalError(done.error);
+  if (done.closing) showModal("Updating", "Budgetier is closing to finish the update.", "", "");
+  else showModal("Almost done", "", "<p>Quit Budgetier, then drag it to Applications and replace the old copy.</p>", '<button class="btn primary" data-modal="close">Done</button>');
 }
 
 /* ---------- rules ---------- */
@@ -1268,6 +1297,7 @@ function initApp() {
     render();
     maybeTour();
     autoSync();
+    checkUpdate();
   };
   if (window.pywebview && window.pywebview.api) ready(); else addEventListener("pywebviewready", ready);
   document.addEventListener("click", async e => {
@@ -1281,6 +1311,7 @@ function initApp() {
       return categorize(t.merchant, t.desc, t.cat === "Uncategorized" ? "" : t.cat);
     }
     if (e.target.closest("#addFiles") || (act && act.dataset.act === "add")) return addFiles();
+    if (e.target.closest("#updateBtn")) return updateForm();
     const bank = e.target.closest("#bankBtn");
     if (bank) return bankAction(bank);
     if (act) {
@@ -1288,6 +1319,8 @@ function initApp() {
       if (act.dataset.act === "folder") return api().open_data_folder();
       if (act.dataset.act === "bank-connect") return connectBankForm();
       if (act.dataset.act === "bank-sync") return hold(act, "Syncing...", syncNow);
+      if (act.dataset.act === "update-check") return hold(act, "Checking...", () => checkUpdate(true));
+      if (act.dataset.act === "update-auto") { const on = !D.updates.automatic, done = await api().set_update_check(on); if (!done.ok) return toast(done.error); D.updates.automatic = on; return render(); }
       if (act.dataset.act === "bank-review") return hold(act, "Checking...", openBankReview);
       if (act.dataset.act === "bank-disconnect") return confirmRemove("Disconnect SimpleFIN?", "Budgetier stops syncing and forgets the connection. Your transactions stay. To cut off access completely, disable it on the SimpleFIN site too.", () => removal(api().disconnect_bank()), "Disconnect");
       if (act.dataset.act === "banks") { S.tab = "Help"; return render(); }
@@ -1322,6 +1355,7 @@ function initApp() {
       if (what === "import") return hold(m, "Adding...", () => runImport(m));
       if (what === "save") return hold(m, "Saving...", saveAccount);
       if (what === "rule-save") return hold(m, "Saving...", saveRule);
+      if (what === "update-install") return hold(m, "Downloading...", installUpdate);
       if (what === "budget-save") return hold(m, "Saving...", saveBudget);
       if (what === "bank-connect") return hold(m, "Connecting...", connectBank);
       if (what === "bank-link") return hold(m, "Saving...", linkBank);
