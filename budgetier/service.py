@@ -33,11 +33,13 @@ class BudgetError(Exception):
 
 
 def app_home() -> Path:
-    """User data lives here, not beside the program: Windows doesn't let ordinary
-    programs write to Program Files, and an update must never touch your history."""
+    """User data lives here, not beside the program: ordinary programs can't write to
+    Program Files, and an update must never touch your history."""
     override = os.environ.get("BUDGETIER_HOME")
     if override:
         return Path(override)
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support" / "Budgetier"
     return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Budgetier"
 
 

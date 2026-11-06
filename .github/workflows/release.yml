@@ -1,10 +1,11 @@
 name: Release
 
-# Run this from the Actions tab. It merges develop into main, raises the version,
-# tests and builds, then publishes the installer. Nothing is pushed until the tests and
-# the build have passed, so a failed run leaves main and develop as they were.
+# Run this from the Actions tab. It merges develop into main, raises the version, tests
+# and builds on every system, then publishes the installers. The candidate waits on a
+# release/vX.Y.Z branch, so a failed run leaves main and develop as they were.
 #
-# If main is a protected branch, add a RELEASE_TOKEN secret that is allowed to push to it.
+# RELEASE_TOKEN is needed when a release includes changes to these workflow files, and if
+# main is a protected branch. It must be allowed to push to main and to change workflows.
 
 on:
   workflow_dispatch:
@@ -21,27 +22,25 @@ permissions:
 concurrency:
   group: release
 
+env:
+  GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+defaults:
+  run:
+    shell: bash
+
 jobs:
-  release:
-    runs-on: windows-latest
-    timeout-minutes: 30
-    defaults:
-      run:
-        shell: bash
-    env:
-      GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v4
         with:
           ref: main
           fetch-depth: 0
           token: ${{ secrets.RELEASE_TOKEN || github.token }}
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: requirements*.txt
 
       - name: Merge develop into main
         run: |
@@ -59,15 +58,33 @@ jobs:
         env:
           BUMP: ${{ inputs.bump }}
         run: |
-          version=$(python packaging/bump_version.py "$BUMP")
+          version=$(python3 packaging/bump_version.py "$BUMP")
           if git ls-remote --exit-code --tags origin "refs/tags/v$version" >/dev/null; then
             echo "::error::Tag v$version already exists."
             exit 1
           fi
           git add VERSION
           git commit -m "Release v$version"
-          git tag -a "v$version" -m "Budgetier $version"
+          git push origin "HEAD:refs/heads/release/v$version"
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: prepare
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/v${{ needs.prepare.outputs.version }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: requirements*.txt
 
       - name: Install dependencies
         run: python -m pip install -r requirements-dev.txt
@@ -76,25 +93,67 @@ jobs:
         run: python -m unittest tests.test_budgetier
 
       - name: Build installer
-        run: |
-          python packaging/build_installer.py
-          (cd dist && sha256sum BudgetierSetup.exe > BudgetierSetup.exe.sha256)
+        run: python packaging/build_installer.py
+
+      - name: Open the built app
+        if: runner.os == 'macOS'
+        run: python packaging/self_check.py
+
+      - name: Keep the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: |
+            dist/BudgetierSetup.exe
+            dist/Budgetier-*.dmg
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      VERSION: ${{ needs.prepare.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/v${{ needs.prepare.outputs.version }}
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
 
       - name: Push main and the tag
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: git push --atomic origin HEAD:main "refs/tags/v$VERSION"
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$VERSION" -m "Budgetier $VERSION"
+          git push --atomic origin HEAD:main "refs/tags/v$VERSION"
 
       - name: Publish the release
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          gh release create "v$VERSION" dist/BudgetierSetup.exe dist/BudgetierSetup.exe.sha256 \
+          (cd installers && sha256sum * > SHA256SUMS.txt)
+          gh release create "v$VERSION" installers/* \
             --title "Budgetier $VERSION" --generate-notes --verify-tag
 
       - name: Bring develop up to date
         run: |
-          git fetch origin develop
+          git fetch origin develop main
           git checkout -B develop origin/develop
           git merge --no-edit origin/main
           git push origin develop
+
+  clean-up:
+    needs: [prepare, build, publish]
+    if: always() && needs.prepare.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Remove the release branch
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: gh api -X DELETE "repos/$GITHUB_REPOSITORY/git/refs/heads/release/v$VERSION"
