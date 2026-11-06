@@ -11,7 +11,7 @@ from datetime import date
 from pathlib import Path
 from unittest import mock
 
-from budgetier import analyze, cli, pdf2csv, service
+from budgetier import analyze, app, cli, pdf2csv, service
 from budgetier.ledger import Ledger
 from budgetier.parse import ParseError, RawRow, parse_file, parse_money, _from_filename
 
@@ -893,19 +893,29 @@ class AppImports(AppCase):
         self.assertEqual(self.budget.ledger.imports[0]["stored"], "Synchrony_Savings_4004.csv")
 
     def test_data_folder(self):
-        with mock.patch.dict("os.environ", {"LOCALAPPDATA": "C:/x"}, clear=False):
+        with mock.patch.dict("os.environ", {"LOCALAPPDATA": "C:/x"}, clear=False), \
+                mock.patch.object(service.sys, "platform", "win32"):
             import os
             os.environ.pop("BUDGETIER_HOME", None)
             self.assertEqual(service.app_home(), Path("C:/x/Budgetier"))
         with mock.patch.dict("os.environ", {"BUDGETIER_HOME": "D:/y"}):
             self.assertEqual(service.app_home(), Path("D:/y"))
 
+    def test_data_folder_on_a_mac(self):
+        with mock.patch.dict("os.environ", {"LOCALAPPDATA": "C:/x"}, clear=False), \
+                mock.patch.object(service.sys, "platform", "darwin"), \
+                mock.patch.object(service.Path, "home", return_value=Path("/Users/pat")):
+            import os
+            os.environ.pop("BUDGETIER_HOME", None)
+            self.assertEqual(service.app_home(), Path("/Users/pat/Library/Application Support/Budgetier"))
 
-_spec = importlib.util.spec_from_file_location(
-    "setup_main", Path(__file__).resolve().parents[1] / "packaging" / "setup_main.py")
-setup_main = importlib.util.module_from_spec(_spec)
-sys.modules["setup_main"] = setup_main
-_spec.loader.exec_module(setup_main)
+
+if sys.platform == "win32":  # the installer talks to the Windows registry
+    _spec = importlib.util.spec_from_file_location(
+        "setup_main", Path(__file__).resolve().parents[1] / "packaging" / "setup_main.py")
+    setup_main = importlib.util.module_from_spec(_spec)
+    sys.modules["setup_main"] = setup_main
+    _spec.loader.exec_module(setup_main)
 
 
 class Rules(AppCase):
@@ -1100,6 +1110,51 @@ class SavingBudgets(Tmp):
         self.assertIn('"category":"Groceries"', self.budget.html_path.read_text(encoding="utf-8"))
 
 
+class Desktop(Tmp):
+    def test_only_one_copy_can_run(self):
+        first = app._hold_single_instance(self.dir)
+        self.addCleanup(first.close)
+        self.assertIsNotNone(first)
+        self.assertIsNone(app._hold_single_instance(self.dir))
+
+    def test_mac_shows_the_folder_in_finder(self):
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.object(app.subprocess, "run") as run:
+            app._show_folder(Path("/Users/pat/Budgetier"))
+        self.assertEqual(run.call_args[0][0], ["open", str(Path("/Users/pat/Budgetier"))])
+
+    def test_mac_alert_passes_the_text_safely(self):
+        text = 'A "quoted" problem'
+        with mock.patch.object(app.sys, "platform", "darwin"), mock.patch.object(app.subprocess, "run") as run:
+            app._alert(text)
+        command = run.call_args[0][0]
+        self.assertEqual((command[0], command[-1]), ("osascript", text))
+        self.assertFalse(any(text in part for part in command[:-1]))
+
+
+_build = importlib.util.spec_from_file_location(
+    "build_installer", Path(__file__).resolve().parents[1] / "packaging" / "build_installer.py")
+build_installer = importlib.util.module_from_spec(_build)
+_build.loader.exec_module(build_installer)
+
+
+class MacImage(Tmp):
+    def test_each_kind_of_mac_gets_its_own_name(self):
+        self.assertEqual(build_installer.MAC_NAMES["arm64"], "Budgetier-Apple-Silicon.dmg")
+        self.assertEqual(build_installer.MAC_NAMES["x86_64"], "Budgetier-Intel.dmg")
+
+    def test_a_busy_disk_is_tried_again(self):
+        results = [mock.Mock(returncode=1), mock.Mock(returncode=0)]
+        with mock.patch.object(build_installer.subprocess, "run", side_effect=results) as run, \
+                mock.patch.object(build_installer.time, "sleep"):
+            build_installer.disk_image(self.dir, self.dir / "x.dmg")
+        self.assertEqual(run.call_count, 2)
+
+    def test_a_disk_that_stays_busy_stops_the_build(self):
+        with mock.patch.object(build_installer.subprocess, "run", return_value=mock.Mock(returncode=1)), \
+                mock.patch.object(build_installer.time, "sleep"), self.assertRaises(SystemExit):
+            build_installer.disk_image(self.dir, self.dir / "x.dmg")
+
+
 _bump = importlib.util.spec_from_file_location(
     "bump_version", Path(__file__).resolve().parents[1] / "packaging" / "bump_version.py")
 bump_version = importlib.util.module_from_spec(_bump)
@@ -1130,6 +1185,7 @@ class Versioning(Tmp):
         self.assertEqual(out.getvalue().strip(), "1.3.0")
 
 
+@unittest.skipUnless(sys.platform == "win32", "the Windows installer")
 class Installer(Tmp):
     def payload(self, files, name="payload.zip"):
         path = self.dir / name

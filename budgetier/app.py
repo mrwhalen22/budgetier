@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import ctypes
+import json
 import logging
-import msvcrt
 import os
+import subprocess
 import sys
+import time
 from functools import wraps
 from pathlib import Path
 
@@ -13,11 +15,35 @@ import webview
 
 from .service import Budget, BudgetError, app_home
 
+if sys.platform == "win32":
+    import msvcrt
+else:
+    import fcntl
+
 log = logging.getLogger("budgetier")
+
+# Run in the page by the self check: every tab must draw, and the app must be reachable.
+SELF_CHECK = """JSON.stringify({
+  api: typeof window.pywebview.api.save_budget,
+  rows: TX.length,
+  failed: TABS.filter(t => { try { S.tab = t; render(); return false; } catch { return true; } }),
+})"""
 
 
 def _alert(text: str) -> None:
-    ctypes.windll.user32.MessageBoxW(None, text, "Budgetier", 0x10)
+    if sys.platform == "win32":
+        ctypes.windll.user32.MessageBoxW(None, text, "Budgetier", 0x10)
+    else:
+        subprocess.run(["osascript", "-e", "on run argv", "-e",
+                        'display alert "Budgetier" message (item 1 of argv) as critical',
+                        "-e", "end run", text], check=False)
+
+
+def _show_folder(folder: Path) -> None:
+    if sys.platform == "win32":
+        os.startfile(folder)
+    else:
+        subprocess.run(["open", str(folder)], check=True)
 
 
 def _reply(method):
@@ -106,17 +132,36 @@ class Api:
 
     @_reply
     def open_data_folder(self):
-        os.startfile(self._budget.home)
+        _show_folder(self._budget.home)
 
 
 def _hold_single_instance(home: Path):
     """Two windows would each overwrite the other's saves."""
     lock = (home / "app.lock").open("a+")
     try:
-        msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        if sys.platform == "win32":
+            msvcrt.locking(lock.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
+        lock.close()
         return None
     return lock
+
+
+def _self_check(window, result: str) -> None:
+    """For automated builds, where nobody can look at the window: write down what the
+    page reports, then close. packaging/self_check.py judges the result."""
+    report, deadline = "", time.monotonic() + 60
+    while not report and time.monotonic() < deadline:
+        try:
+            report = window.evaluate_js(SELF_CHECK)
+        except Exception as e:
+            report = ""
+            log.info("self check not ready: %s", e)
+            time.sleep(1)
+    Path(result).write_text(report or json.dumps({"failed": ["page never answered"]}), encoding="utf-8")
+    window.destroy()
 
 
 def main() -> int:
@@ -136,7 +181,10 @@ def main() -> int:
         api._window = webview.create_window("Budgetier", url=page.as_uri(), js_api=api,
                                             width=1340, height=900, min_size=(900, 620),
                                             background_color="#101A17")
-        webview.start(gui="edgechromium", private_mode=False, storage_path=str(home / "webview"))
+        check = os.environ.get("BUDGETIER_SELF_CHECK")
+        webview.start(_self_check if check else None, (api._window, check) if check else None,
+                      gui="edgechromium" if sys.platform == "win32" else None,
+                      private_mode=False, storage_path=str(home / "webview"))
     except Exception:
         log.exception("startup failed")
         _alert(f"Budgetier couldn't start. Details are in {home / 'logs' / 'app.log'}.")
