@@ -69,8 +69,12 @@ def _first_click_taken(window) -> bool:
     """For the self check: ask the real window, since this depends on the packaged libraries."""
     if sys.platform != "darwin":
         return True
-    from webview.platforms.cocoa import BrowserView
-    return bool(BrowserView.instances[window.uid].webview.acceptsFirstMouse_(None))
+    try:
+        from webview.platforms.cocoa import BrowserView
+        return bool(BrowserView.instances[window.uid].webview.acceptsFirstMouse_(None))
+    except Exception:  # the check must still finish and report, not hang the build
+        log.exception("couldn't ask about the first click")
+        return False
 
 
 def _reply(method):
