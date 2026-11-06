@@ -335,7 +335,10 @@ class Startup(Tmp):
         window.evaluate_js.return_value = '{"failed": []}'
         result = Path(self.dir) / "result.json"
         app._self_check(window, str(result))
-        self.assertEqual(result.read_text(encoding="utf-8"), '{"failed": []}')
+        report = json.loads(result.read_text(encoding="utf-8"))
+        self.assertEqual(report["failed"], [])
+        self.assertGreater(report["certificates"], 0)
+        self.assertIn("secure_store", report)
         window.destroy.assert_called_once()
 
 

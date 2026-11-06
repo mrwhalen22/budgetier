@@ -17,19 +17,20 @@ def build_data(rows, accounts, recurring, checks, imports) -> dict:
     summaries = []
     for account in account_ids:
         own = [r for r in rows if r["account"] == account]
-        if not own:
-            continue
         info = accounts[account]
         balance = balances.get(account)
+        if not own and not (balance and balance.get("live")):
+            continue
         summaries.append({
             "id": account, "index": index[account], "name": info["name"], "bank": info["bank"],
             "number": info["number"], "type": info["type"], "count": len(own),
-            "first": min(r["date"] for r in own).isoformat(),
-            "last": max(r["date"] for r in own).isoformat(),
+            "first": min(r["date"] for r in own).isoformat() if own else None,
+            "last": max(r["date"] for r in own).isoformat() if own else None,
             "balance": balance["current"] / 100 if balance else None,
             "balances": {m: c / 100 for m, c in balance["months"].items()} if balance else {},
             "balanceAsOf": balance["as_of"] if balance else None,
             "calculated": bool(balance and balance["calculated"]),
+            "live": bool(balance and balance.get("live")),
         })
 
     # Ranked once over all history so a category keeps its color under any filter.

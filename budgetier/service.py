@@ -23,15 +23,12 @@ from . import analyze, pdf2csv, report_html, report_xlsx, rules
 from .accounts import TYPES, account_id, account_name, pin_balance, purchases_look_positive, sample_row
 from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
-from .storage import app_home, read_text, unique_path, write_files
+from .storage import BudgetError, app_home, read_text, unique_path, write_files
+from .sync import BankSync
 
 __all__ = ["Budget", "BudgetError", "app_home", "app_version"]
 
 log = logging.getLogger("budgetier")
-
-
-class BudgetError(Exception):
-    """A problem to show the person, in words they can act on."""
 
 
 def app_version() -> str:
@@ -70,6 +67,7 @@ class Budget:
         self.notices: list[dict] = []  # problems found while loading, shown with the checks
         self._pending: dict[str, dict] = {}
         self._temp = None
+        self.sync = BankSync(self)
 
     # ---- reports
 
@@ -82,7 +80,7 @@ class Budget:
         budgets = self.budgets()  # first: a damaged file adds a notice to the checks
         rows, recurring, checks = self._analysis()
         report_html.write(self.html_path, rows, self.ledger.accounts, recurring, checks, self.ledger.imports,
-                          {"rules": self.rules(), "version": app_version(),
+                          {"rules": self.rules(), "version": app_version(), "sync": self.sync.status(),
                            "budgets": analyze.budget_report(rows, self.ledger.accounts, budgets),
                            "allCategories": sorted({*analyze.category_names(), *(r["category"] for r in self.rules()),
                                                     "Transfer", analyze.SAVED})})
@@ -257,7 +255,8 @@ class Budget:
     def _rebuild(self, account: str, keep: list[dict]) -> None:
         """Replay an account from its remaining files, so overlaps stay correct."""
         info = self.ledger.accounts[account]
-        self.ledger.rows = [r for r in self.ledger.rows if r["account"] != account]
+        # Rows from the bank feed never came from a file, so they stay.
+        self.ledger.rows = [r for r in self.ledger.rows if r["account"] != account or r["sync_id"]]
         self.ledger.imports = [i for i in self.ledger.imports if i["account"] != account]
         for entry in keep:
             path = self.imported / self._key(entry)
@@ -311,11 +310,13 @@ class Budget:
             for account in {e["account"] for e in entries}:
                 keep = [i for i in self.ledger.imports if i["account"] == account and self._key(i) != key]
                 self._rebuild(account, keep)
-                if not keep:
+                if not keep and not any(r["account"] == account for r in self.ledger.rows):
                     del self.ledger.accounts[account]
 
         before = len(self.ledger.rows)
         self._transaction(change)
+        for account in {e["account"] for e in entries} - set(self.ledger.accounts):
+            self.sync.forget_account(account)
         self._remove_stored({key})
         return {"removed": before - len(self.ledger.rows)}
 
@@ -331,6 +332,7 @@ class Budget:
 
         before = len(self.ledger.rows)
         self._transaction(change)
+        self.sync.forget_account(account)
         self._remove_stored(keys)
         return {"removed": before - len(self.ledger.rows)}
 

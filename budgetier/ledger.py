@@ -11,16 +11,19 @@ import io
 import json
 import re
 import shutil
-from collections import Counter
+from collections import Counter, defaultdict
 from datetime import date, datetime
 from pathlib import Path
 
 from .parse import RawRow
 from .storage import DataError, read_text, write_files
 
-FIELDS = ["date", "account", "description", "amount", "balance", "bank_category", "source"]
+FIELDS = ["date", "account", "description", "amount", "balance", "bank_category", "source", "sync_id"]
 IMPORT_FIELDS = ["imported_at", "file", "account", "first", "last", "rows", "added", "duplicates", "stored",
                  "file_account"]
+
+
+NEAR_DAYS = 3
 
 
 def _money(cents: int | None) -> str:
@@ -40,6 +43,23 @@ def _cents(text: str) -> int | None:
 
 def _key(day: date, cents: int, description: str) -> tuple:
     return day, cents, re.sub(r"\s+", " ", description).strip().upper()
+
+
+def _not_near(incoming: list[RawRow], rows: list[dict]) -> list[RawRow]:
+    """A file and a bank feed word the same transaction differently and may date it a day
+    or two apart, so across the two, the same amount on nearby dates is the same
+    transaction. Each row can only match once, so real repeats survive."""
+    dates = defaultdict(list)
+    for r in rows:
+        dates[r["cents"]].append(r["date"])
+    kept = []
+    for raw in sorted(incoming, key=lambda r: r.date):
+        hit = next((d for d in dates[raw.cents] if abs((d - raw.date).days) <= NEAR_DAYS), None)
+        if hit is None:
+            kept.append(raw)
+        else:
+            dates[raw.cents].remove(hit)
+    return kept
 
 
 def _csv_text(fields: list[str], rows: list[dict]) -> str:
@@ -76,7 +96,8 @@ class Ledger:
             return []
         try:
             return [{**r, "date": date.fromisoformat(r["date"]),
-                     "cents": _cents(r["amount"]), "balance": _cents(r["balance"])}
+                     "cents": _cents(r["amount"]), "balance": _cents(r["balance"]),
+                     "sync_id": r.get("sync_id") or ""}
                     for r in csv.DictReader(io.StringIO(read_text(self.path), newline=""))]
         except (ValueError, KeyError, TypeError, AttributeError, csv.Error) as e:
             raise _damaged(self.path, e) from e
@@ -129,20 +150,32 @@ class Ledger:
             seen[key] += 1
             if seen[key] > have[key]:
                 new.append(raw)
-        return new
+        return _not_near(new, [r for r in self.rows if r["account"] == account_id and r["sync_id"]])
 
     def count_new(self, account_id: str, incoming: list[RawRow]) -> int:
         """How many of these rows merge() would add. Changes nothing."""
         return len(self._new_rows(account_id, incoming))
 
+    @staticmethod
+    def _row(account_id: str, raw: RawRow, source: str) -> dict:
+        return {"date": raw.date, "account": account_id, "description": raw.description, "amount": _money(raw.cents),
+                "cents": raw.cents, "balance": raw.balance, "bank_category": raw.bank_category, "source": source,
+                "sync_id": raw.sync_id}
+
+    def merge_synced(self, account_id: str, incoming: list[RawRow], since: date | None) -> int:
+        """Add what a bank feed has that the ledger doesn't. Files already cover everything
+        before since. Returns how many rows were added."""
+        own = [r for r in self.rows if r["account"] == account_id]
+        have = {r["sync_id"] for r in own if r["sync_id"]}
+        fresh = {raw.sync_id: raw for raw in incoming if raw.sync_id not in have and (since is None or raw.date >= since)}
+        new = _not_near(list(fresh.values()), [r for r in own if not r["sync_id"]])
+        self.rows += [self._row(account_id, raw, "SimpleFIN") for raw in new]
+        return len(new)
+
     def merge(self, account_id: str, incoming: list[RawRow], source: str) -> dict:
         """Add what's new for one account."""
         new = self._new_rows(account_id, incoming)
-        self.rows += [{
-            "date": raw.date, "account": account_id, "description": raw.description,
-            "amount": _money(raw.cents), "cents": raw.cents, "balance": raw.balance,
-            "bank_category": raw.bank_category, "source": source,
-        } for raw in new]
+        self.rows += [self._row(account_id, raw, source) for raw in new]
         added = len(new)
         self.imports.append({
             "imported_at": datetime.now().isoformat(timespec="seconds"), "file": source,

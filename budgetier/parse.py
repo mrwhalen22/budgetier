@@ -103,6 +103,7 @@ class RawRow:
     balance: int | None = None
     bank_category: str = ""
     account: str = ""  # last 4 from the row itself, when the file carries one
+    sync_id: str = ""  # the bank feed's own id, for rows that didn't come from a file
 
 
 @dataclass
