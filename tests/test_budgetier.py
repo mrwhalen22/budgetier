@@ -1139,8 +1139,8 @@ _build.loader.exec_module(build_installer)
 
 class MacImage(Tmp):
     def test_each_kind_of_mac_gets_its_own_name(self):
-        self.assertEqual(build_installer.MAC_NAMES["arm64"], "Budgetier-Apple-Silicon.dmg")
-        self.assertEqual(build_installer.MAC_NAMES["x86_64"], "Budgetier-Intel.dmg")
+        self.assertEqual(build_installer.MAC_NAMES["arm64"], "Budgetier-macOS-Apple-Silicon.dmg")
+        self.assertEqual(build_installer.MAC_NAMES["x86_64"], "Budgetier-macOS-Intel.dmg")
 
     def test_a_busy_disk_is_tried_again(self):
         results = [mock.Mock(returncode=1), mock.Mock(returncode=0)]

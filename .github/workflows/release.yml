@@ -104,7 +104,7 @@ jobs:
         with:
           name: installer-${{ matrix.os }}
           path: |
-            dist/BudgetierSetup.exe
+            dist/Budgetier-Windows.exe
             dist/Budgetier-*.dmg
           retention-days: 1
           if-no-files-found: error

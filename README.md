@@ -9,13 +9,13 @@ offline file that makes no network requests.
 
 Download the installer for your system from the [latest release](../../releases/latest).
 
-**Windows:** run `BudgetierSetup.exe` and approve the admin prompt. It installs for everyone
+**Windows:** run `Budgetier-Windows.exe` and approve the admin prompt. It installs for everyone
 on the PC, with your choice of location and shortcuts, and appears in Windows' Installed
 Apps, where you can uninstall it. It needs Microsoft's WebView2 runtime, which comes with
 Windows 11. The installer isn't code signed, so Windows may warn you the first time; choose
 **More info**, then **Run anyway**. Then open **Budgetier** from the Start menu or desktop.
 
-**macOS:** choose `Budgetier-Apple-Silicon.dmg` for an M-series Mac, or `Budgetier-Intel.dmg`
+**macOS:** choose `Budgetier-macOS-Apple-Silicon.dmg` for an M-series Mac, or `Budgetier-macOS-Intel.dmg`
 for an Intel one. Apple menu > **About This Mac** shows which you have. Open the file and
 drag **Budgetier** onto **Applications**. To uninstall, move it from Applications to the
 Trash. The app isn't signed by Apple, so macOS blocks it the first time:
@@ -202,7 +202,7 @@ Try the command-line version on fake data, kept apart from your real data:
 ```
 
 Build the installer, one file that holds the whole app. A build only works for the system
-it was made on. Windows makes `dist\BudgetierSetup.exe` with `build.bat`:
+it was made on. Windows makes `dist\Budgetier-Windows.exe` with `build.bat`:
 
 ```bash
 build.bat

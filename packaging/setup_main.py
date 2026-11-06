@@ -1,7 +1,7 @@
-"""BudgetierSetup.exe: one file that installs or updates Budgetier for this PC.
+"""Budgetier-Windows.exe: one file that installs or updates Budgetier for this PC.
 
-    BudgetierSetup.exe            shows the install window
-    BudgetierSetup.exe --silent   installs with no window; exit code 0 means success
+    Budgetier-Windows.exe            shows the install window
+    Budgetier-Windows.exe --silent   installs with no window; exit code 0 means success
         --dir FOLDER  --no-desktop  --no-start-menu
 
 Windows asks for admin rights when it starts, because the program goes in Program Files
