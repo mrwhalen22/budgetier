@@ -47,7 +47,7 @@ jobs:
         with:
           name: Budgetier-${{ runner.os }}
           path: |
-            dist/BudgetierSetup.exe
+            dist/Budgetier-Windows.exe
             dist/Budgetier-*.dmg
           retention-days: 7
           if-no-files-found: error

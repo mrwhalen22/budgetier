@@ -1,4 +1,4 @@
-"""Build the one file that installs Budgetier: dist/BudgetierSetup.exe on Windows, or
+"""Build the one file that installs Budgetier: dist/Budgetier-Windows.exe on Windows, or
 a disk image on macOS. A build only works for the system it was made on.
 
     python packaging/build_installer.py
@@ -15,7 +15,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD, DIST = ROOT / "build", ROOT / "dist"
-MAC_NAMES = {"arm64": "Budgetier-Apple-Silicon.dmg", "x86_64": "Budgetier-Intel.dmg"}
+MAC_NAMES = {"arm64": "Budgetier-macOS-Apple-Silicon.dmg", "x86_64": "Budgetier-macOS-Intel.dmg"}
 
 
 def pyinstaller(spec: str, work: str, dist: Path = DIST) -> None:
@@ -69,7 +69,7 @@ def main() -> int:
         archive.write(BUILD / "uninstaller" / "uninstall.exe", "uninstall.exe")
 
     pyinstaller("Setup.spec", "setup")
-    return report(DIST / "BudgetierSetup.exe")
+    return report(DIST / "Budgetier-Windows.exe")
 
 
 if __name__ == "__main__":
