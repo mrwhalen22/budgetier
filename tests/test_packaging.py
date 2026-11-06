@@ -131,6 +131,7 @@ class Updating(Tmp):
         window.assert_not_called()
 
 
+@unittest.skipUnless(sys.platform == "win32", "the Windows installer")
 class Installer(Tmp):
     def payload(self, files, name="payload.zip"):
         path = self.dir / name
