@@ -1,0 +1,12 @@
+[tool.ruff]
+target-version = "py312"
+line-length = 130
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I"]
+ignore = ["B905"]  # zip() here always pairs a list with itself
+
+[tool.ruff.lint.per-file-ignores]
+"budgetier/analyze.py" = ["E501"]  # tables of long patterns read best on one line each
+"tests/*" = ["E501"]  # real bank descriptions are long
+"packaging/*.spec" = ["F821"]  # PyInstaller supplies these names

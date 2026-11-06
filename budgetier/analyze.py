@@ -15,12 +15,13 @@ Every row gets a kind, and the totals depend on it:
 from __future__ import annotations
 
 import calendar
-import csv
 import re
 import statistics
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
+
+from .rules import read as read_rules
 
 # Tried in order against the upper-cased description; first hit wins.
 DEFAULT_RULES = [
@@ -157,22 +158,14 @@ CADENCES = [  # name, days apart, tolerance, per month, minimum occurrences
 
 
 def load_rules(path: Path) -> list[tuple]:
-    if not path.exists():
-        return []
-    rules = []
-    with path.open(newline="", encoding="utf-8") as f:
-        for row in csv.reader(f):
-            if not row or row[0].lstrip().startswith("#") or row[0].strip().lower() == "match":
-                continue
-            if len(row) < 2 or not row[1].strip():
-                continue
-            try:
-                pattern = re.compile(row[0].strip(), re.I)
-            except re.error:
-                continue  # a typo in a hand-edited rule mustn't stop the app opening
-            merchant = row[2].strip() if len(row) > 2 else ""
-            rules.append((pattern, row[1].strip(), merchant or None))
-    return rules
+    compiled = []
+    for rule in read_rules(path):
+        try:
+            pattern = re.compile(rule.pattern, re.I)
+        except re.error:
+            continue  # a typo in a hand-edited rule mustn't stop the app opening
+        compiled.append((pattern, rule.category, rule.merchant or None))
+    return compiled
 
 
 def category_names() -> list[str]:
@@ -568,22 +561,31 @@ def _duplicate_checks(rows: list[dict], accounts: dict) -> list[dict]:
     return found
 
 
-def checks(rows: list[dict], accounts: dict, imports: list[dict]) -> list[dict]:
-    """Things that would make the numbers wrong, worded as what to do about them."""
+def _first_dates(rows: list[dict]) -> dict[str, date]:
+    first: dict[str, date] = {}
+    for r in rows:
+        first[r["account"]] = min(first.get(r["account"], r["date"]), r["date"])
+    return first
+
+
+def _gap_checks(accounts: dict, imports: list[dict]) -> list[dict]:
     found = []
     for account, gaps in coverage_gaps(imports).items():
         for start, end in gaps:
             found.append({"level": "warning", "title": f"Missing history: {accounts[account]['name']}",
                           "detail": f"Nothing imported from {start} to {end}. Export that "
                                     "period and drop it in the inbox."})
+    return found
 
+
+def _unmatched_checks(rows: list[dict], accounts: dict) -> list[dict]:
+    """Money that left a bank account for somewhere we can't see."""
+    found = []
     unmatched = [r for r in rows if (r["category"] == "Transfer" or r["kind"] == "estimate")
                  and not r["matched"] and r["cents"] < 0 and accounts[r["account"]]["type"] != "credit"]
 
     # A payment dated before a card's history starts isn't a mystery, just a short export.
-    first_by_account: dict[str, date] = {}
-    for r in rows:
-        first_by_account[r["account"]] = min(first_by_account.get(r["account"], r["date"]), r["date"])
+    first_by_account = _first_dates(rows)
     too_early = defaultdict(list)
     earlier_than_history = []
     missing_from_card = []
@@ -628,33 +630,40 @@ def checks(rows: list[dict], accounts: dict, imports: list[dict]) -> list[dict]:
                                 f"{_dollars(sum(r['cents'] for r in unmatched))} went somewhere "
                                 f"not imported: {names}. Card payments here count as estimated "
                                 "spending until that card's purchases are imported."})
+    return found
 
+
+def _uncategorized_check(rows: list[dict]) -> list[dict]:
     spending = [r for r in rows if r["kind"] == "expense"]
     loose = [r for r in spending if r["category"] == UNCATEGORIZED]
-    if spending and loose:
-        share = sum(r["cents"] for r in loose) / sum(r["cents"] for r in spending)
-        by_merchant = defaultdict(int)
-        for r in loose:
-            by_merchant[r["merchant"]] += r["cents"]
-        top = ", ".join(k for k, _ in sorted(by_merchant.items(), key=lambda kv: kv[1])[:5])
-        if share >= 0.01:
-            found.append({"level": "info", "title": f"{share:.0%} of spending is uncategorized",
-                          "detail": f"Biggest: {top}. Add a line to rules.csv to sort these."})
+    if not spending or not loose:
+        return []
+    share = sum(r["cents"] for r in loose) / sum(r["cents"] for r in spending)
+    if share < 0.01:
+        return []
+    by_merchant = defaultdict(int)
+    for r in loose:
+        by_merchant[r["merchant"]] += r["cents"]
+    top = ", ".join(k for k, _ in sorted(by_merchant.items(), key=lambda kv: kv[1])[:5])
+    return [{"level": "info", "title": f"{share:.0%} of spending is uncategorized",
+             "detail": f"Biggest: {top}. Add a line to rules.csv to sort these."}]
 
-    # Card spending with no income beside it makes those months look badly overspent.
+
+def _income_history_check(rows: list[dict], accounts: dict) -> list[dict]:
+    """Card spending with no income beside it makes those months look badly overspent."""
+    first_by_account = _first_dates(rows)
     deposits = [d for a, d in first_by_account.items() if accounts[a]["type"] == "checking"]
     cards = [d for a, d in first_by_account.items() if accounts[a]["type"] == "credit"]
-    if deposits and cards:
-        income_from, spending_from = min(deposits), min(cards)
-        if (income_from - spending_from).days > 45:
-            found.append({"level": "warning", "title": "Income history is shorter than card history",
-                          "detail": f"Cards go back to {spending_from} but checking only to "
-                                    f"{income_from}. Months before that show spending with no "
-                                    "income, so judge savings from later months, or import the "
-                                    "earlier bank history."})
+    if not deposits or not cards or (min(deposits) - min(cards)).days <= 45:
+        return []
+    return [{"level": "warning", "title": "Income history is shorter than card history",
+             "detail": f"Cards go back to {min(cards)} but checking only to {min(deposits)}. Months "
+                       "before that show spending with no income, so judge savings from later "
+                       "months, or import the earlier bank history."}]
 
-    found += _duplicate_checks(rows, accounts)
 
+def _account_checks(rows: list[dict], accounts: dict) -> list[dict]:
+    found = []
     latest = max((r["date"] for r in rows), default=None)
     last_by_account = {}
     for r in rows:
@@ -670,10 +679,21 @@ def checks(rows: list[dict], accounts: dict, imports: list[dict]) -> list[dict]:
             found.append({"level": "info", "title": f"No balance yet: {info['name']}",
                           "detail": "Its export doesn't include one. Add it with Edit in the "
                                     "Accounts list."})
-    for account, info in accounts.items():
+    for info in accounts.values():
         if info.get("sign_guessed") and info.get("invert_sign"):
             found.append({"level": "info", "title": f"Check signs: {info['name']}",
                           "detail": "Amounts looked like purchases were positive, so they were "
                                     "flipped. If that's wrong, set invert_sign to false in "
                                     "accounts.json and rerun."})
+        if info.get("recovered"):
+            found.append({"level": "warning", "title": f"Check this account: {info['name']}",
+                          "detail": "Its transactions were kept, but its details were lost. Set its "
+                                    "name and type with Edit in the Accounts list."})
     return found
+
+
+def checks(rows: list[dict], accounts: dict, imports: list[dict]) -> list[dict]:
+    """Things that would make the numbers wrong, worded as what to do about them."""
+    return (_gap_checks(accounts, imports) + _unmatched_checks(rows, accounts) + _uncategorized_check(rows)
+            + _income_history_check(rows, accounts) + _duplicate_checks(rows, accounts)
+            + _account_checks(rows, accounts))

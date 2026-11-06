@@ -2,32 +2,18 @@
 from __future__ import annotations
 
 import argparse
-import re
 import shutil
 import sys
 import webbrowser
 from collections import defaultdict
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
-from . import analyze, pdf2csv, report_html, report_xlsx
+from . import analyze, pdf2csv, report_html, report_xlsx, rules
+from .accounts import account_id, account_name, pin_balance, purchases_look_positive, sample_row
 from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
-
-RULES_TEMPLATE = """\
-# Your own categorization rules. They run first and override everything built in,
-# and re-apply to your whole history on every run.
-# match is a case-insensitive regular expression tested against the bank's description.
-# merchant is optional and merges different spellings under one name.
-# Use category Transfer for moves between your own accounts (they stop counting as spending).
-match,category,merchant
-# TRADER JOE,Groceries,Trader Joe's
-# VENMO CASHOUT,Transfer,
-"""
-
-
-def _slug(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+from .storage import DataError, app_home, hold_lock, unique_path
 
 
 def _ask(prompt: str) -> str:
@@ -54,15 +40,6 @@ def _resolve(parsed: ParsedFile, args, known: dict) -> tuple[str | None, str | N
     return bank, account
 
 
-def _purchases_look_positive(parsed: ParsedFile, rows) -> bool:
-    """Spending is most of any account, so mostly-positive amounts mean a card that
-    reports purchases as positive. A savings account can honestly be nearly all
-    deposits, so it doesn't get this test."""
-    if parsed.sign_known or parsed.account_type == "savings" or len(rows) < 5:
-        return False
-    return sum(1 for r in rows if r.cents > 0) / len(rows) > 0.7
-
-
 def _ask_type(bank: str, number: str, guess: str) -> str:
     choices = {"1": "checking", "2": "savings", "3": "credit",
                "c": "checking", "s": "savings", "cc": "credit", "credit": "credit"}
@@ -79,9 +56,7 @@ def _ask_type(bank: str, number: str, guess: str) -> str:
 
 def _ask_inverted(rows, guess: bool) -> bool:
     """Show a typical row from this file: seeing it is what makes the answer certain."""
-    positive = [r for r in rows if r.cents > 0]
-    negative = [r for r in rows if r.cents < 0]
-    sample = (positive if len(positive) >= len(negative) else negative)[0]
+    sample = sample_row(rows)
     spent_if_positive = guess
     default = "y" if (sample.cents > 0) == spent_if_positive else "n"
     answer = _ask(f"    This file shows \"{sample.description}\" on {sample.date} as "
@@ -94,9 +69,9 @@ def _ensure_account(ledger: Ledger, parsed: ParsedFile, bank: str, number: str, 
     """Signs and type are settled once, so a small later file can't flip an account.
 
     At a terminal the person answers; otherwise the amounts decide and it's flagged."""
-    account_id = f"{_slug(bank)}-{number}"
-    if account_id not in ledger.accounts:
-        guessed = _purchases_look_positive(parsed, rows)
+    account = account_id(bank, number)
+    if account not in ledger.accounts:
+        guessed = purchases_look_positive(parsed, rows)
         account_type = "credit" if guessed else parsed.account_type
         invert = parsed.invert or guessed
         asked = sys.stdin.isatty()
@@ -104,18 +79,17 @@ def _ensure_account(ledger: Ledger, parsed: ParsedFile, bank: str, number: str, 
             account_type = _ask_type(bank, number, account_type)
             if not parsed.sign_known:
                 invert = _ask_inverted(rows, invert)
-        label = {"credit": "Card", "savings": "Savings", "checking": "Checking"}[account_type]
-        ledger.accounts[account_id] = {
-            "name": f"{bank} {label} {number}", "bank": bank, "number": number,
+        ledger.accounts[account] = {
+            "name": account_name(bank, account_type, number), "bank": bank, "number": number,
             "type": account_type, "invert_sign": invert}
         note = ""
         if guessed and not asked:
-            ledger.accounts[account_id]["sign_guessed"] = True
+            ledger.accounts[account]["sign_guessed"] = True
             note = " (looks like a card from its amounts; fix in accounts.json if wrong)"
         elif parsed.type_is_guess and not asked:
             note = " (type is a guess; fix in accounts.json if wrong)"
-        print(f"  New account: {ledger.accounts[account_id]['name']}{note}")
-    return account_id
+        print(f"  New account: {ledger.accounts[account]['name']}{note}")
+    return account
 
 
 def import_file(ledger: Ledger, path: Path, args) -> bool:
@@ -135,22 +109,18 @@ def import_file(ledger: Ledger, path: Path, args) -> bool:
         by_number[row.account or default_number].append(row)
 
     for number, rows in by_number.items():
-        account_id = _ensure_account(ledger, parsed, bank, number, rows)
-        if ledger.accounts[account_id]["invert_sign"]:
+        account = _ensure_account(ledger, parsed, bank, number, rows)
+        if ledger.accounts[account]["invert_sign"]:
             for row in rows:
                 row.cents = -row.cents
-        result = ledger.merge(account_id, rows, path.name)
-        print(f"  {path.name} -> {ledger.accounts[account_id]['name']}: "
+        result = ledger.merge(account, rows, path.name)
+        result["file_account"] = rows[0].account or parsed.account or ""
+        print(f"  {path.name} -> {ledger.accounts[account]['name']}: "
               f"{result['added']} new, {result['duplicates']} already had "
               f"({result['first']} to {result['last']})")
     for warning in parsed.warnings:
         print(f"    note: {warning}")
     return True
-
-
-def _pin_balance(info: dict, cents: int, day: date) -> None:
-    info["balance_anchor"] = {"date": day.isoformat(), "amount": cents / 100}
-    info.pop("balance_skipped", None)
 
 
 def _ask_balances(ledger: Ledger) -> None:
@@ -174,7 +144,7 @@ def _ask_balances(ledger: Ledger) -> None:
                 break
             cents = parse_money(answer)
             if cents is not None:
-                _pin_balance(info, cents, date.today())
+                pin_balance(info, cents, date.today())
                 break
             print("  Please enter an amount, like 1234.56.")
 
@@ -191,16 +161,13 @@ def _set_balance(ledger: Ledger, key: str, amount: str, as_of: str | None) -> bo
     except ValueError:
         print("Use --as-of YYYY-MM-DD.")
         return False
-    _pin_balance(ledger.accounts[matches[0]], cents, day)
+    pin_balance(ledger.accounts[matches[0]], cents, day)
     print(f"Balance set: {ledger.accounts[matches[0]]['name']} ${cents / 100:,.2f} on {day}")
     return True
 
 
 def _archive(path: Path, imported: Path) -> None:
-    target = imported / path.name
-    if target.exists():
-        target = imported / f"{path.stem}.{datetime.now():%Y%m%d-%H%M%S}{path.suffix}"
-    shutil.move(str(path), target)
+    shutil.move(str(path), unique_path(imported, path.name))
 
 
 def convert_pdfs(inbox: Path, imported: Path) -> int:
@@ -221,14 +188,9 @@ def convert_pdfs(inbox: Path, imported: Path) -> int:
     return failed
 
 
-def _data_folder() -> Path:
-    from .service import app_home  # service imports this module
-    return app_home()
-
-
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(prog="budgetier", description=__doc__)
-    parser.add_argument("--home", type=Path, default=_data_folder(),
+    parser.add_argument("--home", type=Path, default=app_home(),
                         help="folder holding inbox/, data/, output/ (default: the app's data folder)")
     parser.add_argument("--bank", help="bank name, when a file doesn't reveal it")
     parser.add_argument("--account", help="account number or last 4, when a file doesn't reveal it")
@@ -239,12 +201,27 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     home: Path = args.home.resolve()
+    home.mkdir(parents=True, exist_ok=True)
+    lock = hold_lock(home)
+    if lock is None:
+        print("Budgetier is open. Close it, then run this again.")
+        return 2
+    try:
+        return _run(args, home)
+    except DataError as e:
+        print(e)
+        return 2
+    finally:
+        lock.close()
+
+
+def _run(args, home: Path) -> int:
     inbox, imported, output = home / "inbox", home / "imported", home / "output"
     for folder in (inbox, imported, output):
         folder.mkdir(parents=True, exist_ok=True)
     rules_path = home / "rules.csv"
     if not rules_path.exists():
-        rules_path.write_text(RULES_TEMPLATE, encoding="utf-8")
+        rules_path.write_text(rules.TEMPLATE, encoding="utf-8")
 
     ledger = Ledger(home)
     skipped = convert_pdfs(inbox, imported)

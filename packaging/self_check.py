@@ -2,8 +2,9 @@
 
     python packaging/self_check.py
 
-Run after build_installer.py. Every tab must draw and the page must reach the app. The
-data folder has a space in its name, as the real one on macOS does.
+Run after build_installer.py. Every tab must draw, the page must reach the app, and the
+monthly totals the page works out must match the workbook's to the cent. The data folder
+has a space in its name, as the real one on macOS does.
 """
 import json
 import os
@@ -14,6 +15,11 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
+from budgetier import analyze  # noqa: E402
+from budgetier.ledger import Ledger  # noqa: E402
+
 DEMO = ROOT / "samples" / "demo"
 APP = {"darwin": ROOT / "dist" / "Budgetier.app" / "Contents" / "MacOS" / "Budgetier",
        "win32": ROOT / "dist" / "Budgetier" / "Budgetier.exe"}
@@ -22,6 +28,13 @@ APP = {"darwin": ROOT / "dist" / "Budgetier.app" / "Contents" / "MacOS" / "Budge
 def run(*args: object) -> None:
     subprocess.run([sys.executable, *map(str, args)], check=True, cwd=ROOT, stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL)
+
+
+def python_totals() -> list[list]:
+    """What the workbook reports for the demo data. The page works this out separately."""
+    ledger = Ledger(DEMO)
+    rows = analyze.classify(ledger.rows, ledger.accounts, analyze.load_rules(DEMO / "rules.csv"))
+    return [[m["month"], m["income"], m["spending"]] for m in analyze.monthly_summary(rows)]
 
 
 def main() -> int:
@@ -40,7 +53,11 @@ def main() -> int:
             print(log.read_text(encoding="utf-8"))
         report = json.loads(result.read_text(encoding="utf-8")) if result.exists() else {"failed": ["no result"]}
     print(f"exit: {code}, report: {report}")
-    good = code == 0 and report.get("api") == "function" and report.get("rows", 0) > 0 and not report["failed"]
+    totals = python_totals()
+    matched = report.get("months") == totals
+    if not matched:
+        print(f"Totals differ. Python: {totals}")
+    good = code == 0 and report.get("api") == "function" and report.get("rows", 0) > 0 and not report["failed"] and matched
     print("Self check passed." if good else "Self check FAILED.")
     return 0 if good else 1
 
