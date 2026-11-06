@@ -1,6 +1,7 @@
 """The desktop bridge and the Windows installer's steps, without touching the real system."""
 import importlib.util
 import sys
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -61,6 +62,23 @@ class Bridge(unittest.TestCase):
     def test_turning_the_check_off_is_saved(self):
         self.assertTrue(self.api.set_update_check(False)["ok"])
         self.budget.updates.set_automatic.assert_called_once_with(False)
+
+    def test_closing_waits_for_a_save_to_finish(self):
+        order = []
+        self.api._turn.acquire()
+        threading.Timer(.05, lambda: (order.append("saved"), self.api._turn.release())).start()
+        self.api._finish()
+        order.append("left")
+        self.assertEqual(order, ["saved", "left"])
+
+    def test_a_stuck_call_cannot_stop_the_app_closing(self):
+        with self.api._turn, mock.patch.object(app, "FINISH_WAIT", .01):
+            self.api._finish()
+
+    def test_leaving_does_not_wait_for_answers_to_the_page(self):
+        with mock.patch.object(app, "main", return_value=3), mock.patch.object(app.os, "_exit") as leave:
+            app.run()
+        leave.assert_called_once_with(3)
 
     def test_commit_and_cancel(self):
         self.budget.commit.return_value = [{"added": 1}]

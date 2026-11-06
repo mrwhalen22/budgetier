@@ -20,6 +20,7 @@ from .service import Budget, BudgetError
 from .storage import DataError, app_home, hold_lock
 
 log = logging.getLogger("budgetier")
+FINISH_WAIT = 60  # seconds, longer than a sync's slowest request
 
 # Run in the page by the self check: every tab must draw, and the app must be reachable.
 SELF_CHECK = """JSON.stringify({
@@ -70,6 +71,11 @@ class Api:
         self._budget = budget
         self._window = None
         self._turn = threading.Lock()
+
+    def _finish(self) -> None:
+        """Let anything still saving finish, since leaving won't wait for it."""
+        if self._turn.acquire(timeout=FINISH_WAIT):
+            self._turn.release()
 
     @_reply
     def pick_files(self):
@@ -183,6 +189,15 @@ class Api:
         _show_folder(self._budget.home)
 
 
+def run() -> None:
+    """Leave without waiting for the page's calls. Each one's answer is delivered by a thread
+    Python won't exit without, and on a Mac that thread waits forever if the window has closed
+    first, which would leave the app running unseen and unable to reopen."""
+    code = main()
+    logging.shutdown()
+    os._exit(code)
+
+
 def _self_check(window, result: str) -> None:
     """For automated builds, where nobody can look at the window: write down what the
     page reports, then close. packaging/self_check.py judges the result."""
@@ -223,6 +238,7 @@ def main() -> int:
         webview.start(_self_check if check else None, (api._window, check) if check else None,
                       gui="edgechromium" if sys.platform == "win32" else None,
                       private_mode=False, storage_path=str(home / "webview"))
+        api._finish()
     except DataError as e:
         log.error("saved data can't be read: %s", e)
         _alert(str(e))
@@ -237,4 +253,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    run()
