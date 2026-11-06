@@ -2,6 +2,8 @@
 
     Budgetier-Windows.exe            shows the install window
     Budgetier-Windows.exe --silent   installs with no window; exit code 0 means success
+    Budgetier-Windows.exe --update   what the app runs to update itself: waits for it to
+                                     close, keeps your shortcuts, then opens it again
         --dir FOLDER  --no-desktop  --no-start-menu
 
 Windows asks for admin rights when it starts, because the program goes in Program Files
@@ -11,12 +13,14 @@ in %LOCALAPPDATA%\\Budgetier and is never touched, so updating can't lose your h
 from __future__ import annotations
 
 import argparse
+import ctypes
 import logging
 import os
 import shutil
 import subprocess
 import sys
 import threading
+import time
 import winreg
 import zipfile
 from dataclasses import dataclass
@@ -25,6 +29,7 @@ from pathlib import Path
 
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Budgetier"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
+CLOSE_WAIT = 30  # seconds for the app to finish closing after it starts an update
 PROGRAM_FILES = {"budgetier.exe", "uninstall.exe", "uninstall.ps1", "_internal"}  # lowercase
 log = logging.getLogger("budgetier.setup")
 
@@ -460,14 +465,35 @@ def window() -> int:
     return 0
 
 
+def update() -> int:
+    """The app is closing itself, so give it a moment. Whatever happens, it opens again:
+    a failed update leaves the installed copy in use, and the person should know why."""
+    deadline = time.monotonic() + CLOSE_WAIT
+    while app_is_running() and time.monotonic() < deadline:
+        time.sleep(.5)
+    target, code = installed_location() or default_target(), 0
+    try:
+        target = install(Options(target, *shortcut_state()))
+    except SetupError as e:
+        log.error("update failed: %s", e)
+        ctypes.windll.user32.MessageBoxW(None, f"Budgetier couldn't update. {e}", "Budgetier", 0x10)
+        code = 1
+    if (target / "Budgetier.exe").exists():
+        launch(target)
+    return code
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--silent", action="store_true")
+    parser.add_argument("--update", action="store_true")
     parser.add_argument("--dir")
     parser.add_argument("--no-desktop", action="store_true")
     parser.add_argument("--no-start-menu", action="store_true")
     args, _ = parser.parse_known_args()
     start_log()
+    if args.update:
+        return update()
     if not args.silent:
         return window()
     try:

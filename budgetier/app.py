@@ -20,6 +20,7 @@ from .service import Budget, BudgetError
 from .storage import DataError, app_home, hold_lock
 
 log = logging.getLogger("budgetier")
+FINISH_WAIT = 60  # seconds, longer than a sync's slowest request
 
 # Run in the page by the self check: every tab must draw, and the app must be reachable.
 SELF_CHECK = """JSON.stringify({
@@ -70,6 +71,11 @@ class Api:
         self._budget = budget
         self._window = None
         self._turn = threading.Lock()
+
+    def _finish(self) -> None:
+        """Let anything still saving finish, since leaving won't wait for it."""
+        if self._turn.acquire(timeout=FINISH_WAIT):
+            self._turn.release()
 
     @_reply
     def pick_files(self):
@@ -146,6 +152,27 @@ class Api:
     def disconnect_bank(self):
         self._budget.sync.disconnect()
 
+    def check_update(self, by_hand=False):
+        """Outside _reply's turns: a slow network mustn't hold up saving a rule."""
+        try:
+            return {"ok": True, **self._budget.updates.check(by_hand)}
+        except BudgetError as e:
+            return {"ok": False, "error": str(e)}
+        except Exception:
+            log.exception("update check failed")
+            return {"ok": False, "error": "Couldn't check for updates."}
+
+    @_reply
+    def install_update(self):
+        result = self._budget.updates.install()
+        if result["closing"]:  # after this reply reaches the page
+            threading.Timer(.5, self._window.destroy).start()
+        return result
+
+    @_reply
+    def set_update_check(self, on):
+        self._budget.updates.set_automatic(on)
+
     @_reply
     def export_workbook(self):
         chosen = self._window.create_file_dialog(
@@ -160,6 +187,15 @@ class Api:
     @_reply
     def open_data_folder(self):
         _show_folder(self._budget.home)
+
+
+def run() -> None:
+    """Leave without waiting for the page's calls. Each one's answer is delivered by a thread
+    Python won't exit without, and on a Mac that thread waits forever if the window has closed
+    first, which would leave the app running unseen and unable to reopen."""
+    code = main()
+    logging.shutdown()
+    os._exit(code)
 
 
 def _self_check(window, result: str) -> None:
@@ -192,6 +228,7 @@ def main() -> int:
         return 1
     try:
         budget = Budget(home)
+        budget.updates.clean()
         page = budget.refresh()
         api = Api(budget)
         api._window = webview.create_window("Budgetier", url=page.as_uri(), js_api=api,
@@ -201,6 +238,7 @@ def main() -> int:
         webview.start(_self_check if check else None, (api._window, check) if check else None,
                       gui="edgechromium" if sys.platform == "win32" else None,
                       private_mode=False, storage_path=str(home / "webview"))
+        api._finish()
     except DataError as e:
         log.error("saved data can't be read: %s", e)
         _alert(str(e))
@@ -215,4 +253,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    run()

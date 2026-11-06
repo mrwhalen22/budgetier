@@ -1,6 +1,7 @@
 """The desktop bridge and the Windows installer's steps, without touching the real system."""
 import importlib.util
 import sys
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -36,6 +37,48 @@ class Bridge(unittest.TestCase):
             getattr(self.budget, name).return_value = {}
             self.assertTrue(getattr(self.api, name)(*args)["ok"], name)
             getattr(self.budget, name).assert_called_once_with(*args)
+
+    def test_a_slow_update_check_does_not_wait_its_turn(self):
+        self.budget.updates.check.return_value = {"available": False}
+        with self.api._turn:
+            self.assertEqual(self.api.check_update(True), {"ok": True, "available": False})
+        self.budget.updates.check.assert_called_once_with(True)
+
+    def test_a_failed_update_check_reaches_the_page(self):
+        self.budget.updates.check.side_effect = app.BudgetError("offline")
+        self.assertEqual(self.api.check_update(True), {"ok": False, "error": "offline"})
+
+    def test_the_window_closes_only_when_the_installer_took_over(self):
+        self.budget.updates.install.return_value = {"closing": True}
+        with mock.patch.object(app.threading, "Timer") as timer:
+            self.assertTrue(self.api.install_update()["closing"])
+        timer.assert_called_once_with(.5, self.api._window.destroy)
+        timer.return_value.start.assert_called_once()
+        self.budget.updates.install.side_effect = app.BudgetError("declined")
+        with mock.patch.object(app.threading, "Timer") as timer:
+            self.assertFalse(self.api.install_update()["ok"])
+        timer.assert_not_called()
+
+    def test_turning_the_check_off_is_saved(self):
+        self.assertTrue(self.api.set_update_check(False)["ok"])
+        self.budget.updates.set_automatic.assert_called_once_with(False)
+
+    def test_closing_waits_for_a_save_to_finish(self):
+        order = []
+        self.api._turn.acquire()
+        threading.Timer(.05, lambda: (order.append("saved"), self.api._turn.release())).start()
+        self.api._finish()
+        order.append("left")
+        self.assertEqual(order, ["saved", "left"])
+
+    def test_a_stuck_call_cannot_stop_the_app_closing(self):
+        with self.api._turn, mock.patch.object(app, "FINISH_WAIT", .01):
+            self.api._finish()
+
+    def test_leaving_does_not_wait_for_answers_to_the_page(self):
+        with mock.patch.object(app, "main", return_value=3), mock.patch.object(app.os, "_exit") as leave:
+            app.run()
+        leave.assert_called_once_with(3)
 
     def test_commit_and_cancel(self):
         self.budget.commit.return_value = [{"added": 1}]
