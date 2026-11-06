@@ -1,0 +1,19 @@
+# Environment and build output
+.venv/
+__pycache__/
+*.pyc
+build/
+dist/
+
+# Personal financial data never belongs in version control. These cover the folders
+# the command-line tool creates, and any bank export left lying around.
+inbox/
+imported/
+data/
+output/
+samples/demo/
+accounts.json
+rules.csv
+*.csv
+*.xlsx
+*.pdf
