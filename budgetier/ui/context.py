@@ -20,6 +20,7 @@ class Context:
     version: str = ""
     sync_connected: bool = False
     updates: dict = field(default_factory=dict)
+    edit: object = None  # the window's Editing: categorize a transaction, start the queue, change rules
 
     def color(self, category: str) -> str:
         """The top categories over all history keep one color each, under any filter."""

@@ -580,6 +580,20 @@ def transactions(s: Snapshot, choice: Choice, query: str = "", category: str = "
     return Found(found, sum(t.cents for t in found))
 
 
+def edit_target(s: Snapshot, t: Tx) -> dict:
+    """What Budget.save_edit needs to find this one transaction: n tells apart identical
+    rows, counted the way analyze.edit_keys counts them."""
+    words = " ".join(t.description.upper().split())
+    n = sum(1 for x in s.txns[:t.i] if x.date == t.date and x.account == t.account and x.cents == t.cents
+            and " ".join(x.description.upper().split()) == words)
+    return {"date": t.date, "account": t.account, "cents": t.cents, "description": t.description, "n": n}
+
+
+def rule_categories(s: Snapshot) -> list[str]:
+    """What a rule or a single change can choose from."""
+    return sorted({*s.all_categories, *s.categories} - {analyze.UNCATEGORIZED, analyze.ESTIMATED})
+
+
 def category_filter(s: Snapshot) -> list[str]:
     """The category list on Transactions: the moves first, then by spending."""
     return ["Transfer", analyze.SAVED, "Income", *(c for c in s.categories if c != "Income")]
