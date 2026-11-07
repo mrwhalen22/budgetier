@@ -261,6 +261,17 @@ skipped, so install them once to run it:
 .venv/Scripts/python -m playwright install chromium webkit
 ```
 
+The window is moving from the page to Qt Widgets, as `docs/qt-migration.md` describes. Until
+that's done, the Qt window opens only from here. `--home` points it at another data folder,
+such as the fake data made below:
+
+```bash
+.venv/Scripts/python -m budgetier.ui --home samples/demo
+```
+
+Its code is in `budgetier/ui/`, and `tests/test_ui.py` tests it with Qt drawing offscreen, so
+it needs no screen.
+
 Try the command-line version on fake data, kept apart from your real data:
 
 ```bash
