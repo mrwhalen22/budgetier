@@ -1,9 +1,10 @@
 """The design system stays one system: every look comes from tokens, and every theme reads."""
 import re
 import unittest
-from pathlib import Path
 
-PAGE = (Path(__file__).resolve().parents[1] / "budgetier" / "dashboard.html").read_text(encoding="utf-8")
+from budgetier import report_html
+
+PAGE = report_html.page()
 STYLE = PAGE[PAGE.index("<style>") + 7:PAGE.index("</style>")]
 TEMPLATES = PAGE[PAGE.index("</style>"):]
 CSS = re.sub(r"/\*.*?\*/", "", STYLE, flags=re.S)
@@ -68,6 +69,16 @@ class Themes(unittest.TestCase):
 
     def test_the_picker_offers_every_palette(self):
         self.assertEqual(tuple(re.findall(r'\["(\w+)", "[A-Z]\w+"\]', PAGE[:PAGE.index("<style>")])), PALETTES)
+
+
+class SourceFiles(unittest.TestCase):
+    def test_every_file_is_part_of_the_page(self):
+        found = {p.relative_to(report_html.SOURCE).as_posix() for p in report_html.SOURCE.rglob("*") if p.is_file()}
+        listed = {*report_html.STYLES, *report_html.SCRIPTS, "js/boot.js", "index.html"}
+        self.assertEqual(found, listed)
+
+    def test_nothing_is_left_waiting_to_be_filled_but_the_data(self):
+        self.assertEqual(re.findall(r"/\*__\w+__\*/", PAGE), ["/*__DATA__*/"])
 
 
 class OneSystem(unittest.TestCase):

@@ -227,15 +227,16 @@ Run the desktop app. It uses your real data folder, so close any installed copy 
 
 | Path | What's there |
 | --- | --- |
-| `budgetier/` | The app: parsing, ledger, analysis, reports, dashboard page and desktop window |
+| `budgetier/` | The app: parsing, ledger, analysis, reports and desktop window |
+| `budgetier/dashboard/` | The page: `index.html`, `styles/` and `js/`, joined into one file by `report_html.py` |
 | `packaging/` | Installer, uninstaller and the scripts that build them |
 | `tests/` | The test suite |
 | `samples/` | A generator for fake bank exports |
 | `VERSION` | The current version |
 
-The look comes from the design system at the top of `budgetier/dashboard.html`: tokens for
-color, type, spacing and corners, then one button, field, card, panel, banner and table. To add
-a theme, add its light and dark palettes there and to `PALETTES`. `tests/test_design.py` fails
+The look comes from the design system in `budgetier/dashboard/styles/`: tokens for color, type,
+spacing and corners, then one button, field, card, panel, banner and table. To add a theme, add
+its light and dark palettes to `tokens.css` and to `PALETTES` in `js/boot.js`. `tests/test_design.py` fails
 on hard-coded colors or sizes, inline looks, and any theme with unreadable contrast.
 
 Run the tests:
@@ -243,6 +244,13 @@ Run the tests:
 ```bash
 .venv/Scripts/python -m unittest discover -s tests -t .
 .venv/Scripts/python -m ruff check .
+```
+
+`tests/test_page.py` runs the real page in Chromium and WebKit. Without those browsers it's
+skipped, so install them once to run it:
+
+```bash
+.venv/Scripts/python -m playwright install chromium webkit
 ```
 
 Try the command-line version on fake data, kept apart from your real data:
