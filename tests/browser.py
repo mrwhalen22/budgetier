@@ -93,13 +93,14 @@ def build(home: Path, rows: list[dict] | None = None) -> service.Budget:
 class PageCase(unittest.TestCase):
     """A subclass sets engine. Each test gets a fresh page of the shared report."""
     engine = ""
+    extra_rows: tuple = ()  # added to the made-up data, for a subclass that needs more
     WIDTH, HEIGHT = 1300, 860
 
     @classmethod
     def setUpClass(cls):
         cls.folder = tempfile.mkdtemp(prefix="budgetier-page-")
         cls.addClassCleanup(shutil.rmtree, cls.folder, ignore_errors=True)
-        cls.budget = build(Path(cls.folder) / "home")
+        cls.budget = build(Path(cls.folder) / "home", _rows() + list(cls.extra_rows) if cls.extra_rows else None)
         cls.playwright = sync_playwright().start()
         cls.addClassCleanup(cls.playwright.stop)
         try:

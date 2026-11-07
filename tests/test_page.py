@@ -177,7 +177,7 @@ class OneTransaction:
         with tempfile.TemporaryDirectory() as folder:
             real = build(Path(folder) / "home")  # the real service, given what the page sent
             real.save_edit(*sent[0][1])
-            changed = [r for r in real._analysis()[0] if r["edited"]]
+            changed = [r for r in real.analysis()[0] if r["edited"]]
             self.assertEqual([r["merchant"] for r in changed], ["One Off"])
 
     def test_identical_rows_are_told_apart(self):
