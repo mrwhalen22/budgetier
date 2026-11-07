@@ -25,10 +25,30 @@ def owed_tile(owed: views.Owed | None):
     return widgets.tile("Owed on cards", fmt.money(owed.owed), sub, fmt.gain(owed.owed))
 
 
-def welcome() -> QWidget:
-    return widgets.card(widgets.text("See where your money goes. Start by bringing in your accounts.", "dim"),
-                        widgets.text("Adding files and connecting banks arrive in step 5 of the move to Qt.", "dim"),
-                        title="Welcome to Budgetier")
+def welcome(ctx: Context) -> QWidget:
+    """Before there's any data: the two ways to bring it in."""
+    w = ctx.window
+    if ctx.sync_connected:
+        from ..banking import sync_card
+        start = sync_card(w)
+    else:
+        connect = QPushButton("Connect SimpleFIN")
+        connect.setProperty("kind", "primary")
+        connect.clicked.connect(lambda: w.banking.connect_form())
+        add = QPushButton("Add files")
+        add.clicked.connect(lambda: w.importing.add_files())
+        start = widgets.Grid([
+            widgets.card(widgets.row(connect), title="Connect your banks",
+                         note="Updates through SimpleFIN, a paid service that handles your transactions. Usually brings "
+                              "in about the last 90 days."),
+            widgets.card(widgets.row(add), title="Add files",
+                         note="Download CSV exports from each bank, for as much history as you like. Everything stays on "
+                              "this computer.")], 300, most=2)
+    banks = QPushButton("See which banks work")
+    banks.clicked.connect(lambda: w.show_tab("Help"))
+    return widgets.column(widgets.text("Welcome to Budgetier", "h1"),
+                          widgets.text("See where your money goes. Start by bringing in your accounts.", "dim"),
+                          start, widgets.row(banks), spacing=theme.SPACE[4])
 
 
 def stat(key: str, value: str, sub: str = "", tone: str = "") -> QWidget:
@@ -138,7 +158,7 @@ def hero(ctx: Context, o: views.Overview) -> QFrame:
 def build(ctx: Context) -> QWidget:
     s, t = ctx.snapshot, ctx.tokens
     if not s.txns:
-        return welcome()
+        return welcome(ctx)
     o = views.overview(s, ctx.choice)
     average = "" if o.one else "Avg. monthly "
     rate = "n/a" if o.rate is None else f"{round(o.rate * 100)}%"

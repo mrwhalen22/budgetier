@@ -12,7 +12,7 @@ from .overview import welcome
 def build(ctx: Context) -> QWidget:
     s, t = ctx.snapshot, ctx.tokens
     if not s.txns:
-        return welcome()
+        return welcome(ctx)
     every = ctx.options.get("largest_all", False)
     found = views.largest(s, ctx.choice, every)
     if found.merchants:

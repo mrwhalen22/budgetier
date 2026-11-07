@@ -7,12 +7,15 @@ still opens the page, and this window opens only from the command line:
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
     QComboBox,
+    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -28,16 +31,19 @@ from PySide6.QtWidgets import (
 
 from .. import views
 from ..service import Budget, app_version
-from . import icons, theme, widgets
+from . import banking, icons, theme, widgets
+from .banking import Banking
 from .context import Context
 from .dialogs import Toast
 from .editing import Editing
+from .importing import Importing
 from .tabs import BUILDERS, transactions
+from .work import Runner
 
 # The order the sidebar lists them in, as on the page.
 TABS = ("Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help")
 # Which step of docs/qt-migration.md brings each tab, until it's here.
-COMING = {"Accounts": 5, "Budgets": 6}
+COMING = {"Budgets": 6}
 # These cover all of history, so the period and account filters don't apply.
 FULL_HISTORY = {"Budgets", "Recurring", "Accounts", "Rules", "Help"}
 SIDE_WIDTH = 232
@@ -81,6 +87,9 @@ class Window(QMainWindow):
         self.setCentralWidget(central)
         self.toast = Toast(self)
         self.editing = Editing(self)
+        self.runner = Runner(self)
+        self.importing = Importing(self)
+        self.banking = Banking(self)
 
         hints = QApplication.instance().styleHints()
         hints.colorSchemeChanged.connect(lambda _scheme: self.restyle())
@@ -111,6 +120,18 @@ class Window(QMainWindow):
         brand.addWidget(self.brand_mark)
         brand.addWidget(name, 1)
         column.addLayout(brand)
+
+        self.add_button = QPushButton("Add files")
+        self.add_button.setProperty("kind", "primary")
+        self.add_button.clicked.connect(lambda: self.importing.add_files())
+        self.bank_button = QPushButton()
+        self.bank_button.clicked.connect(lambda: self.banking.act())
+        actions = QVBoxLayout()
+        actions.setSpacing(theme.SPACE[2])
+        actions.setContentsMargins(0, 0, 0, theme.SPACE[4])
+        actions.addWidget(self.add_button)
+        actions.addWidget(self.bank_button)
+        column.addLayout(actions)
 
         self.tab_group = QButtonGroup(self)
         self.tab_group.setExclusive(True)
@@ -196,6 +217,9 @@ class Window(QMainWindow):
         if self.choice.range not in values:
             self.choice = views.Choice("12", self.choice.accounts)
         self._fill_filters()
+        status = self.banking.status()
+        self.bank_button.setText(banking.button_label(status))
+        self.bank_button.setToolTip(f"Last synced {banking.synced_at(status)}" if banking.synced_at(status) else "")
         s = self.snapshot
         through = f"Data through {views.day_name(s.end)}. " if s.txns else ""
         stays = "Stored on this computer." if self.budget.sync.status()["connected"] else "Stays on this computer."
@@ -276,6 +300,27 @@ class Window(QMainWindow):
         self.options["transactions"] = {**transactions.fresh(), "category": category, "query": query}
         self.show_tab("Transactions")
 
+    def tokens(self) -> dict[str, str]:
+        return theme.tokens(self.mode, self.look.palette)
+
+    def hold(self, on: bool, note: str = "") -> None:
+        """Hold the window still while slow work runs, saying what it is."""
+        self.centralWidget().setEnabled(not on)
+        if on:
+            self.toast.stay(note)
+        else:
+            self.toast.hide()
+
+    def ask_files(self) -> list[str]:
+        """Bank files to add. Tests replace this, since a real file dialog needs a person."""
+        paths, _ = QFileDialog.getOpenFileNames(self, "Add files", "", "Bank files (*.csv *.pdf);;All files (*)")
+        return paths
+
+    def ask_save_path(self) -> str:
+        path, _ = QFileDialog.getSaveFileName(self, "Export workbook", str(Path.home() / "Budgetier.xlsx"),
+                                              "Excel workbook (*.xlsx)")
+        return path
+
     def changed(self, note: str = "") -> None:
         """After a change to the data: read it again, redraw where you were, and say what happened."""
         self.reload()
@@ -285,7 +330,7 @@ class Window(QMainWindow):
         status = self.budget.updates.status()
         return Context(self.snapshot, self.choice, theme.tokens(self.mode, self.look.palette), self.open_transactions,
                        self.choose_range, self.render, self.options, app_version(),
-                       self.budget.sync.status()["connected"], status, self.editing)
+                       self.budget.sync.status()["connected"], status, self.editing, self)
 
     def render(self) -> None:
         """Draw the tab that's showing, from the data and filters as they are now."""
@@ -294,7 +339,8 @@ class Window(QMainWindow):
         tab = self.tab
         full = tab in FULL_HISTORY
         self.filters.setVisible(not full and bool(self.snapshot.txns))
-        self.subtitle.setText("All history" if full else views.range_label(self.snapshot, self.choice))
+        subtitle = "All history" if full else views.range_label(self.snapshot, self.choice)
+        self.subtitle.setText(subtitle if self.snapshot.txns or tab == "Help" else "")  # no data: just the welcome
         body = BUILDERS[tab](self.context()) if tab in BUILDERS else _placeholder(tab)
         page = QWidget()
         layout = QVBoxLayout(page)
