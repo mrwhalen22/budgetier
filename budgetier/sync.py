@@ -133,7 +133,7 @@ class BankSync:
             self._feed = self._fetch(self._access(), today - timedelta(days=simplefin.MAX_DAYS - 1), today)
             self._feed.accounts.sort(key=lambda a: (a.connection, a.name))
             self._feed_at = now
-            self._record_outcome(self._feed)
+            self._record_outcome(self._feed, synced=False)
             self.budget.refresh()
         return {"accounts": [self._proposal(a) for a in self._feed.accounts], "existing": self._existing(),
                 "problems": self._feed.problems}
@@ -231,10 +231,15 @@ class BankSync:
             results.append({"account": info["name"], "added": added})
         return results
 
-    def _record_outcome(self, feed: Feed) -> None:
+    def _record_outcome(self, feed: Feed, synced: bool = True) -> None:
+        """synced says the feed's rows were added. Only then does the last sync move on,
+        because the next sync starts from it: a review that adds nothing mustn't count,
+        or the days between the real last sync and the review would never arrive."""
         handled = {*self.links, *self.state.get("skipped", [])}
-        self.state.update(problems=feed.problems, last_sync=datetime.now().isoformat(timespec="seconds"),
+        self.state.update(problems=feed.problems,
                           unlinked=sum(a.key not in handled and a.currency == "USD" for a in feed.accounts))
+        if synced:
+            self.state["last_sync"] = datetime.now().isoformat(timespec="seconds")
         self._save()
 
     def sync(self, automatic: bool = False) -> dict:

@@ -535,6 +535,18 @@ class Syncing(Server):
         days = (dt.date.today() - dt.datetime.fromtimestamp(int(start), UTC).date()).days  # sync counts in local days
         self.assertEqual(days, sync.OVERLAP_DAYS + 1)
 
+    def test_a_review_left_without_linking_does_not_skip_days(self):
+        self.link_all()
+        self.later(24 * 20)
+        self.bridge.feed["chk"]["transactions"].append(tx("t3", self.today - timedelta(days=15), "-11.00", "LUNCH"))
+        self.budget.sync.review()  # then closed without linking anything
+        self.assertEqual(self.budget.sync.sync()["added"], 1)
+
+    def test_reviewing_is_not_syncing(self):
+        self.connect()
+        self.assertIsNone(self.budget.sync.status()["lastSync"])
+        self.assertNotIn("skipped", self.budget.sync.sync(automatic=True))
+
     def test_a_long_absence_is_fetched_in_allowed_steps(self):
         self.link_all()
         self.later(24 * 200)
