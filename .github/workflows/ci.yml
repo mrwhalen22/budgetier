@@ -1,5 +1,8 @@
 name: CI
 
+# Windows only, because Mac runners cost far more. Mac CI covers changes that can behave
+# differently on a Mac.
+
 on:
   pull_request:
   push:
@@ -14,11 +17,7 @@ concurrency:
 
 jobs:
   test-and-build:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [windows-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -49,9 +48,7 @@ jobs:
       - name: Keep the installer for testing
         uses: actions/upload-artifact@v4
         with:
-          name: Budgetier-${{ runner.os }}
-          path: |
-            dist/Budgetier-Windows.exe
-            dist/Budgetier-*.dmg
+          name: Budgetier-Windows
+          path: dist/Budgetier-Windows.exe
           retention-days: 7
           if-no-files-found: error

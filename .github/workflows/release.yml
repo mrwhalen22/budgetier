@@ -4,6 +4,9 @@ name: Release
 # and builds on every system, then publishes the installers. The candidate waits on a
 # release/vX.Y.Z branch, so a failed run leaves main and develop as they were.
 #
+# Mac runners cost far more, so Mac installers are added by the Mac builds workflow once the
+# release is out. Untick "Build for Mac" to skip them; that workflow can add them later.
+#
 # RELEASE_TOKEN is needed when a release includes changes to these workflow files, and if
 # main is a protected branch. It must be allowed to push to main and to change workflows.
 
@@ -15,6 +18,10 @@ on:
         type: choice
         options: [patch, minor, major]
         default: patch
+      mac:
+        description: Build for Mac too, and add the installers to the release
+        type: boolean
+        default: true
 
 permissions:
   contents: write
@@ -70,10 +77,7 @@ jobs:
 
   build:
     needs: prepare
-    strategy:
-      matrix:
-        os: [windows-latest, macos-latest, macos-15-intel]
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -98,16 +102,13 @@ jobs:
         run: python packaging/build_installer.py
 
       - name: Open the built app
-        if: runner.os == 'macOS'
         run: python packaging/self_check.py
 
       - name: Keep the installer
         uses: actions/upload-artifact@v4
         with:
-          name: installer-${{ matrix.os }}
-          path: |
-            dist/Budgetier-Windows.exe
-            dist/Budgetier-*.dmg
+          name: installer-windows
+          path: dist/Budgetier-Windows.exe
           retention-days: 1
           if-no-files-found: error
 
@@ -148,6 +149,13 @@ jobs:
           git checkout -B develop origin/develop
           git merge --no-edit origin/main
           git push origin develop
+
+  mac:
+    needs: [prepare, publish]
+    if: inputs.mac
+    uses: ./.github/workflows/mac-builds.yml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
 
   clean-up:
     needs: [prepare, build, publish]

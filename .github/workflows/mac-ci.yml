@@ -1,0 +1,64 @@
+name: Mac CI
+
+# Mac runners cost far more than Windows, so this only runs on a pull request that changes
+# something that can behave differently on a Mac. Run it from the Actions tab for anything else.
+
+on:
+  pull_request:
+    paths:
+      - budgetier/app.py
+      - budgetier/credentials.py
+      - budgetier/simplefin.py
+      - budgetier/storage.py
+      - budgetier/updates.py
+      - packaging/**
+      - run_app.py
+      - build.sh
+      - requirements.txt
+      - requirements-dev.txt
+      - constraints.txt
+      - .github/workflows/mac-ci.yml
+      - .github/workflows/mac-builds.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mac-ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-and-build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -t .
+
+      - name: Build installer
+        run: python packaging/build_installer.py
+
+      - name: Open the built app
+        run: python packaging/self_check.py
+
+      - name: Keep the installer for testing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Budgetier-macOS
+          path: dist/Budgetier-*.dmg
+          retention-days: 7
+          if-no-files-found: error

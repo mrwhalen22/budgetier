@@ -277,8 +277,10 @@ invented, including account numbers, names and addresses.
 ## Releasing
 
 Work happens on `develop`, by pull request. CI runs the tests and builds the installers on
-Windows and Apple Silicon macOS, on every pull request and on every push to `develop` and
-`main`. On macOS it also opens the built app.
+Windows on every pull request and on every push to `develop` and `main`, and opens the built
+app. Mac runners cost far more, so **Mac CI** only runs on a pull request that changes something
+that can behave differently on a Mac, such as `budgetier/app.py` or `packaging/`. To run it on
+anything else, choose **Mac CI** on the **Actions** tab, then **Run workflow** and the branch.
 
 To release, open the **Actions** tab, choose **Release**, then **Run workflow**, and pick
 how to raise the version: `patch` for fixes, `minor` for features, `major` for big changes.
@@ -286,11 +288,18 @@ The workflow:
 
 1. Merges `develop` into `main` and raises the number in `VERSION`, on a temporary
    `release/vX.Y.Z` branch.
-2. Runs the tests and builds on Windows, Apple Silicon and Intel macOS. If any fail, `main`
+2. Runs the tests and builds on Windows. If they fail, `main`
    and `develop` aren't touched.
 3. Pushes `main` and a `vX.Y.Z` tag.
-4. Publishes a GitHub release with all three installers and their checksums.
+4. Publishes a GitHub release with the Windows installer and its checksum.
 5. Merges `main` back into `develop` and removes the temporary branch.
+6. Unless you untick **Build for Mac**, runs **Mac builds**, which tests and builds on Apple
+   Silicon and Intel macOS and adds both installers to the release. If that fails, the Windows
+   release still stands.
+
+**Mac builds** can also be run by hand from the **Actions** tab, for a release that skipped
+them or where they failed: give it the version, like `1.4.2`. Until a release has them, a Mac
+isn't offered that update, and someone new has to take the Mac installer from an earlier release.
 
 Add a `RELEASE_TOKEN` repository secret if `main` is protected, or if a release includes
 changes to the workflow files: GitHub won't let the built-in token push those. The token

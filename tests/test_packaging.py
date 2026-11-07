@@ -1,5 +1,6 @@
 import importlib.util
 import io
+import re
 import subprocess
 import sys
 import time
@@ -65,6 +66,19 @@ class UpdateNames(unittest.TestCase):
                     self.assertEqual(updates.installer_name(), name)
         workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn(updates.CHECKSUMS, workflow)
+
+    def test_mac_ci_only_watches_files_that_exist(self):
+        root = Path(__file__).resolve().parents[1]
+        text = (root / ".github" / "workflows" / "mac-ci.yml").read_text(encoding="utf-8")
+        watched = re.findall(r"^      - ([^\s*]+)$", text, re.M)
+        self.assertIn("budgetier/app.py", watched)
+        self.assertEqual([name for name in watched if not (root / name).exists()], [])
+
+    def test_mac_builds_keep_the_windows_checksum(self):
+        from budgetier import updates
+        workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "mac-builds.yml").read_text(encoding="utf-8")
+        self.assertIn(updates.CHECKSUMS, workflow)
+        self.assertIn("grep -v", workflow)
 
 
 class Versioning(Tmp):
