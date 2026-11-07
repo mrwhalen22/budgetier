@@ -1,7 +1,6 @@
 """How the window looks: the color tokens, the look a person chose, and the style sheet.
 
-The tokens are the page's own (dashboard/styles/tokens.css), so the two look alike while
-both exist. Every color the window uses comes from here.
+Every color the window uses comes from here.
 """
 from __future__ import annotations
 
@@ -102,7 +101,7 @@ def qss_color(css: str) -> str:
 
 def style_sheet(t: dict[str, str]) -> str:
     """The whole window's style sheet. Widgets say what they are with an object name or a
-    'kind' property, much as the page used classes."""
+    'kind' property."""
     c = {name: qss_color(value) for name, value in t.items()}
     return f"""
 * {{ font-size: {TEXT['md']}px; }}

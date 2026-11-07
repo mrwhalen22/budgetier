@@ -3,8 +3,8 @@
 Merges CSV exports from your banks and cards into one continuous history per
 account, then shows your monthly spending, recurring payments, largest expenses
 and savings. Everything runs on this machine, and your data stays here unless you turn on
-[bank sync](#bank-sync). The dashboard is a single offline file that makes no network requests.
-The app itself asks GitHub for the latest version when it opens; see [Updates](#updates).
+[bank sync](#bank-sync). The only other request it makes is asking GitHub for the latest
+version when it opens; see [Updates](#updates).
 
 ## Use it
 
@@ -12,8 +12,7 @@ Download the installer for your system from the [latest release](../../releases/
 
 **Windows:** run `Budgetier-Windows.exe` and approve the admin prompt. It installs for everyone
 on the PC, with your choice of location and shortcuts, and appears in Windows' Installed
-Apps, where you can uninstall it. It needs Microsoft's WebView2 runtime, which comes with
-Windows 11. The installer isn't code signed, so Windows may warn you the first time; choose
+Apps, where you can uninstall it. The installer isn't code signed, so Windows may warn you the first time; choose
 **More info**, then **Run anyway**. Then open **Budgetier** from the Start menu or desktop.
 
 **Linux:** download `Budgetier-Linux.tar.gz`, unpack it wherever you like, and run
@@ -22,7 +21,8 @@ uninstall, delete the folder. It doesn't add itself to your applications menu, a
 needs a keyring service such as GNOME Keyring.
 
 **macOS:** choose `Budgetier-macOS-Apple-Silicon.dmg` for an M-series Mac, or `Budgetier-macOS-Intel.dmg`
-for an Intel one. Apple menu > **About This Mac** shows which you have. Open the file and
+for an Intel one. Apple menu > **About This Mac** shows which you have. It needs macOS 14
+(Sonoma) or newer. Open the file and
 drag **Budgetier** onto **Applications**. To uninstall, move it from Applications to the
 Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 
@@ -65,7 +65,7 @@ check, or to check by hand, use the buttons at the bottom of the Help tab.
 ## Appearance
 
 Choose **Appearance** at the bottom of the sidebar to pick a theme (Pine, Ocean or Plum) and
-light, dark or matching your system. The choice is remembered on this computer.
+light, dark or matching your system. The choice is kept in your data folder.
 
 ## Where things live
 
@@ -89,6 +89,7 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `accounts.json` | Account names, types and entered balances |
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
+| `settings.json` | Your look and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 
 ## Bank sync
@@ -220,7 +221,7 @@ spent" question the other way.
 
 Budgetier runs on Windows, macOS and Linux and needs Python 3.12. Commands below use the
 Windows path `.venv/Scripts/python`; elsewhere use `python3` to make the environment, then
-`.venv/bin/python`. To run the app on Linux, also install `requirements-linux.txt`.
+`.venv/bin/python`.
 
 ```bash
 python -m venv .venv
@@ -235,17 +236,18 @@ Run the desktop app. It uses your real data folder, so close any installed copy 
 
 | Path | What's there |
 | --- | --- |
-| `budgetier/` | The app: parsing, ledger, analysis, reports and desktop window |
-| `budgetier/dashboard/` | The page: `index.html`, `styles/` and `js/`, joined into one file by `report_html.py` |
+| `budgetier/` | The app: parsing, ledger, analysis and the workbook |
+| `budgetier/views.py` | What each tab shows, worked out in cents, with no window |
+| `budgetier/ui/` | The window, in Qt Widgets: one module per tab in `tabs/`, and the dialogs |
 | `packaging/` | Installer, uninstaller and the scripts that build them |
 | `tests/` | The test suite |
 | `samples/` | A generator for fake bank exports |
 | `VERSION` | The current version |
 
-The look comes from the design system in `budgetier/dashboard/styles/`: tokens for color, type,
-spacing and corners, then one button, field, card, panel, banner and table. To add a theme, add
-its light and dark palettes to `tokens.css` and to `PALETTES` in `js/boot.js`. `tests/test_design.py` fails
-on hard-coded colors or sizes, inline looks, and any theme with unreadable contrast.
+The look comes from `budgetier/ui/theme.py`: color tokens for each theme in light and dark,
+sizes for type, spacing and corners, and the Qt style sheet made from them. To add a theme, add
+its light and dark palettes there and to `PALETTES`. Anything that shows bank text goes through
+`widgets.text()` or a table cell, which never read it as HTML.
 
 Run the tests:
 
@@ -254,28 +256,18 @@ Run the tests:
 .venv/Scripts/python -m ruff check .
 ```
 
-`tests/test_page.py` runs the real page in Chromium and WebKit. Without those browsers it's
-skipped, so install them once to run it:
-
-```bash
-.venv/Scripts/python -m playwright install chromium webkit
-```
-
-The window is moving from the page to Qt Widgets, as `docs/qt-migration.md` describes. Until
-that's done, the Qt window opens only from here. `--home` points it at another data folder,
-such as the fake data made below:
-
-```bash
-.venv/Scripts/python -m budgetier.ui --home samples/demo
-```
-
-Its code is in `budgetier/ui/`, and `tests/test_ui.py` tests it with Qt drawing offscreen, so
-it needs no screen.
-
-Try the command-line version on fake data, kept apart from your real data:
+The window's tests draw offscreen, so they need no screen, here or on CI. Open the app on fake
+data, kept apart from your real data:
 
 ```bash
 .venv/Scripts/python samples/make_samples.py
+.venv/Scripts/python -m budgetier.ui --home samples/demo
+```
+
+The command-line version imports what's in a folder's `inbox/` and writes the workbook to
+`output/budget.xlsx`. `--open` opens it:
+
+```bash
 .venv/Scripts/python -m budgetier --home samples/demo --open
 ```
 
@@ -294,7 +286,7 @@ sh build.sh
 ```
 
 After a macOS or Linux build, this opens the app on fake data and checks every tab. On a Linux
-machine with no screen, put `xvfb-run -a` in front of it:
+machine with no screen, Qt draws offscreen:
 
 ```bash
 .venv/bin/python packaging/self_check.py
@@ -305,9 +297,10 @@ invented, including account numbers, names and addresses.
 
 ## Releasing
 
-Work happens on `develop`, by pull request. CI runs the tests and builds the installers on
-Linux on every pull request and on every push to `develop` and `main`, and opens the built
-Linux app. Linux is cheap and closest to a Mac, and Windows is tested by hand. To run a branch
+Work happens on `develop`, by pull request. CI runs the tests and builds the Linux app on
+every pull request and on every push to `develop` and `main`, and opens the built app. Every
+installer is made the same way, by `.github/workflows/build.yml`, which CI, Release, Mac builds
+and Platform check each call. Linux is cheap and closest to a Mac, and Windows is tested by hand. To run a branch
 on Windows or a Mac before a release, choose **Platform check** on the **Actions** tab, then
 **Run workflow**.
 

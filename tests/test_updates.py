@@ -201,13 +201,11 @@ class Installing(Case):
             handler.redirect_request(mock.Mock(), None, 302, "", {}, "http://example.com/x")
 
 
-class Page(Tmp):
-    def test_the_page_is_told_whether_updates_apply(self):
+class Status(Tmp):
+    def test_the_window_is_told_whether_updates_apply(self):
         budget = service.Budget(self.dir / "home")
         self.addCleanup(budget.cancel)
-        budget.refresh()
-        page = budget.html_path.read_text(encoding="utf-8")
-        self.assertIn(f'"updates":{{"supported":false,"automatic":true,"system":"{sys.platform}"}}', page)
+        self.assertEqual(budget.updates.status(), {"supported": False, "automatic": True, "system": sys.platform})
 
 
 if __name__ == "__main__":

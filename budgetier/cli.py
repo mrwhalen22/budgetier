@@ -1,4 +1,4 @@
-"""Import whatever is in inbox/, update the ledger, regenerate the reports."""
+"""Import whatever is in inbox/, update the ledger, and write the workbook."""
 from __future__ import annotations
 
 import argparse
@@ -9,7 +9,7 @@ from collections import defaultdict
 from datetime import date
 from pathlib import Path
 
-from . import analyze, pdf2csv, report_html, report_xlsx, rules
+from . import analyze, pdf2csv, report_xlsx, rules
 from .accounts import account_id, account_name, pin_balance, purchases_look_positive, sample_row
 from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
@@ -194,7 +194,7 @@ def main(argv=None) -> int:
                         help="folder holding inbox/, data/, output/ (default: the app's data folder)")
     parser.add_argument("--bank", help="bank name, when a file doesn't reveal it")
     parser.add_argument("--account", help="account number or last 4, when a file doesn't reveal it")
-    parser.add_argument("--open", action="store_true", help="open the dashboard when done")
+    parser.add_argument("--open", action="store_true", help="open the workbook when done")
     parser.add_argument("--set-balance", nargs=2, metavar=("ACCOUNT", "AMOUNT"),
                         help="last 4 digits and today's balance; for a card, the amount owed")
     parser.add_argument("--as-of", metavar="YYYY-MM-DD", help="date of --set-balance (default: today)")
@@ -252,18 +252,17 @@ def _run(args, home: Path) -> int:
     recurring = analyze.find_recurring(rows)
     checks = analyze.checks(rows, ledger.accounts, ledger.imports)
 
-    html_path = output / "budget.html"
-    report_html.write(html_path, rows, ledger.accounts, recurring, checks, ledger.imports)
-    print(f"Dashboard: {html_path}")
     xlsx_path = output / "budget.xlsx"
+    written = True
     try:
         report_xlsx.write(xlsx_path, rows, ledger.accounts, recurring, checks)
-        print(f"Workbook:  {xlsx_path}")
+        print(f"Workbook: {xlsx_path}")
     except PermissionError:
+        written = False
         print(f"Workbook not updated: close {xlsx_path.name} in Excel and run again.")
 
     for check in checks:
         print(f"  ! {check['title']}: {check['detail']}")
-    if args.open:
-        webbrowser.open(html_path.as_uri())
+    if args.open and written:
+        webbrowser.open(xlsx_path.as_uri())
     return 1 if skipped else 0
