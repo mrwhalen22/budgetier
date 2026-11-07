@@ -382,7 +382,7 @@ class SingleTransactions(AppCase):
                    "description": first["description"], "n": 0}
 
     def analysed(self):
-        return self.budget._analysis()[0]
+        return self.budget.analysis()[0]
 
     def test_one_transaction_changes_and_the_others_dont(self):
         self.budget.save_edit(self.tx, "Gifts", "Birthday")
@@ -405,7 +405,7 @@ class SingleTransactions(AppCase):
     def test_an_edit_survives_a_restart_and_reaches_the_page(self):
         self.budget.save_edit(self.tx, "Gifts", "Birthday")
         again = service.Budget(self.budget.home)
-        self.assertEqual(again._analysis()[0][0]["category"], "Gifts")
+        self.assertEqual(again.analysis()[0][0]["category"], "Gifts")
         self.assertIn('"Birthday","Gifts","expense",-1.0,1]', again.html_path.read_text(encoding="utf-8"))
 
     def test_an_edit_survives_its_file_being_removed_and_added_again(self):

@@ -74,6 +74,8 @@ budgetier/
 
 - `views.py` gets plain unit tests, including the checks the page tests make today:
   this month so far, largest, red means a problem, budgets and savings.
+- Until the switch, `tests/test_views_page.py` runs the page's own JavaScript in Chromium
+  and checks that `views.py` gets the same numbers for the same period and accounts.
 - The window is tested with Qt's own test tools, in the repo's existing `unittest` style. It
   runs with Qt's offscreen display, so it works on Windows locally and on Linux CI with
   no screen and no Xvfb.
