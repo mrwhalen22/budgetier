@@ -1,4 +1,4 @@
-"""Bar and line charts by month, drawn by hand as the page drew them.
+"""Bar and line charts by month, drawn by hand.
 
 Hover a month, or focus the chart and use the left and right arrows, to read its values.
 """

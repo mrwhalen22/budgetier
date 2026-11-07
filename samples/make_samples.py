@@ -53,7 +53,7 @@ while month <= END:
     checking.append((on(15), "ONLINE TRANSFER TO SAV 4410", -400.00))
     savings.append((on(15), "Online Transfer from CHK 8123", 400.00))
     savings.append((on(28), "Interest Paid", round(rng.uniform(11, 16), 2)))
-    # A card that was never exported: the dashboard should flag these payments.
+    # A card that was never exported: Budgetier should flag these payments.
     checking.append((on(18), "CITI CARD ONLINE PAYMENT", -round(rng.uniform(120, 220), 2)))
     month = add_month(month)
 

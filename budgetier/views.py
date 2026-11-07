@@ -1,9 +1,7 @@
 """What each tab shows, worked out in Python. No Qt here, so all of it is tested on its own.
 
-This is the math the page does in JavaScript (dashboard/js), moved here for the Qt window.
-Money is in whole cents, where the page used decimal dollars. A snapshot is built once per
-change to the data; each tab then asks for what it needs, given the period and accounts
-chosen at the top of the window.
+Money is in whole cents. A snapshot is built once per change to the data; each tab then asks
+for what it needs, given the period and accounts chosen at the top of the window.
 """
 from __future__ import annotations
 
@@ -139,13 +137,21 @@ def _months_between(first: str, last: str) -> list[str]:
         year, month = (year + 1, 1) if month == 12 else (year, month + 1)
 
 
+def _count(value) -> int:
+    """A count from imports.csv, where it's saved as text."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
 def _cents(dollars) -> int:
     return round(dollars * 100)
 
 
 def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[dict], imports: list[dict],
           budget_report: dict, rules: list[dict], all_categories: list[str], today: date | None = None) -> Snapshot:
-    """From the same pieces the page's data is made of (report_html.build_data)."""
+    """From the classified rows, recurring payments, checks, imports, budgets and rules."""
     ids = sorted(accounts, key=lambda a: accounts[a]["name"])
     balances = analyze.account_balances(rows, accounts)
     summaries = []
@@ -177,8 +183,8 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
                              e["active"], e["variable"], _cents(e["price_change"]), accounts[e["account"]]["name"])
                    for e in recurring],
         checks=list(checks),
-        imports=[{**i, "key": i.get("stored") or i["file"], "account": accounts[i["account"]]["name"]}
-                 for i in imports[-30:]][::-1],
+        imports=[{**i, "key": i.get("stored") or i["file"], "account": accounts[i["account"]]["name"],
+                  **{n: _count(i.get(n)) for n in ("rows", "added", "duplicates")}} for i in imports[-30:]][::-1],
         budget_targets=[{**t, "value": _cents(t["value"]) if t["mode"] == "amount" else t["value"]}
                         for t in budget_report["targets"]],
         budget_months=[BudgetMonth(m["month"], m["partial"], _cents(m["income"]), _cents(m["base"]),

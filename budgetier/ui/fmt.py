@@ -9,7 +9,7 @@ __all__ = ["money", "cents", "short", "tone", "gain", "month_name", "day_name", 
 
 
 def _round(value: float, decimals: int) -> Decimal:
-    """Halves round up, as on the page, where Python would round them to even."""
+    """Halves round up, as people expect, where Python would round them to even."""
     return Decimal(repr(value)).quantize(Decimal(1).scaleb(-decimals), ROUND_HALF_UP)
 
 

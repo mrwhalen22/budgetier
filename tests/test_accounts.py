@@ -140,6 +140,18 @@ class AddingFiles(Window):
         added.main.click()
         self.assertEqual(len(self.win.snapshot.txns), before + 2)
 
+    def test_files_added_before_still_show_after_reopening(self):
+        """Counts come back from imports.csv as text; the Accounts tab must still draw them."""
+        from budgetier.service import Budget
+        review = self.add(self.csv("Newbank_4321.csv", ["01/05/2026,LIBRARY CAFE,-4.50", "01/06/2026,BOOKSHOP,-12.00"]))
+        review.main.click()
+        self.open_dialog().main.click()
+        win = self.window(Budget(self.budget.home))
+        win.show_tab("Accounts")
+        from budgetier.ui.widgets import Table
+        imports = win.pages["Accounts"].widget().findChildren(Table)[1]
+        self.assertEqual((imports.item(0, 0).text(), imports.item(0, 3).text()), ("Newbank_4321.csv", "2"))
+
     def test_what_is_missing_is_asked_for(self):
         review = self.add(self.csv("export.csv", ["01/05/2026,LIBRARY CAFE,-4.50"]))
         [panel] = self.win.importing.panels
@@ -239,7 +251,7 @@ class BankSync(Server, Window):
 
 class Welcome(Window):
     def test_with_no_data_it_offers_both_ways_in(self):
-        from tests.browser import build
+        from tests.fake import build
         self.win = self.window(build(Path(self.dir) / "empty", rows=[]))
         page = self.win.pages["Overview"].widget()
         self.assertIn("Welcome to Budgetier", self.labels(page))

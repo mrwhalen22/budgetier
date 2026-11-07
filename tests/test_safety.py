@@ -1,12 +1,9 @@
 """Your data must survive bad files, crashes and impatient clicks."""
 import json
 import os
-import threading
-import unittest
-from pathlib import Path
 from unittest import mock
 
-from budgetier import analyze, app, cli, service, storage
+from budgetier import analyze, app, cli, service, storage, views
 from budgetier.ledger import Ledger
 from budgetier.parse import ParseError, parse_file, parse_money
 from budgetier.service import Budget, BudgetError
@@ -105,17 +102,6 @@ class CorrectedNumbers(Case):
         self.assertEqual(len(self.budget.ledger.rows), 16)
 
 
-class BankTextInTheReport(Case):
-    def test_a_description_cannot_change_how_the_page_reads_its_data(self):
-        """A browser takes `<!-- <script>` as an escape that hides the closing tag, and the page stays blank."""
-        texts = ["<!-- <script>", "</script><b>", "<!--"]
-        self.bring_in(self.csv("Testbank_1234.csv", [f"01/0{i + 2}/2026,{t},-5.00" for i, t in enumerate(texts)]))
-        page = self.budget.html_path.read_text(encoding="utf-8")
-        data = page.split('<script id="data" type="application/json">')[1].split("</script>")[0]
-        self.assertNotIn("<", data)
-        self.assertCountEqual([t[2] for t in json.loads(data)["txns"]], texts)
-
-
 class FailedChanges(Case):
     def test_a_file_moved_after_review_leaves_nothing_behind(self):
         path = self.coffee()
@@ -162,10 +148,10 @@ class DamagedFiles(Case):
     def test_a_damaged_budgets_file_is_kept_and_the_app_still_opens(self):
         self.budget.budgets_path.write_text('{"Dining": {"mo', encoding="utf-8")
         again = self.reopened()
-        again.refresh()
+        titles = [c["title"] for c in views.from_budget(again).checks]
         self.assertEqual(again.budgets(), {})
         self.assertEqual((again.home / "budgets.damaged.json").read_text(encoding="utf-8"), '{"Dining": {"mo')
-        self.assertIn("budgets couldn't be read", again.html_path.read_text(encoding="utf-8"))
+        self.assertIn("Some budgets couldn't be read", titles)
 
     def test_good_budgets_survive_beside_a_bad_one(self):
         good = {"mode": "amount", "value": 5000}
@@ -176,7 +162,7 @@ class DamagedFiles(Case):
 
     def test_healthy_budgets_are_left_alone(self):
         self.budget.save_budget("Dining", "percent", "10")
-        self.budget.refresh()
+        views.from_budget(self.budget)
         self.assertEqual(self.budget.notices, [])
         self.assertEqual(list(self.budget.home.glob("*.damaged.json")), [])
 
@@ -203,10 +189,10 @@ class DamagedFiles(Case):
         self.bring_in(self.coffee())
         self.budget.ledger.accounts_path.write_text("{}", encoding="utf-8")
         again = self.reopened()
-        again.refresh()
+        checks = views.from_budget(again).checks
         info = again.ledger.accounts["testbank-1234"]
         self.assertTrue(info["recovered"])
-        self.assertIn("Check this account", again.html_path.read_text(encoding="utf-8"))
+        self.assertTrue(any("Check this account" in c["title"] + c["detail"] for c in checks), checks)
         again.update_account("testbank-1234", "Everyday", "checking", "", "")
         self.assertNotIn("recovered", again.ledger.accounts["testbank-1234"])
 
@@ -222,7 +208,7 @@ class RulesFile(Case):
         self.bring_in(self.csv("Testbank_1234.csv", [f"01/{d:02d}/2026,CAFÉ {d},-5.00" for d in DAYS]))
         self.budget.rules_path.write_bytes("match,category,merchant\nCAFÉ,Dining,Café\n".encode("cp1252"))
         again = self.reopened()
-        again.refresh()
+        views.from_budget(again)
         self.assertEqual([(r["text"], r["count"]) for r in again.rules()], [("CAFÉ", 8)])
 
     def test_excels_utf8_marker_is_not_a_rule(self):
@@ -260,37 +246,6 @@ class Saving(Tmp):
         self.assertEqual(storage.unique_path(self.dir, "b.csv").name, "b.csv")
 
 
-class TakingTurns(Case):
-    def test_page_calls_never_overlap(self):
-        api = app.Api(self.budget)
-        replies = []
-        threads = [threading.Thread(target=lambda c=c: replies.append(api.save_budget(c, "amount", "50")))
-                   for c in (f"Category {i}" for i in range(12))]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-        self.assertTrue(all(r["ok"] for r in replies), replies)
-        self.assertEqual(len(self.budget.budgets()), 12)
-
-    def test_an_unexpected_error_reaches_the_page_and_the_log(self):
-        api = app.Api(self.budget)
-        with mock.patch.object(self.budget, "delete_rule", side_effect=RuntimeError("surprise")):
-            with self.assertLogs("budgetier", "ERROR"):
-                reply = api.delete_rule("x")
-        self.assertFalse(reply["ok"])
-        self.assertIn("didn't finish", reply["error"])
-
-    def test_an_expected_problem_shows_its_own_words(self):
-        self.assertEqual(app.Api(self.budget).delete_budget("Dining"),
-                         {"ok": False, "error": "That budget is already gone."})
-
-    def test_a_failed_call_lets_the_next_one_run(self):
-        api = app.Api(self.budget)
-        api.delete_budget("Dining")
-        self.assertTrue(api.save_budget("Dining", "amount", "50")["ok"])
-
-
 class CommandLine(Tmp):
     def test_it_waits_for_the_app_to_close(self):
         lock = storage.hold_lock(self.dir)
@@ -314,18 +269,17 @@ class CommandLine(Tmp):
 
 
 class Startup(Tmp):
-    def run_main(self):
-        with mock.patch.object(app, "app_home", return_value=self.dir), \
-                mock.patch.object(app, "_alert") as alert, \
-                mock.patch.object(app.webview, "create_window") as self.window, mock.patch.object(app.webview, "start"), \
-                mock.patch.object(app, "log"), mock.patch.object(app.logging, "basicConfig"), \
-                mock.patch.object(app.logging.handlers, "RotatingFileHandler"):
-            return app.main(), alert
+    """Opening the app, without a person: the window is real but drawn offscreen, and the
+    event loop returns at once instead of waiting for the window to close."""
 
-    def test_the_whole_page_is_not_made_unselectable(self):
-        """pywebview does that by default, and WebKit can carry it into text fields."""
-        self.run_main()
-        self.assertIs(self.window.call_args[1]["text_select"], True)
+    def run_main(self):
+        import tests.qt  # noqa: F401 - draws offscreen
+        with mock.patch.object(app, "_alert") as alert, mock.patch.object(app.logging, "basicConfig"), \
+                mock.patch.object(app.logging.handlers, "RotatingFileHandler"), \
+                mock.patch("PySide6.QtWidgets.QApplication.exec", return_value=0) as loop:
+            code = app.main(self.dir)
+        self.loop = loop
+        return code, alert
 
     def test_a_second_copy_says_so(self):
         lock = storage.hold_lock(self.dir)
@@ -345,18 +299,23 @@ class Startup(Tmp):
             code, alert = self.run_main()
         self.assertEqual(code, 0)
         alert.assert_not_called()
+        self.loop.assert_called_once()
 
-    def test_self_check_writes_what_the_page_reports(self):
-        window = mock.Mock()
-        window.evaluate_js.return_value = '{"failed": []}'
-        result = Path(self.dir) / "result.json"
-        app._self_check(window, str(result))
+    def test_self_check_draws_every_tab_and_reports(self):
+        import tests.qt  # noqa: F401 - draws offscreen
+        from budgetier.ui.app import Window, application
+        from tests.fake import build
+        application()
+        budget = build(self.dir / "home")
+        window = Window(budget)
+        self.addCleanup(window.deleteLater)
+        result = self.dir / "result.json"
+        app.self_check(window, str(result))
         report = json.loads(result.read_text(encoding="utf-8"))
         self.assertEqual(report["failed"], [])
+        self.assertEqual(report["window"], "Window")
+        self.assertEqual(report["rows"], len(budget.ledger.rows))
+        rows = analyze.classify(budget.ledger.rows, budget.ledger.accounts, analyze.load_rules(budget.rules_path))
+        self.assertEqual(report["months"], [[m["month"], m["income"], m["spending"]] for m in analyze.monthly_summary(rows)])
         self.assertGreater(report["certificates"], 0)
         self.assertIn("secure_store", report)
-        window.destroy.assert_called_once()
-
-
-if __name__ == "__main__":
-    unittest.main()

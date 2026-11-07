@@ -15,7 +15,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 
-from budgetier import analyze, app, credentials, simplefin, sync
+from budgetier import analyze, credentials, simplefin, sync, views
 from budgetier.ledger import Ledger
 from budgetier.parse import RawRow
 from budgetier.service import Budget, BudgetError
@@ -449,7 +449,6 @@ class Syncing(Server):
     def test_the_page_knows_about_a_review_without_saving_choices(self):
         self.connect()
         self.assertEqual(self.budget.sync.status()["unlinked"], 2)
-        self.assertIn('"unlinked":2', self.budget.html_path.read_text(encoding="utf-8"))
 
     def test_review_lists_accounts_that_have_no_rows_yet(self):
         self.bridge.feed["quiet"] = {"name": "Quiet Savings 3333", "balance": "500.00", "transactions": []}
@@ -461,8 +460,7 @@ class Syncing(Server):
     def test_a_quiet_account_still_shows_its_balance(self):
         self.bridge.feed["quiet"] = {"name": "Quiet Savings 3333", "balance": "500.00", "transactions": []}
         self.link_all()
-        html = self.budget.html_path.read_text(encoding="utf-8")
-        self.assertIn("Testbank Savings 3333", html)
+        self.assertIn("Testbank Savings 3333", [a.name for a in views.from_budget(self.budget).accounts])
         self.budget.export_workbook(self.dir / "out.xlsx")
 
     def test_chosen_later_accounts_are_counted_until_chosen(self):
@@ -595,7 +593,7 @@ class Syncing(Server):
         self.bridge.problems = [{"code": "con.auth", "msg": "Sign in to Testbank again"}]
         self.later()
         self.assertEqual(self.budget.sync.sync()["problems"], ["Sign in to Testbank again"])
-        self.assertIn("Sign in to Testbank again", self.budget.html_path.read_text(encoding="utf-8"))
+        self.assertEqual(self.budget.sync.status()["problems"], ["Sign in to Testbank again"])
 
     def test_a_refused_sync_keeps_your_data(self):
         self.link_all()
@@ -665,25 +663,14 @@ class Syncing(Server):
         self.link_all()
         self.budget.sync.path.write_text("{", encoding="utf-8")
         again = Budget(self.budget.home)
-        again.refresh()
         self.assertTrue(again.sync.status()["connected"])
-        self.assertIn("Bank sync settings couldn't be read", again.html_path.read_text(encoding="utf-8"))
+        self.assertIn("Bank sync settings couldn't be read", [c["title"] for c in views.from_budget(again).checks])
         self.assertTrue((again.home / "sync.damaged.json").exists())
 
-    def test_the_page_calls_reach_sync(self):
-        api = app.Api(self.budget)
-        reply = api.connect_bank(self.bridge.token())
-        self.assertTrue(reply["ok"])
-        self.assertEqual(len(api.review_bank()["accounts"]), 2)
-        self.assertEqual(api.link_bank(reply["accounts"])["added"], 3)
-        self.assertTrue(api.sync_bank()["skipped"])
-        self.assertTrue(api.disconnect_bank()["ok"])
-
-    def test_a_token_problem_reaches_the_page_in_words(self):
+    def test_a_token_problem_is_put_in_words(self):
         self.bridge.claimed = True
-        reply = app.Api(self.budget).connect_bank(self.bridge.token())
-        self.assertFalse(reply["ok"])
-        self.assertIn("someone else may have", reply["error"])
+        with self.assertRaisesRegex(BudgetError, "someone else may have"):
+            self.budget.sync.connect(self.bridge.token())
 
 
 if __name__ == "__main__":

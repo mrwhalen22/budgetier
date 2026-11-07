@@ -26,17 +26,6 @@ class Theme(Tmp):
                 names = names or found
                 self.assertEqual(found, names, (mode, palette))
 
-    def test_the_tokens_match_the_page_while_both_exist(self):
-        css = (ROOT / "budgetier" / "dashboard" / "styles" / "tokens.css").read_text(encoding="utf-8")
-        for block, body in re.findall(r"(\[data-mode=\"\w+\"\](?:\[data-palette=\"\w+\"\])?) \{(.*?)\}", css, re.S):
-            mode = re.search(r'data-mode="(\w+)"', block).group(1)
-            palette = re.search(r'data-palette="(\w+)"', block)
-            ours = self.theme.PALETTE_TOKENS[(mode, palette.group(1))] if palette else self.theme.MODE_TOKENS[mode]
-            for name, value in re.findall(r"--([\w-]+): ([^;]+);", body):
-                if name.startswith("shadow"):
-                    continue  # a Qt style sheet has no shadows
-                self.assertEqual(ours.get(name), value.strip(), (block, name))
-
     def test_the_style_sheet_has_only_real_colors(self):
         for mode in ("light", "dark"):
             sheet = self.theme.style_sheet(self.theme.tokens(mode, "pine"))
@@ -71,11 +60,8 @@ class Theme(Tmp):
 
 
 class Window(QtCase):
-    def test_the_tabs_are_the_pages_in_its_order(self):
+    def test_the_sidebar_lists_every_tab_in_order(self):
         from budgetier.ui.app import TABS
-        page_tabs = re.search(r"const TABS = \[(.*?)\]", (ROOT / "budgetier" / "dashboard" / "js" / "core.js")
-                              .read_text(encoding="utf-8")).group(1)
-        self.assertEqual(list(TABS), re.findall(r'"(\w+)"', page_tabs))
         window = self.window()
         self.assertEqual([b.text() for b in window.tab_group.buttons()], list(TABS))
 
@@ -140,13 +126,16 @@ class Opening(QtCase):
         home.mkdir()
         held = storage.hold_lock(home)
         self.addCleanup(held.close)
-        with mock.patch("sys.stderr"):
+        with mock.patch("budgetier.app._alert") as alert, mock.patch("budgetier.app.logging.basicConfig"), \
+                mock.patch("budgetier.app.logging.handlers.RotatingFileHandler"):
             self.assertEqual(entry.main(["--home", str(home)]), 1)
+        self.assertIn("already open", alert.call_args[0][0])
 
     def test_it_opens_the_folder_it_is_given(self):
         from budgetier.ui import __main__ as entry
         home = self.dir / "chosen"
-        with mock.patch("budgetier.ui.app.QApplication.exec", return_value=0):
+        with mock.patch("budgetier.ui.app.QApplication.exec", return_value=0), mock.patch("budgetier.app.logging.basicConfig"), \
+                mock.patch("budgetier.app.logging.handlers.RotatingFileHandler"):
             self.assertEqual(entry.main(["--home", str(home)]), 0)
         self.assertTrue((home / "rules.csv").exists())
         again = storage.hold_lock(home)  # it let go when it closed

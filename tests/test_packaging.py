@@ -85,8 +85,8 @@ class InstallerSize(Tmp):
         from budgetier import updates
         self.assertLess(build_installer.MOST_MB * 1_048_576 * 2, updates.MOST_BYTES)
 
-    def test_the_linux_build_takes_only_the_qt_it_uses(self):
-        """Collecting all of qtpy bundled every Qt module and made the download 300 MB."""
+    def test_the_build_collects_no_qt_wholesale(self):
+        """Collecting all of Qt bundled every module it has and made the Linux download 300 MB."""
         spec = (Path(__file__).resolve().parents[1] / "packaging" / "Budgetier.spec").read_text(encoding="utf-8")
         collected = [line for line in spec.splitlines() if line.startswith("packages")]
         self.assertTrue(collected)
