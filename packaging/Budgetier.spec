@@ -30,19 +30,28 @@ else:
 analysis = Analysis(["../run_app.py"], pathex=[".."], datas=datas, binaries=binaries,
                     hiddenimports=hiddenimports, excludes=["tkinter", "unittest", "pytest", *excludes])
 if sys.platform == "linux":
-    # Anything QML that still arrives, and every translation but the browser's English text.
+    # Left out: anything QML that still arrives, every translation but the browser's English
+    # text, the browser's developer tools, and Qt's GTK theme with the copy of GTK it pulls in,
+    # which could clash with the desktop's own. Qt draws its own file dialog without it.
+    GTK = ("libqgtk3.so", "libgtk-3.so", "libgdk-3.so")
+
     def needed(entry) -> bool:
         path = "/" + entry[0].replace("\\", "/")
-        if "/Qt/qml/" in path:
+        if "/Qt/qml/" in path or path.endswith("/qtwebengine_devtools_resources.pak"):
+            return False
+        if path.rsplit("/", 1)[-1].startswith(GTK):
             return False
         return "/Qt/translations/" not in path or path.endswith("/qtwebengine_locales/en-US.pak")
 
     analysis.datas = [entry for entry in analysis.datas if needed(entry)]
     analysis.binaries = [entry for entry in analysis.binaries if needed(entry)]
+# Linux libraries can carry debug symbols the app never uses. Stripping a Mac app would
+# break its signature, and Windows has nothing to strip.
+strip = sys.platform == "linux"
 pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name="Budgetier", console=False,
-          icon="Budgetier.ico")
-collected = COLLECT(exe, analysis.binaries, analysis.datas, name="Budgetier")
+          icon="Budgetier.ico", strip=strip)
+collected = COLLECT(exe, analysis.binaries, analysis.datas, name="Budgetier", strip=strip)
 if sys.platform == "darwin":
     version = (Path(SPECPATH).parent / "VERSION").read_text(encoding="utf-8-sig").strip()
     BUNDLE(collected, name="Budgetier.app", icon="Budgetier.ico",
