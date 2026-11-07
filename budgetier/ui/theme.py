@@ -156,7 +156,67 @@ QComboBox QAbstractItemView {{ background: {c['surface']}; color: {c['ink']}; se
 
 QFrame[kind="card"] {{ background: {c['surface']}; border: 1px solid {c['line-soft']}; border-radius: {RADIUS['lg']}px; }}
 QLabel[kind="h2"] {{ font-size: {TEXT['lg']}px; font-weight: 600; }}
+QLabel[kind="h3"] {{ font-weight: 600; margin-top: {SPACE[1]}px; }}
 QLabel[kind="dim"] {{ font-size: {TEXT['sm']}px; color: {c['muted']}; }}
+QLabel[kind="strong"] {{ font-weight: 500; }}
+QLabel[kind="empty"] {{ color: {c['muted']}; padding: {SPACE[6]}px 0; }}
+QLabel[kind="chip"], QLabel[kind="legend"] {{ color: {c['ink-2']}; font-size: {TEXT['sm']}px; }}
+QLabel[kind="legend"] {{ font-size: {TEXT['xs']}px; }}
+QLabel[kind="pct"] {{ color: {c['muted']}; font-size: {TEXT['xs']}px; }}
+QPushButton[kind="small"] {{ min-height: {CONTROL_SM - 2}px; padding: 0 {SPACE[2]}px; font-size: {TEXT['xs']}px;
+    border-radius: {RADIUS['sm']}px; }}
+QCheckBox {{ color: {c['ink-2']}; font-size: {TEXT['sm']}px; spacing: {SPACE[2]}px; }}
+
+#filters QComboBox {{ min-width: 150px; }}
+QToolButton[kind="picker"] {{
+    min-height: {CONTROL - 2}px; padding: 0 {SPACE[3]}px; font-size: {TEXT['sm']}px; color: {c['ink']};
+    background: {c['surface']}; border: 1px solid {c['line']}; border-radius: {RADIUS['md']}px; }}
+QToolButton[kind="picker"]::menu-indicator {{ subcontrol-position: right center; right: {SPACE[2]}px; }}
+QMenu {{ background: {c['surface']}; color: {c['ink']}; border: 1px solid {c['line']}; padding: {SPACE[1]}px; }}
+QMenu::item {{ padding: {SPACE[2]}px {SPACE[4]}px {SPACE[2]}px {SPACE[6]}px; border-radius: {RADIUS['sm']}px; }}
+QMenu::item:selected {{ background: {c['accent-soft']}; color: {c['ink']}; }}
+
+QFrame[kind="tile"], QFrame[kind="hero"] {{ background: {c['surface']}; border: 1px solid {c['line-soft']};
+    border-radius: {RADIUS['lg']}px; }}
+QLabel[kind="k"] {{ font-size: {TEXT['sm']}px; font-weight: 500; color: {c['ink-2']}; }}
+QLabel[kind="v"] {{ font-size: {TEXT['2xl']}px; font-weight: 600; }}
+QLabel[kind="big"] {{ font-size: {TEXT['4xl']}px; font-weight: 600; }}
+QLabel[kind="s"] {{ font-size: {TEXT['xs']}px; color: {c['muted']}; }}
+QLabel[tone="pos"] {{ color: {c['good']}; }}
+QLabel[tone="neg"] {{ color: {c['bad']}; }}
+QLabel[kind="flow"] {{ font-size: {TEXT['sm']}px; color: {c['ink-2']}; }}
+QLabel[kind="flow-share"] {{ font-size: {TEXT['sm']}px; font-weight: 600; color: {c['ink-2']}; }}
+
+QFrame[kind="banner"] {{ border-radius: {RADIUS['md']}px; }}
+QFrame[kind="banner"][level="warn"] {{ background: {c['warn-bg']}; }}
+QFrame[kind="banner"][level="info"] {{ background: {c['info-bg']}; }}
+QFrame[level="warn"] QLabel, QFrame[level="warn"] QPushButton {{ color: {c['warn-ink']}; }}
+QFrame[level="info"] QLabel {{ color: {c['info-ink']}; }}
+QLabel[kind="b"] {{ font-size: {TEXT['sm']}px; font-weight: 600; }}
+QLabel[kind="banner-text"] {{ font-size: {TEXT['sm']}px; }}
+QPushButton[kind="banner-head"] {{ text-align: left; min-height: 0; padding: 0; border: none; background: transparent;
+    font-size: {TEXT['sm']}px; font-weight: 600; }}
+
+QFrame[kind="hbar"] {{ border-radius: {RADIUS['md']}px; border: 2px solid transparent; }}
+QFrame[kind="hbar"]:hover {{ background: {c['hover']}; }}
+QFrame[kind="hbar"]:focus {{ border-color: {c['accent']}; }}
+
+QTableWidget[kind="table"] {{ background: transparent; border: none; font-size: {TEXT['sm']}px; outline: none;
+    selection-background-color: {c['accent-soft']}; selection-color: {c['ink']}; }}
+QTableWidget[kind="table"]::item {{ padding: 0 {SPACE[2]}px; border-bottom: 1px solid {c['line-soft']}; }}
+QTableWidget[clickable="true"]::item:hover {{ background: {c['hover']}; }}
+QTableWidget[kind="table"]::item:selected {{ background: {c['accent-soft']}; color: {c['ink']}; }}
+QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
+QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; }}
+QScrollBar::handle {{ background: {c['line']}; border-radius: 5px; }}
+QScrollBar::handle:vertical {{ min-height: 32px; }}
+QScrollBar::handle:horizontal {{ min-width: 32px; }}
+QScrollBar::handle:hover {{ background: {c['muted']}; }}
+QScrollBar::add-line, QScrollBar::sub-line {{ width: 0; height: 0; }}
+QScrollBar::add-page, QScrollBar::sub-page {{ background: none; }}
+QHeaderView {{ background: transparent; border: none; }}
+QHeaderView::section {{ background: transparent; color: {c['muted']}; font-size: {TEXT['xs']}px; font-weight: 500;
+    border: none; border-bottom: 1px solid {c['line']}; padding: {SPACE[2]}px; }}
 """
 
 
@@ -176,5 +236,7 @@ def apply(app, look: Look) -> str:
                        (QPalette.ToolTipBase, "surface"), (QPalette.ToolTipText, "ink")):
         palette.setColor(role, QColor(t[name]))
     app.setPalette(palette)
-    app.setStyleSheet(style_sheet(t))
+    sheet = style_sheet(t)
+    if app.styleSheet() != sheet:  # setting it restyles every widget, so only when it changes
+        app.setStyleSheet(sheet)
     return mode
