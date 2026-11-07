@@ -34,11 +34,17 @@ class QtCase(Tmp):
         self.app = application()
         self.budget = build(Path(self.dir) / "home")
 
-    def window(self, **options):
+    def window(self, budget=None, **options):
         from budgetier.ui.app import Window
-        window = Window(self.budget, **options)
-        self.addCleanup(window.deleteLater)
-        self.addCleanup(window.close)
+        window = Window(budget or self.budget, **options)
+        self.addCleanup(self.gone, window)
         window.show()
         self.app.processEvents()
         return window
+
+    def gone(self, window) -> None:
+        """Delete it now, not whenever Qt gets to it: windows left over slow every later test."""
+        from PySide6.QtCore import QCoreApplication, QEvent
+        window.close()
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.DeferredDelete)
