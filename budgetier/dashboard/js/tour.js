@@ -1,7 +1,7 @@
 /* ---------- tour ---------- */
 const TOUR = [
   ["#addFiles", "Add more history", "Choose CSV exports or a Synchrony PDF any time. You check everything on a review screen before it's saved."],
-  ["#bankBtn", "Keep accounts up to date", "Connect your banks through SimpleFIN, or sync the ones you've connected. Budgetier also syncs when it opens."],
+  ["#bankBtn", "Keep accounts up to date", "Connect your banks through SimpleFIN, or sync the ones you've connected."],
   ['[data-tab="Overview"]', "See the big picture", "Spending, income and how much of each dollar you keep, by month."],
   ['[data-tab="Budgets"]', "Set monthly budgets", "Give a category a target, in dollars or as a percent of income, and see what's left each month."],
   ['[data-tab="Recurring"]', "Spot regular bills", "Subscriptions and repeat payments are found automatically."],

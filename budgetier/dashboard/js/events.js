@@ -5,7 +5,6 @@ function initApp() {
     paintBankButton();
     render();
     maybeTour();
-    autoSync();
     checkUpdate();
   };
   if (window.pywebview && window.pywebview.api) ready(); else addEventListener("pywebviewready", ready);

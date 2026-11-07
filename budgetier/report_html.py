@@ -85,5 +85,7 @@ def build_data(rows, accounts, recurring, checks, imports) -> dict:
 def write(path: Path, rows, accounts, recurring, checks, imports, extra: dict | None = None) -> None:
     payload = {**build_data(rows, accounts, recurring, checks, imports), **(extra or {})}
     data = json.dumps(payload, separators=(",", ":"))
-    html = page().replace("/*__DATA__*/null", data.replace("</", "<\\/"))
+    # No "<" goes in raw: bank text such as "<!-- <script>" makes a browser skip the tag that
+    # closes the data, which leaves the whole page blank.
+    html = page().replace("/*__DATA__*/null", data.replace("<", "\\u003c"))
     path.write_text(html, encoding="utf-8")

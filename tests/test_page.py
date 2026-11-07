@@ -322,11 +322,24 @@ class Words:
         self.assertEqual(names, ["Card payment"])
 
 
+class ManualSync:
+    def test_opening_the_app_does_not_sync(self):
+        with tempfile.TemporaryDirectory() as folder:
+            budget = build(Path(folder) / "home")
+            budget.sync.state = {"connected": True, "links": {"bank/1": {"account": "chk-0001", "since": None}}}
+            budget.refresh()
+            self.page = self.open_page(budget.html_path)
+            self.assertEqual(self.js("D.sync.linked.length"), 1)
+            self.until("window.calls('check_update').length > 0")  # the app's start-up calls have gone
+            self.assertEqual(self.calls("sync_bank"), [])
+
+
 class HostileText:
     """Bank text is whatever the bank sent, so it must only ever show as text."""
 
     def test_descriptions_cant_run_or_add_anything(self):
         for text in ("</script><img src=x onerror=window.pwned=1>", "<img src=x onerror=window.pwned=1>",
+                     "<!-- <script>", "<!--",
                      '" onmouseover="window.pwned=1', "' onclick='window.pwned=1"):
             with self.subTest(text), tempfile.TemporaryDirectory() as folder:
                 rows = [{"date": date(2026, 1, 2), "account": "chk-0001", "description": text, "amount": _money(-500), "cents": -500,
@@ -337,7 +350,7 @@ class HostileText:
                     self.assertFalse(self.js("window.pwned === 1 || document.querySelectorAll('#view img').length > 0"), name)
 
 
-SUITES = (EveryTab, Dialogs, Rows, ThisMonth, Largest, RedMeansAProblem, OneTransaction, SaveAndNext, Keyboard, Words, HostileText)
+SUITES = (EveryTab, Dialogs, Rows, ThisMonth, Largest, RedMeansAProblem, OneTransaction, SaveAndNext, Keyboard, Words, ManualSync, HostileText)
 
 
 class Chromium(*SUITES, PageCase):

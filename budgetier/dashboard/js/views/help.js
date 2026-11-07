@@ -17,7 +17,7 @@ function help() {
       <li><b>Set budgets</b> on the Budgets tab, as a dollar amount or a percent of income.</li></ol>
       <div class="tools app-only"><button class="btn primary" data-act="tour">Take the tour</button></div></div>
     <div class="card"><h2>Which banks work</h2><p class="sub">Budgetier reads columns by name, so it isn't limited to this list. If a bank is new to it, the review screen asks what it can't tell.</p>${bankTable()}</div>
-    <div class="card"><h2>Bank sync</h2><p>Connect SimpleFIN to update accounts automatically instead of downloading files. It usually brings in about the last 90 days, and pending transactions wait until they post. Add CSV exports for older history. Overlapping days aren't counted twice, and accounts it can't reach can still use files.</p></div>
+    <div class="card"><h2>Bank sync</h2><p>Connect SimpleFIN to update accounts instead of downloading files. Press Sync now whenever you want: each sync brings in everything since the last one. The first usually brings in about the last 90 days, and pending transactions wait until they post. Add CSV exports for older history. Overlapping days aren't counted twice, and accounts it can't reach can still use files.</p></div>
     <div class="card"><h2>Tips for good numbers</h2>
       <h3>Import every account you pay from</h3><p>Paying a card from checking is a transfer, so the purchases only appear once that card is imported. Until then, the payment counts as estimated spending.</p>
       <h3>Export as far back as you can</h3><p>Averages skip months before your checking history starts, because those months have no rent or income in them.</p>
