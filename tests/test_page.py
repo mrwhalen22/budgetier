@@ -327,6 +327,7 @@ class HostileText:
 
     def test_descriptions_cant_run_or_add_anything(self):
         for text in ("</script><img src=x onerror=window.pwned=1>", "<img src=x onerror=window.pwned=1>",
+                     "<!-- <script>", "<!--",
                      '" onmouseover="window.pwned=1', "' onclick='window.pwned=1"):
             with self.subTest(text), tempfile.TemporaryDirectory() as folder:
                 rows = [{"date": date(2026, 1, 2), "account": "chk-0001", "description": text, "amount": _money(-500), "cents": -500,
