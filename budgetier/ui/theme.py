@@ -206,6 +206,21 @@ QTableWidget[kind="table"] {{ background: transparent; border: none; font-size: 
 QTableWidget[kind="table"]::item {{ padding: 0 {SPACE[2]}px; border-bottom: 1px solid {c['line-soft']}; }}
 QTableWidget[clickable="true"]::item:hover {{ background: {c['hover']}; }}
 QTableWidget[kind="table"]::item:selected {{ background: {c['accent-soft']}; color: {c['ink']}; }}
+QDialog#dialog {{ background: {c['surface']}; }}
+QLabel[kind="field"] {{ font-size: {TEXT['xs']}px; font-weight: 500; color: {c['ink-2']}; }}
+QLabel[kind="code"] {{ font-size: {TEXT['xs']}px; color: {c['ink-2']}; }}
+QLabel[kind="sub"] {{ font-size: {TEXT['sm']}px; color: {c['muted']}; }}
+QLabel[kind="error"] {{ font-size: {TEXT['sm']}px; color: {c['bad']}; }}
+QLabel[kind="warn"] {{ font-size: {TEXT['sm']}px; color: {c['warn-ink']}; background: {c['warn-bg']};
+    border-radius: {RADIUS['sm']}px; padding: {SPACE[1]}px {SPACE[2]}px; }}
+QLabel[kind="panel-text"] {{ font-size: {TEXT['sm']}px; color: {c['ink-2']}; }}
+QFrame[kind="panel"] {{ background: {c['raised']}; border: 1px solid {c['line-soft']}; border-radius: {RADIUS['md']}px; }}
+QRadioButton {{ color: {c['ink']}; spacing: {SPACE[2]}px; }}
+QPushButton[kind="small-danger"] {{ min-height: {CONTROL_SM - 2}px; padding: 0 {SPACE[2]}px; font-size: {TEXT['xs']}px;
+    border-radius: {RADIUS['sm']}px; color: {c['bad']}; }}
+QPushButton[kind="primary"]:disabled, QPushButton[kind="danger"]:disabled {{ color: {c['on-accent']}; }}
+#toast {{ background: {c['ink']}; color: {c['page']}; border-radius: {RADIUS['md']}px; padding: {SPACE[2]}px {SPACE[4]}px;
+    font-size: {TEXT['sm']}px; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0; }}
 QScrollBar::handle {{ background: {c['line']}; border-radius: 5px; }}

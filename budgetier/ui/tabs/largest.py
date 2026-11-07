@@ -26,7 +26,9 @@ def build(ctx: Context) -> QWidget:
     rows = [[widgets.Cell(x.merchant, icon=widgets.mono_icon(x.merchant, ctx.color(x.category)), tip=x.description, bold=True),
              widgets.Cell(fmt.day_name(x.date), tone="dim"),
              widgets.Cell(fmt.cents(-x.cents), right=True)] for x in found.expenses]
-    listing = (widgets.Table(["Merchant", "Date", "Amount"], rows, t, numeric={2}) if rows
+    listing = (widgets.Table(["Merchant", "Date", "Amount"], rows, t, numeric={2},
+                             on_row=lambda r: ctx.edit.categorize(found.expenses[r])) if rows
                else widgets.empty("Nothing else in this period."))
-    biggest = widgets.card(toggle, listing, title="Largest single expenses", note=f"The 25 biggest in this period{leaving}.")
+    biggest = widgets.card(toggle, listing, title="Largest single expenses",
+                           note=f"The 25 biggest in this period{leaving}. Select one to change it.")
     return widgets.Grid([merchants, biggest], 340, most=2)
