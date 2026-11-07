@@ -132,7 +132,7 @@ class Transactions(QWidget):
 def build(ctx: Context) -> QWidget:
     if not ctx.snapshot.txns:
         from .overview import welcome
-        return welcome()
+        return welcome(ctx)
     page = Transactions(ctx)
     page.layout().setSpacing(theme.SPACE[4])
     return page

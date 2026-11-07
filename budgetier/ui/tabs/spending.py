@@ -16,7 +16,7 @@ from .overview import welcome
 def build(ctx: Context) -> QWidget:
     s, t = ctx.snapshot, ctx.tokens
     if not s.txns:
-        return welcome()
+        return welcome(ctx)
     sp = views.spending(s, ctx.choice)
     colors = {name: (t["other"] if name == "Other" else ctx.color(name)) for name, _ in sp.series}
     chart = widgets.card(widgets.legend([(name, colors[name]) for name, _ in sp.series]),

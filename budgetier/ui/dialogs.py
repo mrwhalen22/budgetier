@@ -165,6 +165,11 @@ class Toast(QLabel):
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(self.hide)
 
+    def stay(self, words: str) -> None:
+        """Until told otherwise, for work that may take a while."""
+        self.say(words)
+        self.timer.stop()
+
     def say(self, words: str) -> None:
         if not words:
             return
