@@ -1,4 +1,8 @@
-"""Fill dashboard.html with the data. The result is one offline file."""
+"""Join the dashboard's source files and fill in the data. The result is one offline file.
+
+A page opened from disk can't load scripts as modules, so the files are joined instead,
+and they share one scope. Order matters only for code that runs while the page loads.
+"""
 from __future__ import annotations
 
 import json
@@ -7,6 +11,26 @@ from datetime import date, datetime
 from pathlib import Path
 
 from .analyze import SPENDING_KINDS, account_balances, coverage_start, partial_month
+
+SOURCE = Path(__file__).parent / "dashboard"
+STYLES = ("styles/intro.css", "styles/tokens.css", "styles/base.css", "styles/components.css", "styles/views.css")
+SCRIPTS = ("js/core.js", "js/charts.js", "js/views/shared.js", "js/views/overview.js", "js/views/spending.js",
+           "js/views/recurring.js", "js/views/largest.js", "js/views/savings.js", "js/views/accounts.js",
+           "js/views/transactions.js", "js/views/budgets.js", "js/router.js", "js/views/help.js", "js/updates.js",
+           "js/views/rules.js", "js/tour.js", "js/dialogs.js", "js/bank-sync.js", "js/reload.js", "js/import.js",
+           "js/forms.js", "js/events.js", "js/start.js")
+
+
+def _joined(names: tuple[str, ...]) -> str:
+    return "".join((SOURCE / name).read_text(encoding="utf-8") for name in names)
+
+
+def page() -> str:
+    """The whole page, still waiting for its data."""
+    return ((SOURCE / "index.html").read_text(encoding="utf-8")
+            .replace("/*__BOOT__*/", _joined(("js/boot.js",)))
+            .replace("/*__STYLES__*/", _joined(STYLES))
+            .replace("/*__SCRIPT__*/", _joined(SCRIPTS)))
 
 
 def build_data(rows, accounts, recurring, checks, imports) -> dict:
@@ -59,8 +83,7 @@ def build_data(rows, accounts, recurring, checks, imports) -> dict:
 
 
 def write(path: Path, rows, accounts, recurring, checks, imports, extra: dict | None = None) -> None:
-    template = (Path(__file__).parent / "dashboard.html").read_text(encoding="utf-8")
     payload = {**build_data(rows, accounts, recurring, checks, imports), **(extra or {})}
     data = json.dumps(payload, separators=(",", ":"))
-    html = template.replace("/*__DATA__*/null", data.replace("</", "<\\/"))
+    html = page().replace("/*__DATA__*/null", data.replace("</", "<\\/"))
     path.write_text(html, encoding="utf-8")

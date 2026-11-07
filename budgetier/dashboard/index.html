@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-mode="light" data-palette="pine">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Budgetier</title>
+<script>
+/*__BOOT__*/</script>
+<style>
+/*__STYLES__*/</style>
+</head>
+<body>
+<button class="btn skip" id="skip" type="button">Skip to content</button>
+<div class="app">
+  <aside class="side">
+    <div class="brand"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="3" y="12" width="4.5" height="9" rx="1.5"/><rect x="9.75" y="7" width="4.5" height="14" rx="1.5"/><rect x="16.5" y="3" width="4.5" height="18" rx="1.5"/></svg>Budgetier</div>
+    <div class="side-actions">
+      <button class="btn primary" id="addFiles" type="button"></button>
+      <button class="btn" id="bankBtn" type="button"></button>
+      <button class="btn" id="updateBtn" type="button" hidden></button>
+    </div>
+    <nav id="tabs" role="tablist" aria-label="Views"></nav>
+    <div class="side-foot"><button class="nav-link" id="theme" type="button"></button><p id="foot"></p></div>
+  </aside>
+  <div class="content">
+    <header class="top">
+      <div><h1 id="title"></h1><p id="subtitle"></p></div>
+      <div class="filters">
+        <select id="range" aria-label="Period"></select>
+        <details class="acct" id="acctBox"><summary id="acctLabel">All accounts</summary><div id="acctList"></div></details>
+      </div>
+    </header>
+    <main id="view" tabindex="-1"></main>
+  </div>
+</div>
+<div id="tip"></div>
+<div id="toast" role="status"></div>
+<div id="say" class="sr" aria-live="polite"></div>
+<dialog id="modal" aria-labelledby="modalTitle"></dialog>
+<script id="data" type="application/json">/*__DATA__*/null</script>
+<script>
+/*__SCRIPT__*/</script>
+</body>
+</html>

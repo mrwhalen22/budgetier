@@ -532,7 +532,7 @@ class Syncing(Server):
         self.bridge.requests.clear()
         self.budget.sync.sync()
         start = parse_qs(urlsplit(self.bridge.requests[0]["path"]).query)["start-date"][0]
-        days = (dt.datetime.now(UTC).date() - dt.datetime.fromtimestamp(int(start), UTC).date()).days
+        days = (dt.date.today() - dt.datetime.fromtimestamp(int(start), UTC).date()).days  # sync counts in local days
         self.assertEqual(days, sync.OVERLAP_DAYS + 1)
 
     def test_a_long_absence_is_fetched_in_allowed_steps(self):
