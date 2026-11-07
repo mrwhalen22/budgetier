@@ -297,8 +297,9 @@ class Keyboard:
         self.until("S.tab === 'Transactions'")
 
     def test_skip_to_content_comes_first(self):
-        self.press("Tab")
-        self.assertEqual(self.js("document.activeElement.id"), "skip")
+        # Not by pressing Tab: by default, Tab on a Mac only stops at fields.
+        self.assertEqual(self.js("document.querySelector('button, a[href], input, select, summary').id"), "skip")
+        self.page.focus("#skip")
         self.press("Enter")
         self.assertEqual(self.js("document.activeElement.id"), "view")
 
