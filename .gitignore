@@ -14,6 +14,7 @@ output/
 samples/demo/
 accounts.json
 rules.csv
+edits.json
 *.csv
 *.xlsx
 *.pdf

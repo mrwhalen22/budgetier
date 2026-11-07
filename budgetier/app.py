@@ -148,11 +148,19 @@ class Api:
 
     @_reply
     def save_rule(self, original, text, category, merchant, advanced=False):
-        self._budget.save_rule(original, text, category, merchant, advanced)
+        return self._budget.save_rule(original, text, category, merchant, advanced)
 
     @_reply
     def delete_rule(self, line):
         self._budget.delete_rule(line)
+
+    @_reply
+    def save_edit(self, transaction, category, merchant):
+        self._budget.save_edit(transaction, category, merchant)
+
+    @_reply
+    def clear_edit(self, transaction):
+        self._budget.clear_edit(transaction)
 
     @_reply
     def save_budget(self, category, mode, value):

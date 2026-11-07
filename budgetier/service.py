@@ -60,6 +60,7 @@ class Budget:
         self.html_path = self.output / "budget.html"
         self.rules_path = self.home / "rules.csv"
         self.budgets_path = self.home / "budgets.json"
+        self.edits_path = self.home / analyze.EDITS_FILE
         self.updates = Updater(self.home, app_version())
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
@@ -74,7 +75,8 @@ class Budget:
     # ---- reports
 
     def _analysis(self):
-        rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path))
+        edits = self.edits()  # first: a damaged file adds a notice to the checks
+        rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path), edits)
         checks = analyze.checks(rows, self.ledger.accounts, self.ledger.imports)
         return rows, analyze.find_recurring(rows), self.notices + checks
 
@@ -380,13 +382,23 @@ class Budget:
                 "share": len(hits) / len(self.ledger.rows) if self.ledger.rows else 0, "examples": examples}
 
     def suggest_rule(self, merchant: str, descriptions: list[str]) -> dict:
+        """The rule already covering the first description, because a new one would only sit
+        on top of it; otherwise text to start a new rule from."""
+        text = descriptions[0].upper()
+        for rule in rules.read(self.rules_path):
+            try:
+                hit = re.search(rule.pattern, text, re.I)
+            except re.error:
+                continue
+            if hit:
+                return {"rule": next(r for r in self.rules() if r["line"] == rule.line)}
         return {"text": analyze.match_text(merchant, descriptions)}
 
     def _write_rule_lines(self, lines: list[str]) -> None:
         write_files({self.rules_path: "\n".join(lines) + "\n"})
         self.refresh()
 
-    def save_rule(self, original: str | None, text: str, category: str, merchant: str, advanced: bool = False) -> None:
+    def save_rule(self, original: str | None, text: str, category: str, merchant: str, advanced: bool = False) -> dict:
         """New rules go first: the first match wins, and a new one is usually the more specific."""
         if not category.strip():
             raise BudgetError("Choose a category.")
@@ -405,6 +417,7 @@ class Budget:
                 at = len(lines)
             lines.insert(at, line)
         self._write_rule_lines(lines)
+        return {"count": len(self._matching(pattern))}
 
     def delete_rule(self, line: str) -> None:
         lines = rules.lines(self.rules_path)
@@ -413,28 +426,63 @@ class Budget:
         lines.remove(line)
         self._write_rule_lines(lines)
 
+    # ---- single transactions
+
+    def edits(self) -> dict[str, dict]:
+        """Transactions changed by hand, by analyze.edit_key: a category and maybe a name."""
+        return self._choices(self.edits_path, analyze.valid_edit, "transaction changes")
+
+    def _edit_key(self, tx: dict) -> str:
+        try:
+            key = analyze.edit_key(tx["date"], tx["account"], int(tx["cents"]), tx["description"], int(tx["n"]))
+        except (KeyError, TypeError, ValueError, AttributeError) as e:
+            raise BudgetError("That transaction couldn't be found.") from e
+        if key not in analyze.edit_keys(self.ledger.rows):
+            raise BudgetError("That transaction is gone.")
+        return key
+
+    def _write_edits(self, edits: dict[str, dict]) -> None:
+        write_files({self.edits_path: json.dumps(edits, indent=2, sort_keys=True)})
+        self.refresh()
+
+    def save_edit(self, tx: dict, category: str, merchant: str) -> None:
+        """Change one transaction, leaving rules and everything else as they are."""
+        if not category.strip():
+            raise BudgetError("Choose a category.")
+        key = self._edit_key(tx)
+        self._write_edits({**self.edits(), key: {"category": category.strip(), "merchant": merchant.strip()}})
+
+    def clear_edit(self, tx: dict) -> None:
+        edits = self.edits()
+        if edits.pop(self._edit_key(tx), None) is None:
+            raise BudgetError("That change is already gone.")
+        self._write_edits(edits)
+
     # ---- budgets
 
     def budgets(self) -> dict[str, dict]:
         """Category to target: an amount in cents, or a percent of income."""
-        if not self.budgets_path.exists():
+        return self._choices(self.budgets_path, _valid_target, "budgets")
+
+    def _choices(self, path: Path, valid, what: str) -> dict[str, dict]:
+        if not path.exists():
             return {}
         try:
-            saved = json.loads(read_text(self.budgets_path))
+            saved = json.loads(read_text(path))
         except ValueError:
             saved = None
-        good = {c: t for c, t in saved.items() if _valid_target(t)} if isinstance(saved, dict) else {}
+        good = {k: v for k, v in saved.items() if valid(v)} if isinstance(saved, dict) else {}
         if saved != good:
-            self._set_aside_budgets(good)
+            self._set_aside(path, good, what)
         return good
 
-    def _set_aside_budgets(self, good: dict[str, dict]) -> None:
-        """Budgets are worth less than a working app. Keep what's readable, keep the file
+    def _set_aside(self, path: Path, good: dict[str, dict], what: str) -> None:
+        """These are worth less than a working app. Keep what's readable, keep the file
         so nothing is lost, and say so."""
-        aside = unique_path(self.home, "budgets.damaged.json")
-        shutil.copy2(self.budgets_path, aside)
-        write_files({self.budgets_path: json.dumps(good, indent=2, sort_keys=True)})
-        self.notices.append({"level": "warning", "title": "Some budgets couldn't be read",
+        aside = unique_path(self.home, f"{path.stem}.damaged.json")
+        shutil.copy2(path, aside)
+        write_files({path: json.dumps(good, indent=2, sort_keys=True)})
+        self.notices.append({"level": "warning", "title": f"Some {what} couldn't be read",
                              "detail": f"Any that are missing need adding again. The damaged file is "
                                        f"saved as {aside.name} in your data folder."})
 
