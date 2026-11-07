@@ -23,7 +23,7 @@ from budgetier.ledger import Ledger  # noqa: E402
 
 DEMO = ROOT / "samples" / "demo"
 APP = {"darwin": ROOT / "dist" / "Budgetier.app" / "Contents" / "MacOS" / "Budgetier",
-       "win32": ROOT / "dist" / "Budgetier" / "Budgetier.exe"}
+       "win32": ROOT / "dist" / "Budgetier" / "Budgetier.exe", "linux": ROOT / "dist" / "Budgetier" / "Budgetier"}
 
 
 def run(*args: object) -> None:

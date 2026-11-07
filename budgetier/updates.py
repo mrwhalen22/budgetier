@@ -68,6 +68,8 @@ def installer_name() -> str | None:
         return "Budgetier-Windows.exe"
     if sys.platform == "darwin":
         return {"arm64": "Budgetier-macOS-Apple-Silicon.dmg", "x86_64": "Budgetier-macOS-Intel.dmg"}.get(platform.machine())
+    if sys.platform == "linux" and platform.machine() == "x86_64":
+        return "Budgetier-Linux.tar.gz"
     return None
 
 
@@ -113,7 +115,7 @@ def _run_installer(path: Path) -> None:
         if result <= 32:
             raise UpdateError("The update didn't start, so nothing changed. Windows needs your permission to install it.")
     else:
-        subprocess.run(["open", str(path)], check=True)
+        subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", str(path)], check=True)
 
 
 class Updater:
@@ -139,7 +141,7 @@ class Updater:
         write_files({self.settings_path: json.dumps({"automatic": bool(on)}) + "\n"})
 
     def status(self) -> dict:
-        return {"supported": self.supported, "automatic": self.automatic}
+        return {"supported": self.supported, "automatic": self.automatic, "system": sys.platform}
 
     def check(self, by_hand: bool = False) -> dict:
         """A startup check stays quiet about failing: being offline isn't worth a message."""

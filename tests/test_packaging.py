@@ -1,6 +1,5 @@
 import importlib.util
 import io
-import re
 import subprocess
 import sys
 import time
@@ -67,12 +66,15 @@ class UpdateNames(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn(updates.CHECKSUMS, workflow)
 
-    def test_mac_ci_only_watches_files_that_exist(self):
-        root = Path(__file__).resolve().parents[1]
-        text = (root / ".github" / "workflows" / "mac-ci.yml").read_text(encoding="utf-8")
-        watched = re.findall(r"^      - ([^\s*]+)$", text, re.M)
-        self.assertIn("budgetier/app.py", watched)
-        self.assertEqual([name for name in watched if not (root / name).exists()], [])
+    def test_the_app_looks_for_the_file_linux_builds_make(self):
+        from budgetier import updates
+        with mock.patch.object(updates.sys, "platform", "linux"), mock.patch.object(updates.platform, "machine", return_value="x86_64"):
+            self.assertEqual(updates.installer_name(), build_installer.LINUX_NAME)
+
+    def test_nothing_is_offered_to_a_linux_machine_it_wont_run_on(self):
+        from budgetier import updates
+        with mock.patch.object(updates.sys, "platform", "linux"), mock.patch.object(updates.platform, "machine", return_value="aarch64"):
+            self.assertIsNone(updates.installer_name())
 
     def test_mac_builds_keep_the_windows_checksum(self):
         from budgetier import updates

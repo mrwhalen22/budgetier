@@ -1,7 +1,7 @@
 name: CI
 
-# Windows only, because Mac runners cost far more. Mac CI covers changes that can behave
-# differently on a Mac.
+# Linux only: it's cheap, and closest to a Mac. Windows is tested by hand, and every system
+# is built at release. Platform check runs a branch on Windows or a Mac when that can't wait.
 
 on:
   pull_request:
@@ -16,9 +16,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test-and-build:
-    runs-on: windows-latest
-    timeout-minutes: 30
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -37,23 +37,42 @@ jobs:
         run: python -m ruff check .
 
       - name: Install browsers for the page tests
-        run: python -m playwright install chromium webkit
+        run: python -m playwright install --with-deps chromium webkit
 
       - name: Run tests
         env:
           BUDGETIER_BROWSERS: required  # so the page tests can't quietly stop running
         run: python -m unittest discover -s tests -t .
 
+  build:
+    runs-on: ubuntu-22.04  # the oldest we support: a Linux build only runs on the same or newer
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
+
+      - name: Install dependencies
+        run: |
+          python -m pip install -r requirements-dev.txt
+          sh packaging/linux_deps.sh
+
       - name: Build installer
         run: python packaging/build_installer.py
 
       - name: Open the built app
-        run: python packaging/self_check.py
+        run: xvfb-run -a python packaging/self_check.py
 
       - name: Keep the installer for testing
         uses: actions/upload-artifact@v4
         with:
-          name: Budgetier-Windows
-          path: dist/Budgetier-Windows.exe
+          name: Budgetier-Linux
+          path: dist/Budgetier-Linux.tar.gz
           retention-days: 7
           if-no-files-found: error

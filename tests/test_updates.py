@@ -183,6 +183,11 @@ class Installing(Case):
                 self.assertEqual(self.updater.install(), {"closing": False})
         self.assertEqual(run.call_args[0][0][0], "open")
 
+    def test_linux_opens_the_download_with_the_desktop(self):
+        with mock.patch.object(updates.sys, "platform", "linux"), mock.patch.object(updates.subprocess, "run") as run:
+            updates._run_installer(Path("/tmp/Budgetier-Linux.tar.gz"))
+        self.assertEqual(run.call_args[0][0], ["xdg-open", str(Path("/tmp/Budgetier-Linux.tar.gz"))])
+
     def test_an_old_installer_is_cleared_away(self):
         self.install()
         self.updater.clean()

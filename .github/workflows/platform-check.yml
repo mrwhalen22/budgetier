@@ -1,36 +1,23 @@
-name: Mac CI
+name: Platform check
 
-# Mac runners cost far more than Windows, so this only runs on a pull request that changes
-# something that can behave differently on a Mac. Run it from the Actions tab for anything else.
+# CI runs on Linux. This tests and builds a branch on Windows or a Mac when you want to know
+# sooner than the next release. Run it from the Actions tab.
 
 on:
-  pull_request:
-    paths:
-      - budgetier/app.py
-      - budgetier/credentials.py
-      - budgetier/simplefin.py
-      - budgetier/storage.py
-      - budgetier/updates.py
-      - packaging/**
-      - run_app.py
-      - build.sh
-      - requirements.txt
-      - requirements-dev.txt
-      - constraints.txt
-      - .github/workflows/mac-ci.yml
-      - .github/workflows/mac-builds.yml
   workflow_dispatch:
+    inputs:
+      os:
+        description: Where to run it
+        type: choice
+        options: [macos-latest, windows-latest]
+        default: macos-latest
 
 permissions:
   contents: read
 
-concurrency:
-  group: mac-ci-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
-
 jobs:
   test-and-build:
-    runs-on: macos-latest
+    runs-on: ${{ inputs.os }}
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +45,9 @@ jobs:
       - name: Keep the installer for testing
         uses: actions/upload-artifact@v4
         with:
-          name: Budgetier-macOS
-          path: dist/Budgetier-*.dmg
+          name: Budgetier-${{ runner.os }}
+          path: |
+            dist/Budgetier-Windows.exe
+            dist/Budgetier-*.dmg
           retention-days: 7
           if-no-files-found: error
