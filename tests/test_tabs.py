@@ -205,10 +205,13 @@ class Charts(Tabs):
         _, rows = self.chart(stacked=True).tip(1)
         self.assertEqual([(n, a) for n, a, _ in rows], [("<b>Food</b>", "$25"), ("Total", "$25")])
 
-    def test_names_in_a_tooltip_are_text(self):
-        tip = self.chart().tip_html(0)
-        self.assertIn("&lt;b&gt;Food&lt;/b&gt;", tip)
-        self.assertNotIn("<b>Food</b>", tip)
+    def test_names_in_a_months_note_are_text(self):
+        """The note draws its words itself, so markup in a name can only ever show as typed."""
+        chart = self.chart()
+        chart.show()
+        chart._read(0)
+        self.assertIn("<b>Food</b>", [name for name, _, _ in chart.note.rows])
+        self.assertIn("<b>Food</b>", chart.note.accessibleDescription())
 
     def test_the_arrow_keys_walk_the_months(self):
         from PySide6.QtCore import Qt

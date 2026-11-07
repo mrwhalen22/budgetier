@@ -8,13 +8,11 @@ from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
     QButtonGroup,
-    QComboBox,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMainWindow,
-    QMenu,
     QPushButton,
     QScrollArea,
     QStackedWidget,
@@ -25,7 +23,7 @@ from PySide6.QtWidgets import (
 
 from .. import views
 from ..service import Budget, app_version
-from . import banking, icons, look, theme, tour, widgets
+from . import banking, charts, icons, look, motion, popup, settings, theme, tour, widgets
 from .banking import Banking
 from .context import Context
 from .dialogs import Toast
@@ -49,17 +47,6 @@ def _placeholder(tab: str) -> QWidget:
     return widgets.card(widgets.text(f"The {tab} tab arrives in step {COMING[tab]} of the move to Qt.", "dim"), title=tab)
 
 
-class StayOpenMenu(QMenu):
-    """Ticking an account shouldn't close the list, so several can be changed at once."""
-
-    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt's name
-        action = self.actionAt(event.position().toPoint())
-        if action is not None and action.isCheckable():
-            action.trigger()
-            return
-        super().mouseReleaseEvent(event)
-
-
 class Window(QMainWindow):
     def __init__(self, budget: Budget, look: theme.Look | None = None):
         super().__init__()
@@ -69,6 +56,9 @@ class Window(QMainWindow):
         self.options: dict = {}
         self._ready = False  # draw nothing until the window is built
         self._drawn = ""  # the tab drawn last
+        self._viewed = None  # the tab and filters drawn last
+        motion.load(budget.home)
+        QApplication.setEffectEnabled(Qt.UI_FadeTooltip, motion.on())
         self.setWindowTitle("Budgetier")
         self.resize(1340, 900)
         self.setMinimumSize(900, 620)
@@ -168,14 +158,14 @@ class Window(QMainWindow):
         return side
 
     def _filters(self) -> QWidget:
-        self.range_box = QComboBox()
+        self.range_box = popup.Dropdown()
         self.range_box.setAccessibleName("Period")
         self.range_box.activated.connect(self._range_chosen)
-        self.accounts_button = QToolButton()
+        self.accounts_button = popup.Picker()
         self.accounts_button.setProperty("kind", "picker")
         self.accounts_button.setAccessibleName("Accounts")
         self.accounts_button.setPopupMode(QToolButton.InstantPopup)
-        self.accounts_menu = StayOpenMenu(self.accounts_button)
+        self.accounts_menu = popup.Menu(self.accounts_button)
         self.accounts_button.setMenu(self.accounts_menu)
         box = widgets.row(self.range_box, self.accounts_button, stretch_last=True)
         box.setObjectName("filters")
@@ -186,10 +176,11 @@ class Window(QMainWindow):
         content.setObjectName("content")
         column = QVBoxLayout(content)
         gutter = theme.SPACE[8]
-        column.setContentsMargins(gutter, theme.SPACE[5], gutter, 0)
+        column.setContentsMargins(gutter, theme.SPACE[5], gutter - SCROLL_ROOM, 0)  # the scroll bar sits in the gutter
         column.setSpacing(theme.SPACE[3])
 
         header = QHBoxLayout()
+        header.setContentsMargins(0, 0, SCROLL_ROOM, 0)
         words = QVBoxLayout()
         words.setSpacing(2)
         self.title = QLabel()
@@ -365,10 +356,14 @@ class Window(QMainWindow):
         self.filters.setVisible(not full and bool(self.snapshot.txns))
         subtitle = "All history" if full else views.range_label(self.snapshot, self.choice)
         self.subtitle.setText(subtitle if self.snapshot.txns or tab == "Help" else "")  # no data: just the welcome
+        view = (tab, self.choice)
+        charts.grow_next = view != self._viewed  # bars grow in for a new tab or period, not after each change
+        self._viewed = view
         body = BUILDERS[tab](self.context()) if tab in BUILDERS else _placeholder(tab)
+        charts.grow_next = False
         page = QWidget()
         layout = QVBoxLayout(page)
-        layout.setContentsMargins(0, theme.SPACE[2], 0, theme.SPACE[10])
+        layout.setContentsMargins(0, theme.SPACE[2], SCROLL_ROOM - SCROLL_BAR, theme.SPACE[10])
         layout.addWidget(body)
         layout.addStretch(1)
         scroll = self.pages[tab]
@@ -378,6 +373,8 @@ class Window(QMainWindow):
         scroll.setWidget(page)
         if old is not None:
             old.deleteLater()
+        if not again:
+            motion.reveal(page)
         self._drawn = tab
         if at:
             QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(at))
@@ -395,10 +392,23 @@ class Window(QMainWindow):
         if self._ready:
             self.render()
 
+    def resizeEvent(self, event):  # noqa: N802 - Qt's name
+        super().resizeEvent(event)
+        self.toast.follow()
+
+    def set_motion(self, on: bool) -> None:
+        motion.set_on(on)
+        settings.save(self.budget.home, reduce_motion=not on)
+        QApplication.setEffectEnabled(Qt.UI_FadeTooltip, on)
+
     def set_look(self, look: theme.Look) -> None:
         self.look = look
         theme.save_look(self.budget.home, look)
         self.restyle()
+
+
+SCROLL_ROOM = 14  # a scroll bar and a little air, kept clear at the right of each tab
+SCROLL_BAR = 10  # as wide as the style sheet draws it
 
 
 def application() -> QApplication:

@@ -65,7 +65,8 @@ check, or to check by hand, use the buttons at the bottom of the Help tab.
 ## Appearance
 
 Choose **Appearance** at the bottom of the sidebar to pick a theme (Pine, Ocean or Plum) and
-light, dark or matching your system. The choice is kept in your data folder.
+light, dark or matching your system. **Reduce motion** turns off the short fades, slides and
+growing bars. The choice is kept in your data folder.
 
 ## Where things live
 
@@ -89,7 +90,7 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `accounts.json` | Account names, types and entered balances |
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
-| `settings.json` | Your look and whether you've seen the tour |
+| `settings.json` | Your look, motion, and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 
 ## Bank sync
@@ -246,8 +247,10 @@ Run the desktop app. It uses your real data folder, so close any installed copy 
 
 The look comes from `budgetier/ui/theme.py`: color tokens for each theme in light and dark,
 sizes for type, spacing and corners, and the Qt style sheet made from them. To add a theme, add
-its light and dark palettes there and to `PALETTES`. Anything that shows bank text goes through
-`widgets.text()` or a table cell, which never read it as HTML.
+its light and dark palettes there and to `PALETTES`. Dropdowns and menus are `ui/popup.py`, which
+draws their panels, and motion is `ui/motion.py`, which every animation goes through so
+**Reduce motion** can turn it all off. Anything that shows bank text goes through
+`widgets.text()`, a table cell or a chart's note, which never read it as HTML.
 
 Run the tests:
 

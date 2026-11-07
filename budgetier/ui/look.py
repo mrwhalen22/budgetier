@@ -1,10 +1,10 @@
-"""Appearance: light, dark or the system's, and the Pine, Ocean or Plum theme."""
+"""Appearance: light, dark or the system's, the Pine, Ocean or Plum theme, and motion."""
 from __future__ import annotations
 
 from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QButtonGroup, QPushButton
 
-from . import icons, theme, widgets
+from . import icons, motion, theme, widgets
 from .dialogs import Dialog
 
 MODES = (("system", "Match system"), ("light", "Light"), ("dark", "Dark"))
@@ -38,6 +38,8 @@ def appearance(window) -> Dialog:
     dialog.body.addWidget(widgets.row(*mode_buttons, spacing=theme.SPACE[1]))
     dialog.body.addWidget(widgets.text("Theme", "field"))
     dialog.body.addWidget(widgets.row(*palette_buttons, spacing=theme.SPACE[1]))
+    dialog.motion = widgets.check("Reduce motion", not motion.on(), lambda on: window.set_motion(not on))
+    dialog.body.addWidget(dialog.motion)
     dialog.set_buttons([("Done", dialog.dismiss, "primary")])
     dialog.mode_buttons, dialog.palette_buttons = mode_buttons, palette_buttons
     dialog.open()

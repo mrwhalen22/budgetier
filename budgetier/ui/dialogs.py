@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QDialog,
@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..storage import BudgetError
-from . import theme, widgets
+from . import motion, theme, widgets
 
 log = logging.getLogger("budgetier")
 TOAST_SECONDS = 5
@@ -84,6 +84,10 @@ class Dialog(QDialog):
         column.addLayout(foot)
         self.buttons: list[QPushButton] = []
         self.main: QPushButton | None = None  # pressed by Enter in a field
+
+    def showEvent(self, event):  # noqa: N802 - Qt's name
+        super().showEvent(event)
+        motion.fade_in(self)
 
     def set_lead(self, words: str) -> None:
         self.lead.setText(words)
@@ -174,7 +178,7 @@ class Toast(QLabel):
         self.hide()
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
-        self.timer.timeout.connect(self.hide)
+        self.timer.timeout.connect(lambda: motion.reveal(self, ms=motion.NORMAL, out=True, then=self.hide))
 
     def stay(self, words: str) -> None:
         """Until told otherwise, for work that may take a while."""
@@ -187,9 +191,22 @@ class Toast(QLabel):
         self.setText(words)
         self.setAccessibleName(words)
         self.adjustSize()
-        parent = self.parentWidget()
-        self.move((parent.width() - self.width()) // 2, parent.height() - self.height() - theme.SPACE[6])
-        self.show()
+        at = self.spot()
+        if self.isVisible() and self.graphicsEffect() is None:
+            self.move(at)  # already showing: just the new words
+        else:
+            self.show()
+            motion.reveal(self)
+            motion.slide(self, at, start=at + QPoint(0, theme.SPACE[2]))
         self.raise_()
         self.timer.start(TOAST_SECONDS * 1000)
         announce(self)
+
+    def spot(self) -> QPoint:
+        parent = self.parentWidget()
+        return QPoint((parent.width() - self.width()) // 2, parent.height() - self.height() - theme.SPACE[6])
+
+    def follow(self) -> None:
+        """Stay centered at the bottom when the window changes size."""
+        if self.isVisible():
+            self.move(self.spot())

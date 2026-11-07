@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QComboBox, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from ... import views
 from .. import fmt, theme, widgets
 from ..context import Context
+from ..popup import Dropdown
 
 FIRST, MORE = 200, 500  # rows shown at first, and added by Show more
 COLUMNS = (("date", "Date"), ("merchant", "Merchant"), ("category", "Category"), ("account", "Account"), ("amount", "Amount"))
@@ -28,7 +29,7 @@ class Transactions(QWidget):
         self.query.setAccessibleName("Search transactions")
         self.query.setClearButtonEnabled(True)
         self.query.textChanged.connect(lambda words: self._change(query=words))
-        self.category = QComboBox()
+        self.category = Dropdown(dot_for=lambda name: ctx.color(name) if name else None)
         self.category.setAccessibleName("Category")
         self.category.addItem("All categories", "")
         for name in views.category_filter(s):
@@ -37,7 +38,7 @@ class Transactions(QWidget):
             self.category.addItem(self.state["category"], self.state["category"])
         self.category.setCurrentIndex(self.category.findData(self.state["category"]))
         self.category.activated.connect(lambda i: self._change(category=self.category.itemData(i)))
-        self.kind = QComboBox()
+        self.kind = Dropdown()
         self.kind.setAccessibleName("Kind")
         for value, label in views.KINDS:
             self.kind.addItem(label, value)

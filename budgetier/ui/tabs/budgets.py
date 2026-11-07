@@ -3,13 +3,14 @@ from __future__ import annotations
 
 from PySide6.QtCore import QRectF, Qt
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from ... import views
 from .. import fmt, theme, widgets
 from ..context import Context
 from ..dialogs import Dialog, attempt, busy, confirm
 from ..importing import field
+from ..popup import Dropdown
 
 MODES = (("amount", "Dollar amount"), ("percent", "Percent of income"))
 
@@ -100,7 +101,7 @@ def build(ctx: Context) -> QWidget:
     if b.month is None:
         return widgets.card(widgets.row(add), title="Budgets", note="Budgets show once there are transactions.")
     m = b.month
-    month = QComboBox()
+    month = Dropdown()
     month.setAccessibleName("Month")
     for value in b.months:
         month.addItem(fmt.month_name(value), value)
@@ -138,12 +139,12 @@ def budget_form(ctx: Context, line: views.BudgetLine | None = None) -> Dialog | 
         window.toast.say("Every category already has a budget.")
         return None
     dialog = Dialog(window, "Edit budget" if line else "Add budget", "Targets apply to every month, including past ones.")
-    category = QComboBox()
+    category = Dropdown(dot_for=ctx.color)
     category.setAccessibleName("Category")
     for name in names:
         category.addItem(name, name)
     category.setEnabled(line is None)
-    mode = QComboBox()
+    mode = Dropdown()
     mode.setAccessibleName("Target type")
     for value, label in MODES:
         mode.addItem(label, value)
