@@ -20,6 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 BUILD, DIST = ROOT / "build", ROOT / "dist"
 MAC_NAMES = {"arm64": "Budgetier-macOS-Apple-Silicon.dmg", "x86_64": "Budgetier-macOS-Intel.dmg"}
 LINUX_NAME = "Budgetier-Linux.tar.gz"
+# Far under what the app will download as an update. Going over means something the app
+# doesn't use was bundled, as when the Linux download held all of Qt and reached 300 MB.
+MOST_MB = 200
 
 
 def pyinstaller(spec: str, work: str, dist: Path = DIST) -> None:
@@ -28,7 +31,11 @@ def pyinstaller(spec: str, work: str, dist: Path = DIST) -> None:
 
 
 def report(installer: Path) -> int:
-    print(f"\nInstaller: {installer} ({installer.stat().st_size / 1_048_576:.0f} MB)")
+    size = installer.stat().st_size / 1_048_576
+    print(f"\nInstaller: {installer} ({size:.0f} MB)")
+    if size > MOST_MB:
+        raise SystemExit(f"{installer.name} is {size:.0f} MB, over the {MOST_MB} MB limit. Check what the build "
+                         "bundled: it's likely something the app doesn't use.")
     return 0
 
 

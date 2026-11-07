@@ -7,16 +7,19 @@ from PyInstaller.utils.hooks import collect_all
 
 packages = ["webview", "pdfplumber", "keyring", "certifi"]
 packages += ["clr_loader", "pythonnet", "win32ctypes"] if sys.platform == "win32" else []
-packages += ["qtpy", "secretstorage", "jeepney"] if sys.platform == "linux" else []
+packages += ["secretstorage", "jeepney"] if sys.platform == "linux" else []
 datas, binaries, hiddenimports = [("../budgetier/dashboard", "budgetier/dashboard"), ("../VERSION", ".")], [], []
 for package in packages:
     d, b, h = collect_all(package)
     datas += d
     binaries += b
     hiddenimports += h
-if sys.platform == "linux":  # the window finds these through qtpy
-    hiddenimports += [f"PySide6.{name}" for name in ("QtWebEngineCore", "QtWebEngineWidgets", "QtWebChannel", "QtNetwork",
-                                                     "QtPrintSupport")]
+if sys.platform == "linux":
+    # Only the Qt parts the window uses, found through qtpy. Collecting all of qtpy would
+    # bring in every Qt module it wraps, 3D and multimedia included, and triple the download.
+    QT = ("QtCore", "QtGui", "QtWidgets", "QtNetwork", "QtWebChannel", "QtWebEngineCore", "QtWebEngineWidgets",
+          "QtPrintSupport")
+    hiddenimports += ["qtpy", *(f"qtpy.{name}" for name in QT), *(f"PySide6.{name}" for name in QT)]
 
 analysis = Analysis(["../run_app.py"], pathex=[".."], datas=datas, binaries=binaries,
                     hiddenimports=hiddenimports, excludes=["tkinter", "unittest", "pytest"])
