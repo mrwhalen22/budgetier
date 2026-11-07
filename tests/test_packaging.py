@@ -66,6 +66,22 @@ class UpdateNames(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "release.yml").read_text(encoding="utf-8")
         self.assertIn(updates.CHECKSUMS, workflow)
 
+    def test_the_app_looks_for_the_file_linux_builds_make(self):
+        from budgetier import updates
+        with mock.patch.object(updates.sys, "platform", "linux"), mock.patch.object(updates.platform, "machine", return_value="x86_64"):
+            self.assertEqual(updates.installer_name(), build_installer.LINUX_NAME)
+
+    def test_nothing_is_offered_to_a_linux_machine_it_wont_run_on(self):
+        from budgetier import updates
+        with mock.patch.object(updates.sys, "platform", "linux"), mock.patch.object(updates.platform, "machine", return_value="aarch64"):
+            self.assertIsNone(updates.installer_name())
+
+    def test_mac_builds_keep_the_windows_checksum(self):
+        from budgetier import updates
+        workflow = (Path(__file__).resolve().parents[1] / ".github" / "workflows" / "mac-builds.yml").read_text(encoding="utf-8")
+        self.assertIn(updates.CHECKSUMS, workflow)
+        self.assertIn("grep -v", workflow)
+
 
 class Versioning(Tmp):
     def test_each_part_raises_and_resets_what_follows(self):

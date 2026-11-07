@@ -187,6 +187,15 @@ class AppImports(AppCase):
             os.environ.pop("BUDGETIER_HOME", None)
             self.assertEqual(service.app_home(), Path("/Users/pat/Library/Application Support/Budgetier"))
 
+    def test_data_folder_on_linux(self):
+        with mock.patch.dict("os.environ", {}, clear=True), mock.patch.object(service.sys, "platform", "linux"), \
+                mock.patch.object(service.Path, "home", return_value=Path("/home/pat")):
+            self.assertEqual(service.app_home(), Path("/home/pat/.local/share/Budgetier"))
+
+    def test_linux_follows_the_desktop_standard_for_data(self):
+        with mock.patch.dict("os.environ", {"XDG_DATA_HOME": "/data"}, clear=True), mock.patch.object(service.sys, "platform", "linux"):
+            self.assertEqual(service.app_home(), Path("/data/Budgetier"))
+
 
 class Rules(AppCase):
     def setUp(self):

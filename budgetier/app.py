@@ -6,6 +6,7 @@ import json
 import logging
 import logging.handlers
 import os
+import shutil
 import subprocess
 import sys
 import threading
@@ -21,6 +22,7 @@ from .storage import DataError, app_home, hold_lock
 
 log = logging.getLogger("budgetier")
 FINISH_WAIT = 60  # seconds, longer than a sync's slowest request
+WINDOW_TOOLKIT = {"win32": "edgechromium", "linux": "qt"}
 
 # Run in the page by the self check: every tab must draw, and the app must be reachable.
 SELF_CHECK = """JSON.stringify({
@@ -34,17 +36,29 @@ SELF_CHECK = """JSON.stringify({
 def _alert(text: str) -> None:
     if sys.platform == "win32":
         ctypes.windll.user32.MessageBoxW(None, text, "Budgetier", 0x10)
-    else:
+    elif sys.platform == "darwin":
         subprocess.run(["osascript", "-e", "on run argv", "-e",
                         'display alert "Budgetier" message (item 1 of argv) as critical',
                         "-e", "end run", text], check=False)
+    elif shutil.which("zenity"):
+        subprocess.run(["zenity", "--error", "--title=Budgetier", "--no-markup", f"--text={text}"], check=False)
+    else:  # not every Linux desktop has zenity, and this may be the only word on what went wrong
+        print(f"Budgetier: {text}", file=sys.stderr)
 
 
 def _show_folder(folder: Path) -> None:
     if sys.platform == "win32":
         os.startfile(folder)
     else:
-        subprocess.run(["open", str(folder)], check=True)
+        subprocess.run(["open" if sys.platform == "darwin" else "xdg-open", str(folder)], check=True)
+
+
+def _prepare_linux_window() -> None:
+    """Linux uses Qt's browser. Its sandbox can't start on many systems, Ubuntu's included,
+    and the app would just not open. It only ever shows this app's own local page."""
+    if sys.platform == "linux":
+        os.environ.setdefault("QT_API", "pyside6")
+        os.environ.setdefault("QTWEBENGINE_DISABLE_SANDBOX", "1")
 
 
 def _take_first_click() -> None:
@@ -271,6 +285,7 @@ def main() -> int:
         page = budget.refresh()
         api = Api(budget)
         _take_first_click()
+        _prepare_linux_window()
         # text_select also stops pywebview making the whole page unselectable, which WebKit
         # can carry into fields. The page says itself which controls shouldn't select.
         api._window = webview.create_window("Budgetier", url=page.as_uri(), js_api=api,
@@ -278,7 +293,7 @@ def main() -> int:
                                             background_color="#101A17", text_select=True)
         check = os.environ.get("BUDGETIER_SELF_CHECK")
         webview.start(_self_check if check else None, (api._window, check) if check else None,
-                      gui="edgechromium" if sys.platform == "win32" else None,
+                      gui=WINDOW_TOOLKIT.get(sys.platform),
                       private_mode=False, storage_path=str(home / "webview"))
         api._finish()
     except DataError as e:

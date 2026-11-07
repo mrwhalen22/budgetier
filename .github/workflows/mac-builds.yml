@@ -1,0 +1,90 @@
+name: Mac builds
+
+# Adds the Mac installers to a published release. Release runs this unless you untick
+# "Build for Mac". Run it from the Actions tab to add them to a release later.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: The release to add them to, like 1.4.2
+        type: string
+        required: true
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mac-builds-${{ inputs.version }}
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [macos-latest, macos-15-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: v${{ inputs.version }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements*.txt
+            constraints.txt
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m unittest discover -s tests -t .
+
+      - name: Build installer
+        run: python packaging/build_installer.py
+
+      - name: Open the built app
+        run: python packaging/self_check.py
+
+      - name: Keep the installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.os }}
+          path: dist/Budgetier-*.dmg
+          retention-days: 1
+          if-no-files-found: error
+
+  add-to-release:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      TAG: v${{ inputs.version }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: installers
+          merge-multiple: true
+
+      - name: Add them to the release
+        run: |
+          gh release download "$TAG" --pattern SHA256SUMS.txt --dir before
+          grep -v "Budgetier-macOS-" before/SHA256SUMS.txt > SHA256SUMS.txt || true
+          (cd installers && sha256sum *) >> SHA256SUMS.txt
+          # Checksums first: the app only offers an update once its installer is there.
+          gh release upload "$TAG" SHA256SUMS.txt --clobber
+          gh release upload "$TAG" installers/* --clobber

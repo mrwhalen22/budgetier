@@ -1,4 +1,4 @@
-# Built by packaging/build_installer.py. Makes dist/Budgetier on Windows, and
+# Built by packaging/build_installer.py. Makes dist/Budgetier on Windows and Linux, and
 # dist/Budgetier.app as well on macOS.
 import sys
 from pathlib import Path
@@ -7,12 +7,16 @@ from PyInstaller.utils.hooks import collect_all
 
 packages = ["webview", "pdfplumber", "keyring", "certifi"]
 packages += ["clr_loader", "pythonnet", "win32ctypes"] if sys.platform == "win32" else []
+packages += ["qtpy", "secretstorage", "jeepney"] if sys.platform == "linux" else []
 datas, binaries, hiddenimports = [("../budgetier/dashboard", "budgetier/dashboard"), ("../VERSION", ".")], [], []
 for package in packages:
     d, b, h = collect_all(package)
     datas += d
     binaries += b
     hiddenimports += h
+if sys.platform == "linux":  # the window finds these through qtpy
+    hiddenimports += [f"PySide6.{name}" for name in ("QtWebEngineCore", "QtWebEngineWidgets", "QtWebChannel", "QtNetwork",
+                                                     "QtPrintSupport")]
 
 analysis = Analysis(["../run_app.py"], pathex=[".."], datas=datas, binaries=binaries,
                     hiddenimports=hiddenimports, excludes=["tkinter", "unittest", "pytest"])
