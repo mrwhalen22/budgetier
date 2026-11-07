@@ -96,8 +96,9 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 Instead of downloading files, you can update accounts through
 [SimpleFIN](https://www.simplefin.org/), a paid service. Open the Accounts tab, choose
 **Connect SimpleFIN**, and paste a setup token from your SimpleFIN account. Then match each
-bank account to an account in Budgetier, or add it as a new one. Budgetier syncs when it
-opens, at most every 6 hours, and whenever you press **Sync now**.
+bank account to an account in Budgetier, or add it as a new one. Budgetier syncs only when
+you press **Sync now**, and each sync brings in everything since the last one, however long
+ago that was.
 
 - **Privacy:** with sync on, SimpleFIN and the services behind it handle your transactions.
   Budgetier gets read-only access, sends SimpleFIN nothing but the request, and keeps the

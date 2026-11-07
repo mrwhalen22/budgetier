@@ -197,8 +197,8 @@ class Api:
         return self._budget.sync.link(choices)
 
     @_reply
-    def sync_bank(self, automatic=False):
-        return self._budget.sync.sync(automatic)
+    def sync_bank(self):
+        return self._budget.sync.sync()
 
     @_reply
     def disconnect_bank(self):

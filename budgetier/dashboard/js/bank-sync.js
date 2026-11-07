@@ -62,21 +62,11 @@ async function linkBank() {
     '<button class="btn primary" data-modal="reload">Done</button>');
 }
 async function syncNow() {
-  const done = await api().sync_bank(false);
+  const done = await api().sync_bank();
   if (!done.ok) return toast(done.error);
   if (done.skipped) return toast("Synced a moment ago, so there's nothing new yet.");
   if (done.added) return reload(syncNote(done.added));
   reload(done.problems.length || done.unlinked ? "Synced. See Bank sync on the Accounts tab." : "Everything's up to date.");
 }
 const syncNote = n => `Synced: ${n.toLocaleString()} new transaction${n === 1 ? "" : "s"}.`;
-async function autoSync() {
-  if (!D.sync || !D.sync.connected) return;
-  if (!D.sync.linked.length) return;
-  const button = document.getElementById("bankBtn");
-  await hold(button, "Syncing...", async () => {
-    const done = await api().sync_bank(true);
-    if (!done.ok) return toast(done.error);
-    if (done.added) { if (modal.open) toast(syncNote(done.added)); else reload(syncNote(done.added)); }
-  });
-}
 
