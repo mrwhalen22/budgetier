@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_all
 
 packages = ["webview", "pdfplumber", "keyring", "certifi"]
 packages += ["clr_loader", "pythonnet", "win32ctypes"] if sys.platform == "win32" else []
-datas, binaries, hiddenimports = [("../budgetier/dashboard.html", "budgetier"), ("../VERSION", ".")], [], []
+datas, binaries, hiddenimports = [("../budgetier/dashboard", "budgetier/dashboard"), ("../VERSION", ".")], [], []
 for package in packages:
     d, b, h = collect_all(package)
     datas += d

@@ -37,7 +37,12 @@ jobs:
       - name: Lint
         run: python -m ruff check .
 
+      - name: Install browsers for the page tests
+        run: python -m playwright install chromium webkit
+
       - name: Run tests
+        env:
+          BUDGETIER_BROWSERS: required  # so the page tests can't quietly stop running
         run: python -m unittest discover -s tests -t .
 
       - name: Build installer

@@ -1,0 +1,14 @@
+/* =========================================================================
+   Budgetier design system. Three layers, read top to bottom:
+
+   1. Tokens: the only place a color, size or corner is written down. Everything
+      below uses var(--name). tests/test_design.py keeps it that way, and checks
+      every theme for readable contrast.
+   2. Components: the one button, field, card, panel, banner and table.
+   3. Views: layout for particular screens. No new looks belong here.
+
+   A theme is a palette (Pine, Ocean, Plum) in a mode (light, dark). Palettes set
+   the brand and neutrals. Modes set what money means: green is always good and
+   red always bad, so numbers read the same in every theme.
+   ========================================================================= */
+
