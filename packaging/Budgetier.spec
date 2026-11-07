@@ -20,12 +20,17 @@ if sys.platform == "linux":
     QT = ("QtCore", "QtGui", "QtWidgets", "QtNetwork", "QtWebChannel", "QtWebEngineCore", "QtWebEngineWidgets",
           "QtPrintSupport")
     hiddenimports += ["qtpy", *(f"qtpy.{name}" for name in QT), *(f"PySide6.{name}" for name in QT)]
+    # Qt's browser links to Qt Quick, so PyInstaller would add Quick's Python modules too, and
+    # their hooks bring every QML plugin Qt has, with the libraries those need: 3D, charts and
+    # more. The window never loads QML. Quick's own library still comes, as the browser needs it.
+    excludes = ["PySide6.QtQml", "PySide6.QtQuick", "PySide6.QtQuickWidgets", "PySide6.QtDataVisualization"]
+else:
+    excludes = []
 
 analysis = Analysis(["../run_app.py"], pathex=[".."], datas=datas, binaries=binaries,
-                    hiddenimports=hiddenimports, excludes=["tkinter", "unittest", "pytest"])
+                    hiddenimports=hiddenimports, excludes=["tkinter", "unittest", "pytest", *excludes])
 if sys.platform == "linux":
-    # Qt's browser links to Qt Quick, so PyInstaller adds every QML plugin Qt has, which the
-    # window never loads. Translations are left out too, except the browser's English text.
+    # Anything QML that still arrives, and every translation but the browser's English text.
     def needed(entry) -> bool:
         path = "/" + entry[0].replace("\\", "/")
         if "/Qt/qml/" in path:

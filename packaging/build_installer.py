@@ -66,7 +66,7 @@ def build_mac() -> int:
     return report(image)
 
 
-def largest(folder: Path, count: int = 25) -> None:
+def largest(folder: Path, count: int = 40) -> None:
     """Where the size goes, so a build over the limit says what to look at."""
     sizes: dict[str, int] = {}
     for path in folder.rglob("*"):
