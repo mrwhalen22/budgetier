@@ -56,6 +56,43 @@ bump_version = importlib.util.module_from_spec(_bump)
 _bump.loader.exec_module(bump_version)
 
 
+class InstallerSize(Tmp):
+    def test_an_ordinary_installer_passes(self):
+        installer = self.dir / "small.exe"
+        installer.write_bytes(b"x" * 1000)
+        with mock.patch("sys.stdout", io.StringIO()):
+            self.assertEqual(build_installer.report(installer), 0)
+
+    def test_an_oversized_installer_stops_the_build(self):
+        installer = self.dir / "big.tar.gz"
+        installer.write_bytes(b"x" * 2_000_000)
+        with mock.patch.object(build_installer, "MOST_MB", 1), mock.patch("sys.stdout", io.StringIO()), \
+                self.assertRaisesRegex(SystemExit, "over the 1 MB limit"):
+            build_installer.report(installer)
+
+    def test_the_build_says_where_the_size_goes(self):
+        (self.dir / "Qt" / "lib").mkdir(parents=True)
+        (self.dir / "Qt" / "lib" / "big.so").write_bytes(b"x" * 3_000_000)
+        (self.dir / "small.txt").write_bytes(b"x" * 10)
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            build_installer.largest(self.dir)
+        lines = [line.split() for line in out.getvalue().splitlines()[2:]]
+        self.assertEqual(lines[0], ["2.9", "MB", "Qt"])
+        self.assertIn(["2.9", "MB", "Qt/lib/big.so"], lines)
+
+    def test_the_limit_leaves_room_under_what_the_app_downloads(self):
+        from budgetier import updates
+        self.assertLess(build_installer.MOST_MB * 1_048_576 * 2, updates.MOST_BYTES)
+
+    def test_the_linux_build_takes_only_the_qt_it_uses(self):
+        """Collecting all of qtpy bundled every Qt module and made the download 300 MB."""
+        spec = (Path(__file__).resolve().parents[1] / "packaging" / "Budgetier.spec").read_text(encoding="utf-8")
+        collected = [line for line in spec.splitlines() if line.startswith("packages")]
+        self.assertTrue(collected)
+        self.assertFalse([line for line in collected if "qtpy" in line or "PySide6" in line])
+
+
 class UpdateNames(unittest.TestCase):
     def test_the_app_looks_for_the_files_a_release_publishes(self):
         from budgetier import updates
