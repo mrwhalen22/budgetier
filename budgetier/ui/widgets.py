@@ -409,7 +409,7 @@ class Table(QTableWidget):
 
     def __init__(self, headers: list[str], rows: list[list[Cell]], tokens: dict[str, str],
                  on_row: Callable[[int], None] | None = None, on_cell: Callable[[int, int], None] | None = None,
-                 numeric: set[int] | None = None):
+                 numeric: set[int] | None = None, stretch: int = -1):
         super().__init__(len(rows), len(headers))
         self.tokens, self.on_row, self.on_cell = tokens, on_row, on_cell
         self.setProperty("kind", "table")
@@ -429,7 +429,10 @@ class Table(QTableWidget):
         header = self.horizontalHeader()
         header.setHighlightSections(False)
         header.setSectionResizeMode(QHeaderView.ResizeToContents)
-        header.setStretchLastSection(True)
+        # One column takes the spare width so the table fills its card: the last by default.
+        header.setStretchLastSection(stretch == -1)
+        if stretch >= 0:
+            header.setSectionResizeMode(stretch, QHeaderView.Stretch)
         header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         for c in numeric or set():
             item = self.horizontalHeaderItem(c)

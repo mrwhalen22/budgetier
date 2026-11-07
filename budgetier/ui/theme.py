@@ -5,14 +5,12 @@ both exist. Every color the window uses comes from here.
 """
 from __future__ import annotations
 
-import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from ..storage import read_text, write_files
+from . import settings
 
-SETTINGS = "settings.json"
 MODES = ("system", "light", "dark")
 PALETTES = (("pine", "Pine"), ("ocean", "Ocean"), ("plum", "Plum"))
 
@@ -71,11 +69,7 @@ class Look:
 
 def load_look(home: Path) -> Look:
     """A look that can't be read is worth nothing more than the default."""
-    path = Path(home) / SETTINGS
-    try:
-        saved = json.loads(read_text(path)).get("look", {}) if path.exists() else {}
-    except (OSError, ValueError, AttributeError):
-        saved = {}
+    saved = settings.load(home).get("look")
     if not isinstance(saved, dict):
         saved = {}
     mode = saved.get("mode") if saved.get("mode") in MODES else Look.mode
@@ -84,15 +78,7 @@ def load_look(home: Path) -> Look:
 
 
 def save_look(home: Path, look: Look) -> None:
-    path = Path(home) / SETTINGS
-    try:
-        settings = json.loads(read_text(path)) if path.exists() else {}
-    except (OSError, ValueError):
-        settings = {}
-    if not isinstance(settings, dict):
-        settings = {}
-    settings["look"] = {"mode": look.mode, "palette": look.palette}
-    write_files({path: json.dumps(settings, indent=2, sort_keys=True) + "\n"})
+    settings.save(home, look={"mode": look.mode, "palette": look.palette})
 
 
 def mode_for(look: Look, system_dark: bool) -> str:
@@ -220,6 +206,15 @@ QRadioButton {{ color: {c['ink']}; spacing: {SPACE[2]}px; }}
 QPushButton[kind="small-danger"] {{ min-height: {CONTROL_SM - 2}px; padding: 0 {SPACE[2]}px; font-size: {TEXT['xs']}px;
     border-radius: {RADIUS['sm']}px; color: {c['bad']}; }}
 QPushButton[kind="primary"]:disabled, QPushButton[kind="danger"]:disabled {{ color: {c['on-accent']}; }}
+QPushButton[kind="segment"] {{ padding: 0 {SPACE[3]}px; }}
+QPushButton[kind="segment"]:checked {{ background: {c['accent-soft']}; border: 2px solid {c['accent']}; }}
+QPushButton[kind="small-primary"] {{ min-height: {CONTROL_SM - 2}px; padding: 0 {SPACE[2]}px; font-size: {TEXT['xs']}px;
+    border-radius: {RADIUS['sm']}px; background: {c['accent']}; border-color: {c['accent']}; color: {c['on-accent']}; }}
+QPushButton[kind="nav-link"] {{ text-align: left; min-height: 20px; padding: {SPACE[2]}px; border: none;
+    border-radius: {RADIUS['md']}px; font-size: {TEXT['sm']}px; color: {c['ink-2']}; background: transparent; }}
+QPushButton[kind="nav-link"]:hover {{ background: {c['hover']}; color: {c['ink']}; }}
+QFrame#coach {{ background: {c['surface']}; border: 1px solid {c['line']}; border-radius: {RADIUS['lg']}px; }}
+QFrame[kind="budget"] {{ border-bottom: 1px solid {c['line-soft']}; }}
 #toast {{ background: {c['ink']}; color: {c['page']}; border-radius: {RADIUS['md']}px; padding: {SPACE[2]}px {SPACE[4]}px;
     font-size: {TEXT['sm']}px; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0; }}
