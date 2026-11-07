@@ -23,6 +23,17 @@ if sys.platform == "linux":
 
 analysis = Analysis(["../run_app.py"], pathex=[".."], datas=datas, binaries=binaries,
                     hiddenimports=hiddenimports, excludes=["tkinter", "unittest", "pytest"])
+if sys.platform == "linux":
+    # Qt's browser links to Qt Quick, so PyInstaller adds every QML plugin Qt has, which the
+    # window never loads. Translations are left out too, except the browser's English text.
+    def needed(entry) -> bool:
+        path = "/" + entry[0].replace("\\", "/")
+        if "/Qt/qml/" in path:
+            return False
+        return "/Qt/translations/" not in path or path.endswith("/qtwebengine_locales/en-US.pak")
+
+    analysis.datas = [entry for entry in analysis.datas if needed(entry)]
+    analysis.binaries = [entry for entry in analysis.binaries if needed(entry)]
 pyz = PYZ(analysis.pure)
 exe = EXE(pyz, analysis.scripts, [], exclude_binaries=True, name="Budgetier", console=False,
           icon="Budgetier.ico")

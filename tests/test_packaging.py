@@ -70,6 +70,17 @@ class InstallerSize(Tmp):
                 self.assertRaisesRegex(SystemExit, "over the 1 MB limit"):
             build_installer.report(installer)
 
+    def test_the_build_says_where_the_size_goes(self):
+        (self.dir / "Qt" / "lib").mkdir(parents=True)
+        (self.dir / "Qt" / "lib" / "big.so").write_bytes(b"x" * 3_000_000)
+        (self.dir / "small.txt").write_bytes(b"x" * 10)
+        out = io.StringIO()
+        with mock.patch("sys.stdout", out):
+            build_installer.largest(self.dir)
+        lines = [line.split() for line in out.getvalue().splitlines()[2:]]
+        self.assertEqual(lines[0], ["2.9", "MB", "Qt"])
+        self.assertIn(["2.9", "MB", "Qt/lib/big.so"], lines)
+
     def test_the_limit_leaves_room_under_what_the_app_downloads(self):
         from budgetier import updates
         self.assertLess(build_installer.MOST_MB * 1_048_576 * 2, updates.MOST_BYTES)

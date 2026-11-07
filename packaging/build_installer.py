@@ -66,8 +66,23 @@ def build_mac() -> int:
     return report(image)
 
 
+def largest(folder: Path, count: int = 25) -> None:
+    """Where the size goes, so a build over the limit says what to look at."""
+    sizes: dict[str, int] = {}
+    for path in folder.rglob("*"):
+        if path.is_file() and not path.is_symlink():
+            parts = path.relative_to(folder).parts
+            for depth in range(1, min(len(parts), 5) + 1):
+                key = "/".join(parts[:depth])
+                sizes[key] = sizes.get(key, 0) + path.stat().st_size
+    print(f"\nLargest parts of {folder.name}, unpacked:")
+    for key, size in sorted(sizes.items(), key=lambda item: -item[1])[:count]:
+        print(f"  {size / 1_048_576:7.1f} MB  {key}")
+
+
 def build_linux() -> int:
     pyinstaller("Budgetier.spec", "app")
+    largest(DIST / "Budgetier")
     archive = DIST / LINUX_NAME
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(DIST / "Budgetier", arcname="Budgetier")
