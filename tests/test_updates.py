@@ -2,8 +2,10 @@
 import hashlib
 import io
 import json
+import sys
 import unittest
 import urllib.error
+from pathlib import Path
 from unittest import mock
 
 from budgetier import service, updates
@@ -205,7 +207,7 @@ class Page(Tmp):
         self.addCleanup(budget.cancel)
         budget.refresh()
         page = budget.html_path.read_text(encoding="utf-8")
-        self.assertIn('"updates":{"supported":false,"automatic":true}', page)
+        self.assertIn(f'"updates":{{"supported":false,"automatic":true,"system":"{sys.platform}"}}', page)
 
 
 if __name__ == "__main__":
