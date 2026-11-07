@@ -28,6 +28,8 @@ def app_home() -> Path:
         return Path(override)
     if sys.platform == "darwin":
         return Path.home() / "Library" / "Application Support" / "Budgetier"
+    if sys.platform == "linux":
+        return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share") / "Budgetier"
     return Path(os.environ.get("LOCALAPPDATA", Path.home() / "AppData" / "Local")) / "Budgetier"
 
 

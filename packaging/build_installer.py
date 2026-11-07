@@ -1,14 +1,17 @@
-"""Build the one file that installs Budgetier: dist/Budgetier-Windows.exe on Windows, or
-a disk image on macOS. A build only works for the system it was made on.
+"""Build the one file that installs Budgetier: dist/Budgetier-Windows.exe on Windows, a
+disk image on macOS, or dist/Budgetier-Linux.tar.gz on Linux. A build only works for the
+system it was made on.
 
     python packaging/build_installer.py
 
-Run from any folder. Needs the packages in requirements-dev.txt.
+Run from any folder. Needs the packages in requirements-dev.txt, and on Linux what
+packaging/linux_deps.sh installs.
 """
 import platform
 import shutil
 import subprocess
 import sys
+import tarfile
 import time
 import zipfile
 from pathlib import Path
@@ -16,6 +19,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 BUILD, DIST = ROOT / "build", ROOT / "dist"
 MAC_NAMES = {"arm64": "Budgetier-macOS-Apple-Silicon.dmg", "x86_64": "Budgetier-macOS-Intel.dmg"}
+LINUX_NAME = "Budgetier-Linux.tar.gz"
 
 
 def pyinstaller(spec: str, work: str, dist: Path = DIST) -> None:
@@ -55,9 +59,19 @@ def build_mac() -> int:
     return report(image)
 
 
+def build_linux() -> int:
+    pyinstaller("Budgetier.spec", "app")
+    archive = DIST / LINUX_NAME
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(DIST / "Budgetier", arcname="Budgetier")
+    return report(archive)
+
+
 def main() -> int:
     if sys.platform == "darwin":
         return build_mac()
+    if sys.platform == "linux":
+        return build_linux()
     pyinstaller("Budgetier.spec", "app")
     pyinstaller("Uninstall.spec", "uninstall", BUILD / "uninstaller")
 

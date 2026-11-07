@@ -7,9 +7,11 @@ charset-normalizer==3.5.2
 clr_loader==0.3.1
 cryptography==50.0.2
 et_xmlfile==2.0.0
+greenlet==3.5.6
 jaraco.classes==3.4.0
 jaraco.context==6.1.2
 jaraco.functools==4.6.0
+jeepney==0.9.0
 macholib==1.16.4
 more-itertools==11.2.1
 packaging==26.3
@@ -18,6 +20,7 @@ pefile==2024.8.26
 pillow==13.0.0
 proxy_tools==0.1.0
 pycparser==3.12
+pyee==14.0.0
 pyinstaller-hooks-contrib==2026.9
 pyobjc-core==13.0
 pyobjc-framework-Cocoa==13.0
@@ -26,7 +29,11 @@ pyobjc-framework-Security==13.0
 pyobjc-framework-UniformTypeIdentifiers==13.0
 pyobjc-framework-WebKit==13.0
 pypdfium2==5.14.0
+PySide6-Addons==6.12.0
+PySide6-Essentials==6.12.0
 pythonnet==3.2.1
 pywin32-ctypes==0.2.3
+SecretStorage==3.5.0
 setuptools==84.2.1
+shiboken6==6.12.0
 typing_extensions==4.16.0

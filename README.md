@@ -16,6 +16,11 @@ Apps, where you can uninstall it. It needs Microsoft's WebView2 runtime, which c
 Windows 11. The installer isn't code signed, so Windows may warn you the first time; choose
 **More info**, then **Run anyway**. Then open **Budgetier** from the Start menu or desktop.
 
+**Linux:** download `Budgetier-Linux.tar.gz`, unpack it wherever you like, and run
+`Budgetier/Budgetier`. It's for 64-bit Intel or AMD systems as new as Ubuntu 22.04 or so. To
+uninstall, delete the folder. It doesn't add itself to your applications menu, and bank sync
+needs a keyring service such as GNOME Keyring.
+
 **macOS:** choose `Budgetier-macOS-Apple-Silicon.dmg` for an M-series Mac, or `Budgetier-macOS-Intel.dmg`
 for an Intel one. Apple menu > **About This Mac** shows which you have. Open the file and
 drag **Budgetier** onto **Applications**. To uninstall, move it from Applications to the
@@ -52,6 +57,7 @@ release's `SHA256SUMS.txt`.
 
 - **Windows:** Budgetier closes, Windows asks for permission, and it opens again when it's done.
 - **macOS:** the download opens, and you drag Budgetier to Applications to replace the old copy.
+- **Linux:** the download opens, and you unpack it over your Budgetier folder.
 
 Your data is kept apart from the program, so updating doesn't touch it. To stop the automatic
 check, or to check by hand, use the buttons at the bottom of the Help tab.
@@ -69,6 +75,7 @@ light, dark or matching your system. The choice is remembered on this computer.
 | Your data on Windows | `%LOCALAPPDATA%\Budgetier` |
 | The program on macOS | `/Applications/Budgetier.app` |
 | Your data on macOS | `~/Library/Application Support/Budgetier` |
+| Your data on Linux | `~/.local/share/Budgetier` |
 
 On Windows, Budgetier installs for the whole PC, which is why the installer asks for admin
 rights. Each person's data stays in their own profile, on both systems. Updating or
@@ -210,9 +217,9 @@ spent" question the other way.
 
 ## Development
 
-Budgetier runs on Windows and macOS and needs Python 3.12. Commands below use the Windows
-path `.venv/Scripts/python`; on macOS use `python3` to make the environment, then
-`.venv/bin/python`.
+Budgetier runs on Windows, macOS and Linux and needs Python 3.12. Commands below use the
+Windows path `.venv/Scripts/python`; elsewhere use `python3` to make the environment, then
+`.venv/bin/python`. To run the app on Linux, also install `requirements-linux.txt`.
 
 ```bash
 python -m venv .venv
@@ -227,15 +234,16 @@ Run the desktop app. It uses your real data folder, so close any installed copy 
 
 | Path | What's there |
 | --- | --- |
-| `budgetier/` | The app: parsing, ledger, analysis, reports, dashboard page and desktop window |
+| `budgetier/` | The app: parsing, ledger, analysis, reports and desktop window |
+| `budgetier/dashboard/` | The page: `index.html`, `styles/` and `js/`, joined into one file by `report_html.py` |
 | `packaging/` | Installer, uninstaller and the scripts that build them |
 | `tests/` | The test suite |
 | `samples/` | A generator for fake bank exports |
 | `VERSION` | The current version |
 
-The look comes from the design system at the top of `budgetier/dashboard.html`: tokens for
-color, type, spacing and corners, then one button, field, card, panel, banner and table. To add
-a theme, add its light and dark palettes there and to `PALETTES`. `tests/test_design.py` fails
+The look comes from the design system in `budgetier/dashboard/styles/`: tokens for color, type,
+spacing and corners, then one button, field, card, panel, banner and table. To add a theme, add
+its light and dark palettes to `tokens.css` and to `PALETTES` in `js/boot.js`. `tests/test_design.py` fails
 on hard-coded colors or sizes, inline looks, and any theme with unreadable contrast.
 
 Run the tests:
@@ -243,6 +251,13 @@ Run the tests:
 ```bash
 .venv/Scripts/python -m unittest discover -s tests -t .
 .venv/Scripts/python -m ruff check .
+```
+
+`tests/test_page.py` runs the real page in Chromium and WebKit. Without those browsers it's
+skipped, so install them once to run it:
+
+```bash
+.venv/Scripts/python -m playwright install chromium webkit
 ```
 
 Try the command-line version on fake data, kept apart from your real data:
@@ -259,13 +274,15 @@ it was made on. Windows makes `dist\Budgetier-Windows.exe` with `build.bat`:
 build.bat
 ```
 
-macOS makes a disk image in `dist` for that Mac's chip:
+macOS makes a disk image in `dist` for that Mac's chip, and Linux makes
+`dist/Budgetier-Linux.tar.gz`. On Ubuntu, `packaging/linux_deps.sh` installs what that needs:
 
 ```bash
 sh build.sh
 ```
 
-After a macOS build, this opens the app on fake data and checks every tab:
+After a macOS or Linux build, this opens the app on fake data and checks every tab. On a Linux
+machine with no screen, put `xvfb-run -a` in front of it:
 
 ```bash
 .venv/bin/python packaging/self_check.py
@@ -277,8 +294,10 @@ invented, including account numbers, names and addresses.
 ## Releasing
 
 Work happens on `develop`, by pull request. CI runs the tests and builds the installers on
-Windows and Apple Silicon macOS, on every pull request and on every push to `develop` and
-`main`. On macOS it also opens the built app.
+Linux on every pull request and on every push to `develop` and `main`, and opens the built
+Linux app. Linux is cheap and closest to a Mac, and Windows is tested by hand. To run a branch
+on Windows or a Mac before a release, choose **Platform check** on the **Actions** tab, then
+**Run workflow**.
 
 To release, open the **Actions** tab, choose **Release**, then **Run workflow**, and pick
 how to raise the version: `patch` for fixes, `minor` for features, `major` for big changes.
@@ -286,11 +305,18 @@ The workflow:
 
 1. Merges `develop` into `main` and raises the number in `VERSION`, on a temporary
    `release/vX.Y.Z` branch.
-2. Runs the tests and builds on Windows, Apple Silicon and Intel macOS. If any fail, `main`
+2. Runs the tests and builds on Windows and Linux. If they fail, `main`
    and `develop` aren't touched.
 3. Pushes `main` and a `vX.Y.Z` tag.
-4. Publishes a GitHub release with all three installers and their checksums.
+4. Publishes a GitHub release with those installers and their checksums.
 5. Merges `main` back into `develop` and removes the temporary branch.
+6. Unless you untick **Build for Mac**, runs **Mac builds**, which tests and builds on Apple
+   Silicon and Intel macOS and adds both installers to the release. If that fails, the release
+   still stands.
+
+**Mac builds** can also be run by hand from the **Actions** tab, for a release that skipped
+them or where they failed: give it the version, like `1.4.2`. Until a release has them, a Mac
+isn't offered that update, and someone new has to take the Mac installer from an earlier release.
 
 Add a `RELEASE_TOKEN` repository secret if `main` is protected, or if a release includes
 changes to the workflow files: GitHub won't let the built-in token push those. The token

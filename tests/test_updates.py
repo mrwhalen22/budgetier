@@ -2,8 +2,10 @@
 import hashlib
 import io
 import json
+import sys
 import unittest
 import urllib.error
+from pathlib import Path
 from unittest import mock
 
 from budgetier import service, updates
@@ -183,6 +185,11 @@ class Installing(Case):
                 self.assertEqual(self.updater.install(), {"closing": False})
         self.assertEqual(run.call_args[0][0][0], "open")
 
+    def test_linux_opens_the_download_with_the_desktop(self):
+        with mock.patch.object(updates.sys, "platform", "linux"), mock.patch.object(updates.subprocess, "run") as run:
+            updates._run_installer(Path("/tmp/Budgetier-Linux.tar.gz"))
+        self.assertEqual(run.call_args[0][0], ["xdg-open", str(Path("/tmp/Budgetier-Linux.tar.gz"))])
+
     def test_an_old_installer_is_cleared_away(self):
         self.install()
         self.updater.clean()
@@ -200,7 +207,7 @@ class Page(Tmp):
         self.addCleanup(budget.cancel)
         budget.refresh()
         page = budget.html_path.read_text(encoding="utf-8")
-        self.assertIn('"updates":{"supported":false,"automatic":true}', page)
+        self.assertIn(f'"updates":{{"supported":false,"automatic":true,"system":"{sys.platform}"}}', page)
 
 
 if __name__ == "__main__":
