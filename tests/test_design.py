@@ -62,7 +62,7 @@ class Themes(unittest.TestCase):
 
     def test_every_token_used_exists(self):
         defined = set(re.findall(r"--([\w-]+):", TOKENS)) | {"m"}
-        used = set(re.findall(r"var\(--([\w-]+)", CSS + TEMPLATES))
+        used = set(re.findall(r"var\(--([\w-]+)", CSS + TEMPLATES)) | set(re.findall(r'CSS\("([a-z][\w-]*)"\)', TEMPLATES))
         used |= {f"c{i}" for i in range(8)}
         self.assertEqual(sorted(used - defined), [])
 
@@ -113,6 +113,44 @@ class OneSystem(unittest.TestCase):
             self.assertIn(first, ("btn", "swatch", "nav-link"), classes)
 
 
+class Dialogs(unittest.TestCase):
+    def test_esc_goes_through_the_dialogs_own_button(self):
+        """Closing can have work to finish, which the browser's own Esc would skip."""
+        self.assertIn('modal.addEventListener("cancel"', TEMPLATES)
+        self.assertRegex(TEMPLATES, r'e\.key === "Escape"\) \{ e\.preventDefault\(\); return dismissModal')
+
+    def test_every_form_enter_saves_has_its_button(self):
+        names = re.search(r"ENTER_SAVES = \[(.*?)\]", TEMPLATES).group(1)
+        for name in re.findall(r'"([\w-]+)"', names):
+            self.assertIn(f'data-modal="{name}"', TEMPLATES)
+
+    def test_every_saved_change_says_so(self):
+        self.assertEqual(re.findall(r"^\s*reload\(\);", TEMPLATES, re.M), [])
+
+
+class ReachableByKeyboard(unittest.TestCase):
+    def test_sorting_is_done_with_real_buttons(self):
+        self.assertIn('<button type="button" data-sort=', TEMPLATES)
+        self.assertNotIn("<th data-sort", TEMPLATES)
+
+    def test_every_chart_goes_through_the_one_that_can_be_read(self):
+        self.assertEqual(TEMPLATES.count("<svg viewBox=\"0 0 ${f.W}"), 1)
+        self.assertRegex(TEMPLATES, r'role="img" tabindex="0" aria-label="\$\{esc\(label\)\}"')
+
+    def test_dialogs_are_named_and_errors_are_announced(self):
+        self.assertIn('aria-labelledby="modalTitle"', TEMPLATES)
+        self.assertIn('id="modalMsg" role="alert"', TEMPLATES)
+
+
+class RedMeansAProblem(unittest.TestCase):
+    def test_transactions_and_largest_arent_red(self):
+        self.assertIn('<td class="num ${gain(t.amt)}">', TEMPLATES)
+        self.assertNotIn('class="num neg"', TEMPLATES)
+
+    def test_going_over_still_is(self):
+        self.assertIn('left < 0 ? "neg" : "pos"', TEMPLATES)
+
+
 class Words(unittest.TestCase):
     def test_taking_something_out_is_always_remove(self):
         self.assertNotRegex(TEMPLATES, r">Delete<|\"Delete |`Delete ")
@@ -121,7 +159,7 @@ class Words(unittest.TestCase):
         self.assertNotRegex(TEMPLATES, r">Keep it<|\"Not now\"|>Not now<|>Dismiss<")
 
     def test_disconnecting_says_disconnect(self):
-        self.assertRegex(TEMPLATES, r'removal\(api\(\)\.disconnect_bank\(\)\), "Disconnect"\)')
+        self.assertRegex(TEMPLATES, r'removal\(api\(\)\.disconnect_bank\(\), "Disconnected\."\), "Disconnect"\)')
 
 
 if __name__ == "__main__":

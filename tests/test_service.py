@@ -234,6 +234,30 @@ class Rules(AppCase):
         text = self.budget.suggest_rule("Whatever", ["TST* A&B CAFE"])["text"]
         self.assertEqual(self.budget.preview_rule(text)["count"], 1)
 
+    def test_saving_reports_what_the_rule_matches(self):
+        self.assertEqual(self.budget.save_rule(None, "ZZYZX", "Home", ""), {"count": 2})
+
+    def test_a_covered_transaction_opens_its_rule(self):
+        self.budget.save_rule(None, "ZZYZX", "Home", "Zzyzx")
+        found = self.budget.suggest_rule("Zzyzx", ["ZZYZX HARDWARE #12"])
+        self.assertEqual((found["rule"]["text"], found["rule"]["category"]), ("ZZYZX", "Home"))
+        self.assertTrue(found["rule"]["line"])
+
+    def test_the_rule_that_applies_is_the_one_opened(self):
+        self.budget.save_rule(None, "ZZYZX", "Home", "")
+        self.budget.save_rule(None, "ZZYZX HARDWARE #12", "Shopping", "")
+        self.assertEqual(self.budget.suggest_rule("x", ["ZZYZX HARDWARE #12"])["rule"]["category"], "Shopping")
+        self.assertEqual(self.budget.suggest_rule("x", ["ZZYZX HARDWARE #99"])["rule"]["category"], "Home")
+
+    def test_a_rule_elsewhere_still_gets_a_suggestion(self):
+        self.budget.save_rule(None, "ZZYZX", "Home", "")
+        self.assertEqual(self.budget.suggest_rule("Kroger", ["KROGER 123"]), {"text": "KROGER"})
+
+    def test_a_broken_rule_does_not_stop_a_suggestion(self):
+        with self.budget.rules_path.open("a", encoding="utf-8") as f:
+            f.write("(unclosed,Home,\n")
+        self.assertEqual(self.budget.suggest_rule("Kroger", ["KROGER 123"]), {"text": "KROGER"})
+
     def test_commas_and_quotes_survive(self):
         self.budget.save_rule(None, "KROGER", "Food, Etc", 'Joe "K" Mart')
         rule = self.budget.rules()[0]
@@ -338,6 +362,62 @@ class SavingBudgets(Tmp):
     def test_saved_budget_reaches_the_page(self):
         self.budget.save_budget("Groceries", "amount", "100")
         self.assertIn('"category":"Groceries"', self.budget.html_path.read_text(encoding="utf-8"))
+
+
+class SingleTransactions(AppCase):
+    def setUp(self):
+        super().setUp()
+        self.add(self.chase("Chase_4001.csv", [1, 2]))
+        first = self.budget.ledger.rows[0]
+        self.tx = {"date": first["date"].isoformat(), "account": first["account"], "cents": first["cents"],
+                   "description": first["description"], "n": 0}
+
+    def analysed(self):
+        return self.budget._analysis()[0]
+
+    def test_one_transaction_changes_and_the_others_dont(self):
+        self.budget.save_edit(self.tx, "Gifts", "Birthday")
+        first, second = self.analysed()
+        self.assertEqual((first["category"], first["merchant"], first["edited"]), ("Gifts", "Birthday", True))
+        self.assertEqual((second["category"], second["edited"]), ("Shopping", False))
+
+    def test_an_edit_outranks_a_rule_saved_later(self):
+        self.budget.save_edit(self.tx, "Gifts", "Birthday")
+        self.budget.save_rule(None, "SHOP", "Home", "")
+        self.assertEqual([r["category"] for r in self.analysed()], ["Gifts", "Home"])
+
+    def test_undoing_lets_the_rules_back_in(self):
+        self.budget.save_edit(self.tx, "Gifts", "")
+        self.budget.clear_edit(self.tx)
+        self.assertEqual(self.analysed()[0]["category"], "Shopping")
+        with self.assertRaises(service.BudgetError):
+            self.budget.clear_edit(self.tx)
+
+    def test_an_edit_survives_a_restart_and_reaches_the_page(self):
+        self.budget.save_edit(self.tx, "Gifts", "Birthday")
+        again = service.Budget(self.budget.home)
+        self.assertEqual(again._analysis()[0][0]["category"], "Gifts")
+        self.assertIn('"Birthday","Gifts","expense",-1.0,1]', again.html_path.read_text(encoding="utf-8"))
+
+    def test_an_edit_survives_its_file_being_removed_and_added_again(self):
+        self.budget.save_edit(self.tx, "Gifts", "")
+        self.budget.remove_import("Chase_4001.csv")
+        self.add(self.chase("Chase_4001.csv", [1, 2]))
+        self.assertEqual(self.analysed()[0]["category"], "Gifts")
+
+    def test_refused_and_nothing_saved(self):
+        for tx, category in ((self.tx, " "), ({**self.tx, "cents": 1}, "Gifts"), ({"date": "x"}, "Gifts"),
+                             ({**self.tx, "n": "one"}, "Gifts"), ({**self.tx, "n": 1}, "Gifts")):
+            with self.assertRaises(service.BudgetError, msg=tx):
+                self.budget.save_edit(tx, category, "")
+        self.assertFalse(self.budget.edits_path.exists())
+
+    def test_a_damaged_edits_file_is_kept_and_the_app_still_opens(self):
+        self.budget.edits_path.write_text("{oops", encoding="utf-8")
+        again = service.Budget(self.budget.home)
+        again.refresh()
+        self.assertEqual((again.home / "edits.damaged.json").read_text(encoding="utf-8"), "{oops")
+        self.assertIn("transaction changes couldn't be read", again.html_path.read_text(encoding="utf-8"))
 
 
 if __name__ == "__main__":

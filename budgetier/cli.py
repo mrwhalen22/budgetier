@@ -247,7 +247,8 @@ def _run(args, home: Path) -> int:
         print(f"Nothing to report yet. Put bank CSV exports in {inbox} and run again.")
         return 1 if skipped else 0
 
-    rows = analyze.classify(ledger.rows, ledger.accounts, analyze.load_rules(rules_path))
+    rows = analyze.classify(ledger.rows, ledger.accounts, analyze.load_rules(rules_path),
+                            analyze.load_edits(rules_path.with_name(analyze.EDITS_FILE)))
     recurring = analyze.find_recurring(rows)
     checks = analyze.checks(rows, ledger.accounts, ledger.imports)
 
