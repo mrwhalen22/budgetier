@@ -91,6 +91,8 @@ class Dialog(QDialog):
 
     def show_error(self, words: str) -> None:
         self.error.setText(words)
+        if words:
+            announce(self.error)
 
     def set_buttons(self, buttons: list[tuple[str, Callable[[], None], str]]) -> None:
         """(label, what it does, kind) for each, left to right. The last is the main one."""
@@ -151,6 +153,15 @@ def confirm(parent: QWidget, title: str, words: str, run: Callable[[], tuple[boo
     return dialog
 
 
+def announce(widget: QWidget) -> None:
+    """Tell a screen reader that this just appeared, as the page's live regions did."""
+    try:
+        from PySide6.QtGui import QAccessible, QAccessibleEvent
+        QAccessible.updateAccessibility(QAccessibleEvent(widget, QAccessible.Event.Alert))
+    except (ImportError, AttributeError, RuntimeError):  # no screen reader support here: nothing to tell
+        pass
+
+
 class Toast(QLabel):
     """A short note at the bottom of the window that goes away by itself."""
 
@@ -174,9 +185,11 @@ class Toast(QLabel):
         if not words:
             return
         self.setText(words)
+        self.setAccessibleName(words)
         self.adjustSize()
         parent = self.parentWidget()
         self.move((parent.width() - self.width()) // 2, parent.height() - self.height() - theme.SPACE[6])
         self.show()
         self.raise_()
         self.timer.start(TOAST_SECONDS * 1000)
+        announce(self)

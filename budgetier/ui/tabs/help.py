@@ -1,9 +1,9 @@
 """Help: getting started, which banks work, bank sync, tips, and where your data lives."""
 from __future__ import annotations
 
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QPushButton, QWidget
 
-from .. import theme, widgets
+from .. import theme, tour, widgets
 from ..context import Context
 
 # Bank, file, and whether it's been tried with real files.
@@ -64,8 +64,19 @@ def build(ctx: Context) -> QWidget:
             "sent to it except that request." if ctx.sync_connected else "Everything stays on this computer.")
     data = " ".join(p for p in (kept, network_note(ctx), "Removing a file keeps any transactions another file also covers. "
                                 "Your data is kept apart from the program, so updating doesn't change it.") if p)
+    tour_button = QPushButton("Take the tour")
+    tour_button.setProperty("kind", "primary")
+    tour_button.clicked.connect(lambda: tour.start(ctx.window))
+    updates = []
+    if ctx.updates.get("supported"):
+        check = QPushButton("Check for updates")
+        check.clicked.connect(lambda: ctx.window.updating.check_by_hand())
+        automatic = ctx.updates.get("automatic")
+        toggle = QPushButton("Stop checking automatically" if automatic else "Check automatically")
+        toggle.clicked.connect(lambda: ctx.window.updating.set_automatic(not automatic))
+        updates = [widgets.row(check, toggle)]
     return widgets.column(
-        widgets.card(steps, title="Getting started",
+        widgets.card(steps, widgets.row(tour_button) if ctx.snapshot.txns else None, title="Getting started",
                      note="Four steps. With files, repeat the first two whenever you want fresh numbers."),
         widgets.card(bank_table(ctx), title="Which banks work",
                      note="Budgetier reads columns by name, so it isn't limited to this list. If a bank is new to it, the "
@@ -73,5 +84,5 @@ def build(ctx: Context) -> QWidget:
         widgets.card(widgets.text(SYNC), title="Bank sync"),
         widgets.card(tips, title="Tips for good numbers"),
         widgets.card(widgets.text(data), widgets.text(f"Budgetier version {ctx.version}" if ctx.version else "Budgetier", "dim"),
-                     title="Your data"),
+                     *updates, title="Your data"),
         spacing=theme.SPACE[4])
