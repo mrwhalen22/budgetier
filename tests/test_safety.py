@@ -105,6 +105,17 @@ class CorrectedNumbers(Case):
         self.assertEqual(len(self.budget.ledger.rows), 16)
 
 
+class BankTextInTheReport(Case):
+    def test_a_description_cannot_change_how_the_page_reads_its_data(self):
+        """A browser takes `<!-- <script>` as an escape that hides the closing tag, and the page stays blank."""
+        texts = ["<!-- <script>", "</script><b>", "<!--"]
+        self.bring_in(self.csv("Testbank_1234.csv", [f"01/0{i + 2}/2026,{t},-5.00" for i, t in enumerate(texts)]))
+        page = self.budget.html_path.read_text(encoding="utf-8")
+        data = page.split('<script id="data" type="application/json">')[1].split("</script>")[0]
+        self.assertNotIn("<", data)
+        self.assertCountEqual([t[2] for t in json.loads(data)["txns"]], texts)
+
+
 class FailedChanges(Case):
     def test_a_file_moved_after_review_leaves_nothing_behind(self):
         path = self.coffee()
