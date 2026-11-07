@@ -19,8 +19,7 @@ from .parse import _guess_type, last4
 from .simplefin import Feed
 from .storage import BudgetError, unique_path, write_files
 
-OVERLAP_DAYS = 5  # banks post late, so each sync looks back over recent days
-AUTO_EVERY = timedelta(hours=6)
+OVERLAP_DAYS = 5  # some banks date a row before the day it reaches the feed; repeats cost nothing
 RECENT = timedelta(minutes=5)  # a second press this soon can't have anything new, and a
 # review this recent is reused: opening the same screen twice shouldn't cost a request
 DAILY_LIMIT = 20  # the server allows about 24 a day and disables access beyond that
@@ -242,16 +241,16 @@ class BankSync:
             self.state["last_sync"] = datetime.now().isoformat(timespec="seconds")
         self._save()
 
-    def sync(self, automatic: bool = False) -> dict:
+    def sync(self) -> dict:
+        """Only when asked. Everything since the last sync, however long ago, so nothing in
+        between is missed. The first sync brings in what the feed has, about 90 days."""
         if not self.state.get("connected"):
             return {"added": 0, "skipped": True}
         now = datetime.now()
         last = datetime.fromisoformat(self.state["last_sync"]) if self.state.get("last_sync") else None
-        if last and now - last < (AUTO_EVERY if automatic else RECENT):
+        if last and now - last < RECENT:
             return {"added": 0, "skipped": True}
-        if automatic and len(self._recent_requests(now)) >= DAILY_LIMIT:
-            return {"added": 0, "skipped": True}
-        start = (last.date() if last else now.date()) - timedelta(days=OVERLAP_DAYS if last else simplefin.MAX_DAYS - 1)
+        start = last.date() - timedelta(days=OVERLAP_DAYS) if last else now.date() - timedelta(days=simplefin.MAX_DAYS - 1)
         feed = self._fetch(self._access(), start, now.date())
         results = []
 

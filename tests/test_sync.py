@@ -545,7 +545,13 @@ class Syncing(Server):
     def test_reviewing_is_not_syncing(self):
         self.connect()
         self.assertIsNone(self.budget.sync.status()["lastSync"])
-        self.assertNotIn("skipped", self.budget.sync.sync(automatic=True))
+        self.assertNotIn("skipped", self.budget.sync.sync())
+
+    def test_a_sync_reaches_back_to_the_last_one_however_long_ago(self):
+        self.link_all()
+        self.later(24 * 30)
+        self.bridge.feed["chk"]["transactions"].append(tx("t3", self.today - timedelta(days=28), "-11.00", "LUNCH"))
+        self.assertEqual(self.budget.sync.sync()["added"], 1)
 
     def test_a_long_absence_is_fetched_in_allowed_steps(self):
         self.link_all()
@@ -557,13 +563,6 @@ class Syncing(Server):
         for query in ranges:
             self.assertLessEqual(int(query["end-date"][0]) - int(query["start-date"][0]), 90 * 86400)
 
-    def test_opening_the_app_syncs_at_most_every_six_hours(self):
-        self.link_all()
-        self.bridge.requests.clear()
-        self.assertTrue(self.budget.sync.sync(automatic=True)["skipped"])
-        self.later()
-        self.assertNotIn("skipped", self.budget.sync.sync(automatic=True))
-
     def test_sync_now_right_after_a_sync_costs_no_request(self):
         self.link_all()
         self.bridge.requests.clear()
@@ -571,7 +570,7 @@ class Syncing(Server):
         self.assertEqual(self.bridge.requests, [])
 
     def test_not_connected_does_nothing(self):
-        self.assertTrue(self.budget.sync.sync(automatic=True)["skipped"])
+        self.assertTrue(self.budget.sync.sync()["skipped"])
         self.assertEqual(self.bridge.requests, [])
 
     def test_the_daily_limit_is_respected(self):
@@ -582,7 +581,6 @@ class Syncing(Server):
         self.bridge.requests.clear()
         with self.assertRaisesRegex(BudgetError, "as often as"):
             self.budget.sync.sync()
-        self.assertTrue(self.budget.sync.sync(automatic=True)["skipped"])
         self.assertEqual(self.bridge.requests, [])
 
     def test_old_requests_stop_counting(self):
@@ -678,7 +676,7 @@ class Syncing(Server):
         self.assertTrue(reply["ok"])
         self.assertEqual(len(api.review_bank()["accounts"]), 2)
         self.assertEqual(api.link_bank(reply["accounts"])["added"], 3)
-        self.assertTrue(api.sync_bank(True)["skipped"])
+        self.assertTrue(api.sync_bank()["skipped"])
         self.assertTrue(api.disconnect_bank()["ok"])
 
     def test_a_token_problem_reaches_the_page_in_words(self):
