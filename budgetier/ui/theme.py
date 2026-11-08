@@ -136,6 +136,7 @@ QPushButton[kind="nav"]:checked {{ background: {c['accent-soft']}; color: {c['in
 QPushButton[kind="nav"]:focus {{ outline: none; border: 2px solid {c['accent']}; padding: {SPACE[2] - 2}px; }}
 
 #title {{ font-size: {TEXT['2xl']}px; font-weight: 600; }}
+QLabel[kind="h1"] {{ font-size: {TEXT['xl']}px; font-weight: 600; }}
 #subtitle {{ font-size: {TEXT['sm']}px; color: {c['muted']}; }}
 
 QPushButton {{

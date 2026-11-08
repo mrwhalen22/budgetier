@@ -13,7 +13,7 @@ from .overview import welcome
 def build(ctx: Context) -> QWidget:
     s, t = ctx.snapshot, ctx.tokens
     if not s.txns:
-        return welcome()
+        return welcome(ctx)
     v = views.savings(s, ctx.choice)
     rate = "n/a" if v.rate is None else f"{round(v.rate * 100)}%"
     figures = widgets.tiles(
