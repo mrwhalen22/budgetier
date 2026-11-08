@@ -1,10 +1,12 @@
 """Transactions: search, filter and sort everything in the period. Select a row to change it."""
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QLineEdit, QPushButton, QVBoxLayout, QWidget
 
-from ... import views
+from ... import export, views
 from .. import fmt, theme, widgets
 from ..context import Context
 from ..popup import Dropdown
@@ -47,7 +49,10 @@ class Transactions(QWidget):
         self.kind.activated.connect(lambda i: self._change(kind=self.kind.itemData(i)))
         self.clear = QPushButton("Clear filters")
         self.clear.clicked.connect(self._clear)
-        controls = widgets.row(self.query, self.category, self.kind, self.clear, stretch_last=True)
+        self.export = QPushButton("Export CSV")
+        self.export.setToolTip("Save the transactions listed here, all of them, as a CSV file")
+        self.export.clicked.connect(self._export)
+        controls = widgets.row(self.query, self.category, self.kind, self.clear, self.export, stretch_last=True)
         controls.layout().setStretch(0, 1)
 
         self.count = widgets.text("", "dim")
@@ -80,6 +85,23 @@ class Transactions(QWidget):
         self.category.setCurrentIndex(0)
         self.kind.setCurrentIndex(0)
         self.refresh()
+
+    def _export(self) -> None:
+        """What's listed, with every filter applied, not only the rows shown so far."""
+        window = self.ctx.window
+        path = window.ask_csv_path(f"Budgetier {views.range_label(self.ctx.snapshot, self.ctx.choice)}.csv")
+        if not path:
+            return
+        names = {a.id: a.name for a in self.ctx.snapshot.accounts}
+        try:
+            export.write_csv(Path(path), self.found, names)
+        except PermissionError:
+            window.toast.say("That file is open in another program. Close it and try again.")
+            return
+        except OSError as e:
+            window.toast.say(f"That file couldn't be saved: {e.strerror or e}.")
+            return
+        window.toast.say(f"Saved {fmt.plural(len(self.found), 'transaction')} to {Path(path).name}.")
 
     def _sort(self, column: int) -> None:
         key = COLUMNS[column][0]

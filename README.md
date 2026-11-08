@@ -49,6 +49,9 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
 
+**Export CSV** on the Transactions tab saves every transaction it lists, with your search,
+filters and period applied, for a spreadsheet or another app.
+
 On the Overview, Spending and Savings charts, select a month, or press Enter on it, to show
 just that month.
 

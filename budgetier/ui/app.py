@@ -401,6 +401,11 @@ class Window(QMainWindow):
                                               "Excel workbook (*.xlsx)")
         return path
 
+    def ask_csv_path(self, name: str) -> str:
+        """Where to save a CSV. Tests replace this, since a real file dialog needs a person."""
+        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", str(Path.home() / name), "CSV file (*.csv)")
+        return path
+
     def changed(self, note: str = "", undo: bool = False) -> None:
         """After a change to the data: read it again, redraw where you were, and say what happened.
         undo: the change can be undone, from the note or with Ctrl+Z."""
