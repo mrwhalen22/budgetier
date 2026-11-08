@@ -90,7 +90,7 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `accounts.json` | Account names, types and entered balances |
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
-| `settings.json` | Your look, motion, and whether you've seen the tour |
+| `settings.json` | Your look, motion, the retirement estimate's numbers, and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 
 ## Bank sync
@@ -126,7 +126,7 @@ Some exports contain no account number, including Fifth Third's. The review scre
 what it found and asks for anything missing, so you never need to rename a file.
 
 The first time an account appears, the review screen shows its guess at checking,
-savings or credit card. If the file's amounts could be read either way, it also shows a
+savings, credit card, investing or retirement. If the file's amounts could be read either way, it also shows a
 real row and asks whether that was money you spent. Your answers matter: a card that
 reports purchases as positive would otherwise look like income.
 
@@ -143,6 +143,26 @@ the posted balance, because pending charges aren't in it. If one was pending whe
 entered the balance, the figure will end up off by that amount once it posts. A gap in
 an account's history throws off every month before the gap. If a number drifts from
 the bank's, enter it again. An export's own balance column always wins over an entered one.
+
+## Investing and retirement accounts
+
+Mark a brokerage account as **Investing**, and a 401(k), 403(b) or IRA as **Retirement**,
+with **Edit** on the Accounts tab. Accounts linked through bank sync with names like these
+are marked when you link them.
+
+Markets change these balances without a transaction to show for it, so their past can't be
+worked out from one balance. Instead each bank sync keeps that day's balance, as does each
+one you enter, and the Investments tab shows growth from them: how much the balance rose
+beyond what was paid in. Growth shows once there are two balances a while apart.
+
+Inside these accounts nothing counts as income or spending. Money paid in or taken out is
+`Contributions` or `Withdrawals`; dividends, trades and fees are `Investment Activity`,
+which is part of growth. Change a row's category if one is wrong.
+
+The retirement estimate grows today's retirement balance at the rate you choose, with the
+same amount paid in each month, until the age you retire at. Rates are after inflation, so
+amounts are in today's dollars. It's an estimate from the numbers you enter, not advice.
+Its numbers are kept in `settings.json`.
 
 ## PDFs
 
@@ -181,6 +201,8 @@ Transactions tab will show both.
 | Income | Payroll, interest, unexplained deposits | Counts as income |
 | Transfer | Card payments, moves between your accounts | Not counted, or purchases would count twice |
 | Savings & Investing | Robinhood, online savings banks | A transfer, reported as saved |
+| Contributions, Withdrawals | Paid into or taken out of an investing or retirement account | A transfer, reported as saved |
+| Investment Activity | Dividends, trades and fees inside one | Not counted: it's part of growth |
 
 A card payment that matches a purchase history is a transfer, because the purchases
 already count. If a card isn't imported, or its history doesn't reach back that far,

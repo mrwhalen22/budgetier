@@ -258,12 +258,16 @@ def _from_preamble(lines: str) -> tuple[str | None, str | None]:
 
 def _guess_type(text: str) -> str | None:
     text = text.lower()
+    if re.search(r"\b(401 ?\(?k\)?|403 ?\(?b\)?|457 ?\(b\)|ira|roth|retirement|pension)(\b|$)", text):
+        return "retirement"
     if re.search(r"saving", text):
         return "savings"
     if re.search(r"checking", text):
         return "checking"
     if re.search(r"credit|\bcard\b|visa|mastercard", text):
         return "credit"
+    if re.search(r"brokerage|invest|individual|\bstocks?\b|\betf\b", text):  # after the rest: "Individual Checking"
+        return "investment"
     return None
 
 

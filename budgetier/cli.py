@@ -41,17 +41,17 @@ def _resolve(parsed: ParsedFile, args, known: dict) -> tuple[str | None, str | N
 
 
 def _ask_type(bank: str, number: str, guess: str) -> str:
-    choices = {"1": "checking", "2": "savings", "3": "credit",
+    choices = {"1": "checking", "2": "savings", "3": "credit", "4": "investment", "5": "retirement",
                "c": "checking", "s": "savings", "cc": "credit", "credit": "credit"}
     while True:
         default = next(k for k, v in choices.items() if v == guess)
         answer = _ask(f"    {bank} {number} is new. 1 = checking, 2 = savings, "
-                      f"3 = credit card [{default}]: ").lower()
+                      f"3 = credit card, 4 = investing, 5 = retirement [{default}]: ").lower()
         if not answer:
             return guess
         if answer in choices:
             return choices[answer]
-        print("    Please answer 1, 2 or 3.")
+        print("    Please answer 1 to 5.")
 
 
 def _ask_inverted(rows, guess: bool) -> bool:

@@ -176,7 +176,7 @@ class Budget:
         if len(number) != 4:
             raise BudgetError(f"Enter the last 4 digits of the account for {name}.")
         if kind not in TYPES:
-            raise BudgetError(f"Choose checking, savings or credit card for {name}.")
+            raise BudgetError(f"Choose the kind of account {name} is.")
         balance = (answer.get("balance") or "").strip()
         cents = parse_money(balance) if balance else None
         if balance and cents is None:
@@ -512,7 +512,7 @@ class Budget:
         if not name.strip():
             raise BudgetError("Give the account a name.")
         if kind not in TYPES:
-            raise BudgetError("Choose checking, savings or credit card.")
+            raise BudgetError("Choose the kind of account this is.")
         cents, day = None, None
         if balance.strip():
             cents = parse_money(balance)

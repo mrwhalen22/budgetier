@@ -12,10 +12,10 @@ from .. import fmt, theme, widgets
 from ..banking import sync_card
 from ..context import Context
 from ..dialogs import Dialog, attempt, busy, confirm
-from ..importing import field, type_box
+from ..importing import TYPES, field, type_box
 
-TYPE_NAMES = {"checking": "Checking", "savings": "Savings", "credit": "Credit card"}
-TYPE_COLOR = {"checking": "c0", "credit": "c1", "savings": "c2"}
+TYPE_NAMES = dict(TYPES)
+TYPE_COLOR = {"checking": "c0", "credit": "c1", "savings": "c2", "investment": "c4", "retirement": "c3"}
 
 
 def _button(label: str, run, kind: str = "small") -> QPushButton:

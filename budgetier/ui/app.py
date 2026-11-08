@@ -34,7 +34,8 @@ from .updating import Updating
 from .work import Runner
 
 # The order the sidebar lists them in.
-TABS = ("Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help")
+TABS = ("Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Investments", "Transactions", "Rules",
+        "Accounts", "Help")
 # Which step of docs/qt-migration.md brings each tab, until it's here.
 COMING: dict[str, int] = {}
 # These cover all of history, so the period and account filters don't apply.
