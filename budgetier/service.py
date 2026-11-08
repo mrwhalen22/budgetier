@@ -74,7 +74,8 @@ class Budget:
 
     # ---- reports
 
-    def _analysis(self):
+    def analysis(self):
+        """Every transaction with its category and kind, the recurring payments, and the checks."""
         edits = self.edits()  # first: a damaged file adds a notice to the checks
         rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path), edits)
         checks = analyze.checks(rows, self.ledger.accounts, self.ledger.imports)
@@ -82,7 +83,7 @@ class Budget:
 
     def refresh(self) -> Path:
         budgets = self.budgets()  # first: a damaged file adds a notice to the checks
-        rows, recurring, checks = self._analysis()
+        rows, recurring, checks = self.analysis()
         report_html.write(self.html_path, rows, self.ledger.accounts, recurring, checks, self.ledger.imports,
                           {"rules": self.rules(), "version": app_version(), "sync": self.sync.status(),
                            "updates": self.updates.status(),
@@ -94,7 +95,7 @@ class Budget:
     def export_workbook(self, path: Path) -> None:
         if not self.ledger.rows:
             raise BudgetError("There's nothing to export yet.")
-        rows, recurring, checks = self._analysis()
+        rows, recurring, checks = self.analysis()
         try:
             report_xlsx.write(Path(path), rows, self.ledger.accounts, recurring, checks)
         except PermissionError as e:
