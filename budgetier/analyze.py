@@ -11,6 +11,10 @@ Every row gets a kind, and the totals depend on it:
             card from checking would otherwise count the same purchases twice.
             Money sent to brokerages and online savings banks is a transfer too,
             in category "Savings & Investing", so it counts as saved, not spent.
+
+Inside an investing or retirement account nothing is income or spending either. Money
+paid in or taken out is a contribution or a withdrawal, and the rest (dividends, trades,
+fees) is "Investment Activity": what makes the balance grow beyond what was paid in.
 """
 from __future__ import annotations
 
@@ -25,6 +29,7 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
+from .accounts import INVESTED
 from .rules import read as read_rules
 from .storage import read_text
 
@@ -125,9 +130,11 @@ CARD_PAYMENT = "Card payment"  # banks word these so many ways that the words sa
 UNCATEGORIZED = "Uncategorized"
 SAVED = "Savings & Investing"
 ESTIMATED = "Card Payments (no detail)"
+CONTRIBUTED, WITHDRAWN, ACTIVITY = "Contributions", "Withdrawals", "Investment Activity"
+INVESTING_CATEGORIES = (CONTRIBUTED, WITHDRAWN, ACTIVITY)
 SPENDING_KINDS = ("expense", "refund", "estimate")
-TRANSFER_CATEGORIES = ("Transfer", SAVED)
-NOT_BUDGETED = ("Income", "Transfer", SAVED, ESTIMATED, UNCATEGORIZED)
+TRANSFER_CATEGORIES = ("Transfer", SAVED, *INVESTING_CATEGORIES)
+NOT_BUDGETED = ("Income", "Transfer", SAVED, ESTIMATED, UNCATEGORIZED, *INVESTING_CATEGORIES)
 INCOME_MONTHS = 3  # complete months averaged to stand in for a month still in progress
 _SAVED_AT = [
     (r"ROBINHOOD", "Robinhood"), (r"VANGUARD", "Vanguard"), (r"BETTERMENT", "Betterment"),
@@ -138,6 +145,13 @@ _SAVED_AT = [
     (r"MARCUS BY GOLDMAN", "Marcus"), (r"SOFI BANK", "SoFi"),
 ]
 _NOT_TRANSFER = re.compile(r"ZELLE|VENMO|CASH ?APP|PAYPAL|\bFEE\b")
+# In an investing account: what the market and the account do, before what's paid in or out,
+# since "DIVIDEND DEPOSIT" is a dividend. What matches neither counts as activity.
+_ACTIVITY = re.compile(r"DIVIDEND|REINVEST|INTEREST|CAPITAL GAIN|\b(BOUGHT|SOLD|BUY|SELL|BUYS|SELLS)\b|\bFEES?\b|SPLIT|"
+                       r"REDEMPTION|EXCHANGE|MERGER|SPINOFF|ADVISORY|MGMT|MANAGEMENT|EXPENSE RATIO")
+_MOVED = re.compile(r"CONTRIBUT|DEPOSIT|TRANSFER|\bXFER\b|\bTFR\b|\bACH\b|\bEFT\b|ROLLOVER|EMPLOYER|\bMATCH|PAYROLL|"
+                    r"\bWIRE\b|WITHDRAW|DISTRIBUTION|ELECTRONIC FUNDS|MONEYLINK|FUNDS (IN|OUT)|FROM (CHECKING|SAVINGS)|"
+                    r"TO (CHECKING|SAVINGS)|PAYMENT FROM|DIRECT DEP")
 PAIR_DAYS = 7  # the slowest real payment seen took 5; a miss would count purchases twice
 ISSUER_WORDS = {"American Express": r"AMEX|AMERICAN EXPRESS", "Bank of America": r"BANK OF AMERICA|BK OF AM"}
 _LOAN = re.compile(r"MORTGAGE|MTG|HOME LOAN|AUTO LOAN|CAR LOAN|STUDENT LOAN|LOAN PMT|LOAN PAYMENT")
@@ -282,6 +296,13 @@ def _bank_category(text: str) -> str | None:
     return next((ours for needle, ours in BANK_CATEGORIES if needle in text), None)
 
 
+def investing_category(text: str, positive: bool) -> str:
+    """A row inside an investing or retirement account: paid in, taken out, or neither."""
+    if _ACTIVITY.search(text) or not _MOVED.search(text):
+        return ACTIVITY
+    return CONTRIBUTED if positive else WITHDRAWN
+
+
 def _kind(category: str, cents: int, account_type: str) -> str:
     if category in TRANSFER_CATEGORIES:
         return "transfer"
@@ -297,10 +318,13 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: d
     keys = edit_keys(rows) if edits else [""] * len(rows)
     default_rules = [(re.compile(p), c, m) for p, c, m in DEFAULT_RULES]
     saved_at = [(re.compile(p), SAVED, m) for p, m in _SAVED_AT]
+
     def match(text: str, positive: bool, account_type: str, bank_category: str) -> tuple:
         """(category, merchant or None, ruled), from the rules alone."""
         hit = next((rule for rule in user_rules if rule[0].search(text)), None)
         ruled = hit is not None
+        if not hit and account_type in INVESTED:
+            return investing_category(text, positive), None, False
         if not hit:
             hit = next((rule for rule in saved_at if rule[0].search(text)), None)
         if not hit and is_transfer(text, 1 if positive else -1, account_type, bank_category):
@@ -361,11 +385,11 @@ def _pair_transfers(rows: list[dict], accounts: dict) -> None:
     for r in rows:
         by_amount[r["cents"]].append(r)
     for r in rows:
-        if r["kind"] != "transfer" or r["matched"]:
+        if r["kind"] != "transfer" or r["matched"] or r["category"] == ACTIVITY:
             continue
         candidates = [c for c in by_amount[-r["cents"]]
                       if c["account"] != r["account"] and not c["matched"] and not c["ruled"]
-                      and c["category"] in (*TRANSFER_CATEGORIES, UNCATEGORIZED)
+                      and c["category"] in (*TRANSFER_CATEGORIES, UNCATEGORIZED) and c["category"] != ACTIVITY
                       and abs((c["date"] - r["date"]).days) <= PAIR_DAYS]
         if candidates:
             other = min(candidates, key=lambda c: (c["kind"] != "transfer",
@@ -374,7 +398,10 @@ def _pair_transfers(rows: list[dict], accounts: dict) -> None:
             other["kind"] = "transfer"
             # Both halves imported: it's now one internal move, so the savings
             # account's side alone reports it and it isn't counted as saved twice.
-            r["category"] = other["category"] = "Transfer"
+            # An investing account's side stays a contribution or withdrawal.
+            for half in (r, other):
+                if accounts[half["account"]]["type"] not in INVESTED:
+                    half["category"] = "Transfer"
 
 
 def _cadence(days: list[date]) -> tuple | None:
@@ -534,14 +561,52 @@ def _calculated(own: list[dict], info: dict) -> dict:
             "current": on(last), "as_of": last.isoformat(), "calculated": True}
 
 
+def balance_points(own: list[dict], info: dict) -> list[tuple[date, int]]:
+    """Every balance an investing account is known to have had, by day: each one the bank
+    sent when syncing, any entered by hand, and any in an export's balance column."""
+    found: dict[date, int] = {}
+    for r in own:  # in date order, so the last row of a day is that day's close
+        if r["balance"] is not None:
+            found[r["date"]] = r["balance"]
+    entered = [*info.get("balance_history", []), *([info["balance_anchor"]] if info.get("balance_anchor") else [])]
+    for point in entered:
+        try:
+            found[date.fromisoformat(point["date"])] = round(point["amount"] * 100)
+        except (KeyError, TypeError, ValueError):
+            continue  # a hand-edited file mustn't stop the report
+    return sorted(found.items())
+
+
+def _invested(own: list[dict], info: dict, last_day: date | None) -> dict | None:
+    """Markets move an investing account's balance without a transaction, so it can't be
+    worked out from one entered balance. Each month shows the last balance known by then."""
+    points = balance_points(own, info)
+    if not points:
+        return None
+    months, at = {}, 0
+    end = max(points[-1][0], last_day or points[-1][0])
+    for month, month_end in _month_ends(points[0][0], end):
+        while at < len(points) and points[at][0] <= month_end:
+            at += 1
+        months[month] = points[at - 1][1]
+    day, current = points[-1]
+    return {"months": months, "current": current, "as_of": day.isoformat(), "calculated": False,
+            "points": [(d.isoformat(), c) for d, c in points]}
+
+
 def account_balances(rows: list[dict], accounts: dict) -> dict[str, dict]:
     """Each account's latest and month-end balances, by the best source it has: the
     export's own balance column, or else a balance the person entered."""
     exported = month_end_balances(rows)
+    last_day = max((r["date"] for r in rows), default=None)
     found = {}
     for account, info in accounts.items():
         own = sorted((r for r in rows if r["account"] == account), key=lambda r: r["date"])
-        if info.get("balance_anchor", {}).get("live"):
+        if info["type"] in INVESTED:
+            balance = _invested(own, info, last_day)
+            if balance:
+                found[account] = {**balance, "live": bool(info.get("balance_anchor", {}).get("live"))}
+        elif info.get("balance_anchor", {}).get("live"):
             found[account] = {**_calculated(own, info), "live": True}  # the bank's figure beats an old export
         elif account in exported:
             with_balance = [r for r in own if r["balance"] is not None]

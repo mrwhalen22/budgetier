@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date
 
 from . import analyze
+from .accounts import INVESTED, KEPT
 
 SUBSCRIPTIONS = "Subscriptions"
 COLORED = 8  # categories with their own color; the rest share "Other"
@@ -64,6 +65,7 @@ class Account:
     balance_as_of: str | None
     calculated: bool
     live: bool
+    points: tuple[tuple[str, int], ...] = ()  # an investing account's known balances: day, cents
 
 
 @dataclass(frozen=True)
@@ -166,7 +168,8 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
             last=max(r["date"] for r in own).isoformat() if own else None,
             balance=balance["current"] if balance else None, balances=dict(balance["months"]) if balance else {},
             balance_as_of=balance["as_of"] if balance else None,
-            calculated=bool(balance and balance["calculated"]), live=bool(balance and balance.get("live"))))
+            calculated=bool(balance and balance["calculated"]), live=bool(balance and balance.get("live")),
+            points=tuple(balance.get("points", ())) if balance else ()))
 
     spend: Counter = Counter()
     for r in rows:
@@ -198,7 +201,8 @@ def from_budget(budget) -> Snapshot:
     budgets = budget.budgets()  # first: a damaged file adds a notice to the checks
     rows, recurring, checks = budget.analysis()
     rules = budget.rules()
-    names = sorted({*analyze.category_names(), *(r["category"] for r in rules), "Transfer", analyze.SAVED})
+    names = sorted({*analyze.category_names(), *(r["category"] for r in rules), "Transfer", analyze.SAVED,
+                    *analyze.INVESTING_CATEGORIES})
     return build(rows, budget.ledger.accounts, recurring, checks, budget.ledger.imports,
                  analyze.budget_report(rows, budget.ledger.accounts, budgets), rules, names)
 
@@ -518,7 +522,8 @@ def savings(s: Snapshot, choice: Choice) -> Savings:
     scope = billed(s, choice, rows)
     types = {a.id: a.type for a in s.accounts}
     moved = sum(-t.cents if t.category == analyze.SAVED else t.cents for t in txns
-                if t.category == analyze.SAVED or (t.kind == "transfer" and types.get(t.account) == "savings"))
+                if t.category == analyze.SAVED or (t.kind == "transfer" and types.get(t.account) in KEPT
+                                                    and t.category != analyze.ACTIVITY))
     held = [a for a in s.accounts if a.type == "savings" and choice.has(a.id) and a.balance is not None]
     nets = [r.income - r.spending for r in scope]
     running, total = [], 0
@@ -534,6 +539,156 @@ def savings(s: Snapshot, choice: Choice) -> Savings:
         balance_lines=[(a.name, [a.balances.get(m) for m in months]) for a in shown])
 
 
+# ---- Investments
+
+
+@dataclass(frozen=True)
+class Investments:
+    accounts: list[Account]  # investing and retirement accounts chosen at the top
+    total: int | None  # their latest known balances
+    retirement: int | None  # the retirement accounts' part of it
+    start: int | None  # what they held as the period began
+    end: int | None  # and as it ended
+    contributed: int  # paid in over the period, net of withdrawals
+    growth: int | None  # the change in balance that wasn't paid in: markets, dividends, fees
+    growth_rate: float | None  # growth against what was invested over the period
+    tracked_from: str | None  # the first day a balance is known, which growth is seen from
+    months: list[str]
+    balance: list[int | None]  # their month-end balances added up
+    paid_in: list[int | None]  # the starting balance plus what's been paid in since
+    lines: list[tuple[str, list[int | None]]]  # each account's month-end balance
+    monthly_contribution: int  # paid in on average over recent complete months
+
+
+def _between(account: Account, flows: list[tuple[str, int]], first: str, last: str) -> tuple[int, int, int] | None:
+    """(start, end, paid in between) for one account over the days first to last, from
+    balances it really had: the last known before the period, or else the first in it, and
+    the last in it. A month's carried-over balance isn't one, so it can't fake a loss."""
+    before = [p for p in account.points if p[0] < first]
+    inside = [p for p in account.points if first <= p[0] <= last]
+    start = before[-1] if before else inside[0] if inside else None
+    end = inside[-1] if inside else None
+    if start is None or end is None or end[0] <= start[0]:
+        return None
+    return start[1], end[1], sum(cents for day, cents in flows if start[0] < day <= end[0])
+
+
+def investments(s: Snapshot, choice: Choice) -> Investments:
+    held = [a for a in s.accounts if a.type in INVESTED and choice.has(a.id)]
+    months = range_months(s, choice)
+    flows: dict[str, list[tuple[str, int]]] = {a.id: [] for a in held}  # paid in or taken out, from outside them
+    paid: Counter = Counter()  # the same, by month
+    for t in s.txns:
+        if t.account in flows and t.kind == "transfer" and t.category != analyze.ACTIVITY:
+            flows[t.account].append((t.date, t.cents))
+            paid[t.month] += t.cents
+
+    def total(month: str) -> int | None:
+        known = [a.balances[month] for a in held if month in a.balances]
+        return sum(known) if known else None
+
+    balance = [total(m) for m in months]
+    # The line starts at the first balance shown, then adds what's paid in. An account first
+    # seen partway through is added as it appears: it was brought in, not grown.
+    paid_in, running, seen = [], None, set()
+    for m, b in zip(months, balance):
+        arriving = sum(a.balances[m] for a in held if m in a.balances and a.id not in seen)
+        seen |= {a.id for a in held if m in a.balances}
+        running = b if running is None else running + paid[m] + arriving
+        paid_in.append(running if b is not None else None)
+    first, last = (months[0] + "-01", months[-1] + "-31") if months else ("", "")
+    measured = [m for m in (_between(a, flows[a.id], first, last) for a in held) if m]
+    start, end, between = (sum(m[i] for m in measured) for i in range(3))
+    growth = end - start - between if measured else None
+    invested = start + between / 2
+    current = [a for a in held if a.balance is not None]
+    began = min([day[:7] for a in held for day, _ in a.points] + [m for m, c in paid.items() if c], default=None)
+    recent = [m for m in s.months if m != s.partial_month and began and m >= began][-12:]
+    points = [p for a in held for p in a.points]
+    return Investments(
+        accounts=held, total=sum(a.balance for a in current) if current else None,
+        retirement=sum(a.balance for a in current if a.type == "retirement") if any(a.type == "retirement" for a in current)
+        else None,
+        start=start if measured else None, end=end if measured else None, contributed=sum(paid[m] for m in months),
+        growth=growth, growth_rate=growth / invested if growth is not None and invested > 0 else None,
+        tracked_from=min(day for day, _ in points) if points else None,
+        months=months, balance=balance, paid_in=paid_in,
+        lines=[(a.name, [a.balances.get(m) for m in months]) for a in held if a.balances][:BALANCE_LINES],
+        monthly_contribution=max(0, round(sum(paid[m] for m in recent) / len(recent))) if recent else 0)
+
+
+@dataclass(frozen=True)
+class Plan:
+    """What the retirement estimate assumes. Rates are percents a year, after inflation, so
+    what it shows is in today's dollars."""
+    age: int = 35
+    retire_at: int = 65
+    monthly: int | None = None  # cents paid in each month; None for what's been paid in lately
+    growth: float = 5.0
+    withdraw: float = 4.0
+    include_investing: bool = False  # count investing accounts too, not only retirement ones
+
+    @classmethod
+    def from_saved(cls, saved) -> Plan:
+        """A plan that can't be read is worth no more than the default."""
+        if not isinstance(saved, dict):
+            return cls()
+        plain = cls()
+
+        def number(name, kind, low, high):
+            value = saved.get(name, getattr(plain, name))
+            return kind(value) if type(value) in (int, float) and low <= value <= high else getattr(plain, name)
+        monthly = saved.get("monthly")
+        return cls(age=number("age", int, 16, 100), retire_at=number("retire_at", int, 16, 110),
+                   monthly=int(monthly) if type(monthly) in (int, float) and 0 <= monthly <= 10**9 else None,
+                   growth=number("growth", float, -10, 20), withdraw=number("withdraw", float, 0.5, 15),
+                   include_investing=bool(saved.get("include_investing", False)))
+
+    def saved(self) -> dict:
+        return {"age": self.age, "retire_at": self.retire_at, "monthly": self.monthly, "growth": self.growth,
+                "withdraw": self.withdraw, "include_investing": self.include_investing}
+
+
+@dataclass(frozen=True)
+class Projection:
+    balance: int  # what's counted, today
+    monthly: int  # paid in each month until retiring
+    years: int
+    at_retirement: int  # in today's dollars
+    income: int  # a month, drawing the withdrawal rate each year
+    ages: list[str]  # each year's age, for the chart
+    path: list[int]  # the balance at each of those ages
+    paid: list[int]  # what had been paid in by then, with today's balance
+
+
+def project(balance: int, monthly: int, plan: Plan) -> Projection:
+    """Growing at the plan's rate, compounded each month, with the same paid in each month."""
+    years = max(0, plan.retire_at - plan.age)
+    rate = (1 + plan.growth / 100) ** (1 / 12) - 1
+    value, paid = float(balance), float(balance)
+    path, paid_in = [round(value)], [round(paid)]
+    for _ in range(years):
+        for _ in range(12):
+            value = value * (1 + rate) + monthly
+            paid += monthly
+        path.append(round(value))
+        paid_in.append(round(paid))
+    at = path[-1]
+    return Projection(balance, monthly, years, at, round(at * plan.withdraw / 100 / 12),
+                      [str(plan.age + i) for i in range(years + 1)], path, paid_in)
+
+
+def retirement(s: Snapshot, plan: Plan) -> Projection | None:
+    """The estimate, from the accounts as they are now: not filtered by the choices at the top."""
+    kinds = INVESTED if plan.include_investing else ("retirement",)
+    counted = [a for a in s.accounts if a.type in kinds and a.balance is not None]
+    if not counted:
+        return None
+    every = investments(s, Choice("12", frozenset(a.id for a in counted)))
+    monthly = plan.monthly if plan.monthly is not None else every.monthly_contribution
+    return project(sum(a.balance for a in counted), monthly, plan)
+
+
 # ---- Accounts
 
 
@@ -541,7 +696,7 @@ def savings(s: Snapshot, choice: Choice) -> Savings:
 class AccountsView:
     cash: int | None  # checking and savings with a balance
     cash_accounts: int
-    banked_accounts: int  # all that aren't cards
+    banked_accounts: int  # checking and savings: not cards, and not investing accounts
     owed: Owed | None
     net: int | None  # cash minus what cards owe
     accounts: list[Account]
@@ -551,12 +706,13 @@ class AccountsView:
 
 
 def accounts(s: Snapshot) -> AccountsView:
-    banked = [a for a in s.accounts if a.type != "credit" and a.balance is not None]
+    cash = [a for a in s.accounts if a.type not in ("credit", *INVESTED)]  # investing accounts aren't cash
+    banked = [a for a in cash if a.balance is not None]
     cards = [a for a in s.accounts if a.type == "credit" and a.balance is not None]
-    cash = sum(a.balance for a in banked) if banked else None
+    total = sum(a.balance for a in banked) if banked else None
     o = owed(s)
-    return AccountsView(cash, len(banked), sum(a.type != "credit" for a in s.accounts), o,
-                        cash + sum(a.balance for a in cards) if banked and o else None, list(s.accounts), list(s.imports),
+    return AccountsView(total, len(banked), len(cash), o,
+                        total + sum(a.balance for a in cards) if banked and o else None, list(s.accounts), list(s.imports),
                         [c for c in s.checks if c["level"] == "warning"], [c for c in s.checks if c["level"] != "warning"])
 
 

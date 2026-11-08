@@ -25,9 +25,14 @@ def cents(amount: float) -> str:
 
 
 def short(amount: float) -> str:
-    """For chart axes and tight cells: $950, $1.2k."""
+    """For chart axes and tight cells: $950, $1.2k, $1.5M."""
     a = abs(amount) / 100
-    text = f"{_round(a / 1000, 1)}".removesuffix(".0") + "k" if a >= 1000 else f"{_round(a, 0)}"
+    if a >= 999_950:
+        text = f"{_round(a / 1_000_000, 1)}".removesuffix(".0") + "M"
+    elif a >= 1000:
+        text = f"{_round(a / 1000, 1)}".removesuffix(".0") + "k"
+    else:
+        text = f"{_round(a, 0)}"
     return ("-$" if amount < 0 else "$") + text
 
 

@@ -150,9 +150,13 @@ class Tip(QWidget):
 
 class Chart(QWidget):
     def __init__(self, months: list[str], series: list[Series], tokens: dict[str, str], kind: str = "bars",
-                 stacked: bool = False, height: int = 260, partial_month: str | None = None):
+                 stacked: bool = False, height: int = 260, partial_month: str | None = None,
+                 labels: list[str] | None = None, titles: list[str] | None = None):
+        """labels and titles, for a chart that isn't of months: what the axis says under each
+        point, and what its note is headed."""
         super().__init__()
         self.months, self.series, self.tokens = months, series, tokens
+        self.labels, self.titles = labels, titles
         self.kind, self.stacked, self.partial_month = kind, stacked, partial_month
         self.base = height
         self.at = -1  # the month being read
@@ -202,7 +206,8 @@ class Chart(QWidget):
     def tip(self, i: int) -> tuple[str, list[tuple[str, str, str]]]:
         """A month's title, then (name, amount, color) rows."""
         month = self.months[i]
-        title = fmt.month_name(month) + (" (so far)" if month == self.partial_month and self.kind == "bars" else "")
+        title = self.titles[i] if self.titles else \
+            fmt.month_name(month) + (" (so far)" if month == self.partial_month and self.kind == "bars" else "")
         shown = [s for s in self.series if s.values[i] is not None and (not self.stacked or s.values[i])]
         rows = [(s.name, fmt.money(s.values[i]), s.paint(s.values[i])) for s in shown]
         if self.kind == "bars":
@@ -280,7 +285,7 @@ class Chart(QWidget):
                 middle = x(i) + band / 2
                 painter.setPen(QColor(t["ink"] if i == self.at else t["muted"]))
                 painter.drawText(QRectF(middle - 60, height - BOTTOM + 4, 120, BOTTOM - 4), Qt.AlignHCenter | Qt.AlignTop,
-                                 fmt.month_name(m, year))
+                                 self.labels[i] if self.labels else fmt.month_name(m, year))
 
         def grown(v: float) -> float:
             return y(v * self.grown)
