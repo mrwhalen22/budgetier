@@ -69,6 +69,7 @@ class Budget:
         self.notices: list[dict] = []  # problems found while loading, shown with the checks
         self._pending: dict[str, dict] = {}
         self._temp = None
+        self._undo: dict[Path, tuple[bytes | None, bytes | None]] | None = None  # file: (before, after)
         self.sync = BankSync(self)
 
     # ---- reports
@@ -502,6 +503,47 @@ class Budget:
             raise BudgetError("That budget is already gone.")
         del budgets[category]
         self._write_budgets(budgets)
+
+    # ---- undoing the last small change
+
+    def _undo_files(self) -> list[Path]:
+        """What the small changes write: rules, single transactions, budgets and account details.
+        Imports and removals rebuild the ledger and ask first, so they aren't undone this way."""
+        return [self.rules_path, self.edits_path, self.budgets_path, self.ledger.accounts_path]
+
+    @staticmethod
+    def _read(path: Path) -> bytes | None:
+        return path.read_bytes() if path.exists() else None
+
+    def undoable(self, work, *args):
+        """Make a small change and keep what it replaced, so it can be undone."""
+        before = {path: self._read(path) for path in self._undo_files()}
+        result = work(*args)
+        changed = {path: (old, self._read(path)) for path, old in before.items()}
+        self._undo = {path: pair for path, pair in changed.items() if pair[0] != pair[1]} or None
+        return result
+
+    def can_undo(self) -> bool:
+        return bool(self._undo)
+
+    def undo(self) -> None:
+        """Put back what the last small change replaced, unless something has changed it since:
+        then putting it back would quietly lose that newer change too."""
+        if not self._undo:
+            raise BudgetError("There's nothing to undo.")
+        if any(self._read(path) != after for path, (_, after) in self._undo.items()):
+            self._undo = None
+            raise BudgetError("Something else changed since, so that can't be undone.")
+        put_back = {path: before.decode("utf-8") for path, (before, _) in self._undo.items() if before is not None}
+        if put_back:
+            write_files(put_back)
+        for path, (before, _) in self._undo.items():
+            if before is None:
+                path.unlink(missing_ok=True)
+        if self.ledger.accounts_path in self._undo:
+            self.ledger.accounts = self.ledger._load_accounts()
+            self.ledger._recover_accounts()
+        self._undo = None
 
     # ---- account details
 

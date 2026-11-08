@@ -77,12 +77,12 @@ def edit_account(window, account: views.Account) -> Dialog:
     def save():
         def work():
             day = as_of.date().toPython().isoformat() if as_of else date.today().isoformat()
-            ok, result = attempt(window.budget.update_account, account.id, name.text(), kind.currentData(),
-                                 balance.text() if balance else "", day)
+            ok, result = attempt(window.budget.undoable, window.budget.update_account, account.id, name.text(),
+                                 kind.currentData(), balance.text() if balance else "", day)
             if not ok:
                 return dialog.show_error(str(result))
             dialog.dismiss()
-            window.changed("Account saved.")
+            window.changed("Account saved.", undo=True)
         busy(dialog.main, "Saving...", work)
 
     dialog.set_buttons([("Cancel", dialog.dismiss, ""), ("Save", save, "primary")])

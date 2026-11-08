@@ -49,6 +49,10 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
 
+A change to a category, a rule, a budget or an account's details can be undone: choose
+**Undo** in the note that appears, or press Ctrl+Z. Removing a file or an account asks
+first instead, since it rebuilds the account.
+
 Budgetier opens where you left it: the same size and place, tab, period and accounts. After
 a change it works out the new numbers in the background, so on a long history you can keep
 reading while **Updating...** shows beside the tab's title.
@@ -57,6 +61,7 @@ reading while **Updating...** shows beside the tab's title.
 | --- | --- |
 | Ctrl+1 to Ctrl+9 | Show the first nine tabs, in the sidebar's order |
 | Ctrl+F | Find a transaction |
+| Ctrl+Z | Undo the last change |
 | Ctrl+I | Add files |
 | Ctrl+R | Sync banks |
 | Ctrl+, | Appearance |

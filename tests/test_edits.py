@@ -42,7 +42,7 @@ class Editing(QtCase):
         self.dialog.main.click()
 
     def toast(self) -> str:
-        return self.win.toast.text() if self.win.toast.isVisible() else ""
+        return self.win.toast.words if self.win.toast.isVisible() else ""
 
     def panel(self) -> str:
         from PySide6.QtWidgets import QLabel

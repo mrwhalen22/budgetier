@@ -185,11 +185,12 @@ def budget_form(ctx: Context, line: views.BudgetLine | None = None) -> Dialog | 
 
     def save():
         def work():
-            ok, result = attempt(window.budget.save_budget, category.currentData(), mode.currentData(), value.text())
+            ok, result = attempt(window.budget.undoable, window.budget.save_budget, category.currentData(),
+                                 mode.currentData(), value.text())
             if not ok:
                 return dialog.show_error(str(result))
             dialog.dismiss()
-            window.changed("Budget saved.")
+            window.changed("Budget saved.", undo=True)
         busy(dialog.main, "Saving...", work)
 
     dialog.set_buttons([("Cancel", dialog.dismiss, ""), ("Save", save, "primary")])
@@ -202,4 +203,5 @@ def remove_budget(ctx: Context, category: str) -> Dialog:
     window = ctx.window
     return confirm(window, f"Remove the {category} budget?",
                    "Your transactions aren't affected. You can add the budget again any time.",
-                   lambda: attempt(window.budget.delete_budget, category), done=lambda _: window.changed("Removed."))
+                   lambda: attempt(window.budget.undoable, window.budget.delete_budget, category),
+                   done=lambda _: window.changed("Removed.", undo=True))

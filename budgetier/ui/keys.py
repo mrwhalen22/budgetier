@@ -11,6 +11,7 @@ NUMBERED = 9  # Ctrl+1 to Ctrl+9 show the first nine tabs, in the sidebar's orde
 # What a person reads in Help, the keys, and the window's method that does it.
 ACTIONS = (
     ("Find a transaction", "Ctrl+F", "find"),
+    ("Undo the last change", "Ctrl+Z", "undo"),
     ("Add files", "Ctrl+I", "add_files"),
     ("Sync banks", "Ctrl+R", "sync"),
     ("Appearance", "Ctrl+,", "appearance"),

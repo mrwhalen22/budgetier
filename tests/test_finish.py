@@ -15,7 +15,7 @@ class Window(QtCase):
         self.win = self.window()
 
     def toast(self) -> str:
-        return self.win.toast.text() if self.win.toast.isVisible() else ""
+        return self.win.toast.words if self.win.toast.isVisible() else ""
 
     def open_dialog(self):
         from budgetier.ui.dialogs import Dialog

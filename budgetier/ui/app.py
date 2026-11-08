@@ -27,7 +27,7 @@ from ..service import Budget, app_version
 from . import banking, charts, icons, keys, look, motion, popup, settings, theme, tour, widgets
 from .banking import Banking
 from .context import Context
-from .dialogs import Toast
+from .dialogs import Toast, attempt
 from .editing import Editing
 from .importing import Importing
 from .tabs import BUILDERS, transactions
@@ -395,10 +395,23 @@ class Window(QMainWindow):
                                               "Excel workbook (*.xlsx)")
         return path
 
-    def changed(self, note: str = "") -> None:
-        """After a change to the data: read it again, redraw where you were, and say what happened."""
+    def changed(self, note: str = "", undo: bool = False) -> None:
+        """After a change to the data: read it again, redraw where you were, and say what happened.
+        undo: the change can be undone, from the note or with Ctrl+Z."""
         self.reload()
-        self.toast.say(note)
+        self.toast.say(note, ("Undo", self.undo) if undo and self.budget.can_undo() else None)
+
+    def undo(self) -> None:
+        """Put back what the last small change replaced: a category, a rule, a budget, an account's details."""
+        if not self.budget.can_undo():
+            self.toast.say("There's nothing to undo.")
+            return
+        ok, result = attempt(self.budget.undo)
+        if ok:
+            self.changed("Undone.")
+        else:
+            self.reload()  # what can't be undone is no longer offered
+            self.toast.say(str(result))
 
     def context(self) -> Context:
         status = self.budget.updates.status()
