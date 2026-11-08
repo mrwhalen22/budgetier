@@ -7,7 +7,7 @@ still opens the page, and this window opens only from the command line:
 """
 from __future__ import annotations
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, QTimer
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -30,23 +30,22 @@ from .. import views
 from ..service import Budget, app_version
 from . import icons, theme, widgets
 from .context import Context
-from .tabs import BUILDERS
+from .dialogs import Toast
+from .editing import Editing
+from .tabs import BUILDERS, transactions
 
 # The order the sidebar lists them in, as on the page.
 TABS = ("Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help")
 # Which step of docs/qt-migration.md brings each tab, until it's here.
-COMING = {"Transactions": 4, "Rules": 4, "Accounts": 5, "Budgets": 6}
+COMING = {"Accounts": 5, "Budgets": 6}
 # These cover all of history, so the period and account filters don't apply.
 FULL_HISTORY = {"Budgets", "Recurring", "Accounts", "Rules", "Help"}
 SIDE_WIDTH = 232
 ICON = 18
 
 
-def _placeholder(tab: str, note: str = "") -> QWidget:
-    words = [widgets.text(f"The {tab} tab arrives in step {COMING[tab]} of the move to Qt.", "dim")]
-    if note:
-        words.append(widgets.text(note, "dim"))
-    return widgets.card(*words, title=tab)
+def _placeholder(tab: str) -> QWidget:
+    return widgets.card(widgets.text(f"The {tab} tab arrives in step {COMING[tab]} of the move to Qt.", "dim"), title=tab)
 
 
 class StayOpenMenu(QMenu):
@@ -67,8 +66,8 @@ class Window(QMainWindow):
         self.look = look or theme.load_look(budget.home)
         self.choice = views.Choice()
         self.options: dict = {}
-        self.transactions_asked: dict = {}  # what a drill-down asked Transactions to show
         self._ready = False  # draw nothing until the window is built
+        self._drawn = ""  # the tab drawn last
         self.setWindowTitle("Budgetier")
         self.resize(1340, 900)
         self.setMinimumSize(900, 620)
@@ -80,6 +79,8 @@ class Window(QMainWindow):
         row.addWidget(self._side())
         row.addWidget(self._content(), 1)
         self.setCentralWidget(central)
+        self.toast = Toast(self)
+        self.editing = Editing(self)
 
         hints = QApplication.instance().styleHints()
         hints.colorSchemeChanged.connect(lambda _scheme: self.restyle())
@@ -272,14 +273,19 @@ class Window(QMainWindow):
 
     def open_transactions(self, category: str = "", query: str = "") -> None:
         """A category or merchant selected elsewhere shows its transactions."""
-        self.transactions_asked = {"category": category, "query": query}
+        self.options["transactions"] = {**transactions.fresh(), "category": category, "query": query}
         self.show_tab("Transactions")
+
+    def changed(self, note: str = "") -> None:
+        """After a change to the data: read it again, redraw where you were, and say what happened."""
+        self.reload()
+        self.toast.say(note)
 
     def context(self) -> Context:
         status = self.budget.updates.status()
         return Context(self.snapshot, self.choice, theme.tokens(self.mode, self.look.palette), self.open_transactions,
                        self.choose_range, self.render, self.options, app_version(),
-                       self.budget.sync.status()["connected"], status)
+                       self.budget.sync.status()["connected"], status, self.editing)
 
     def render(self) -> None:
         """Draw the tab that's showing, from the data and filters as they are now."""
@@ -289,21 +295,22 @@ class Window(QMainWindow):
         full = tab in FULL_HISTORY
         self.filters.setVisible(not full and bool(self.snapshot.txns))
         self.subtitle.setText("All history" if full else views.range_label(self.snapshot, self.choice))
-        if tab in BUILDERS:
-            body = BUILDERS[tab](self.context())
-        else:
-            asked = self.transactions_asked if tab == "Transactions" else {}
-            note = " and ".join(f"{k} {v!r}" for k, v in asked.items() if v)
-            body = _placeholder(tab, f"Asked to show {note}." if note else "")
+        body = BUILDERS[tab](self.context()) if tab in BUILDERS else _placeholder(tab)
         page = QWidget()
         layout = QVBoxLayout(page)
         layout.setContentsMargins(0, theme.SPACE[2], 0, theme.SPACE[10])
         layout.addWidget(body)
         layout.addStretch(1)
-        old = self.pages[tab].takeWidget()
-        self.pages[tab].setWidget(page)
+        scroll = self.pages[tab]
+        again = tab == self._drawn  # the same tab redrawn after a change keeps its place
+        at = scroll.verticalScrollBar().value() if again else 0
+        old = scroll.takeWidget()
+        scroll.setWidget(page)
         if old is not None:
             old.deleteLater()
+        self._drawn = tab
+        if at:
+            QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(at))
         self.setWindowTitle(f"{tab} · Budgetier")
 
     def restyle(self) -> None:

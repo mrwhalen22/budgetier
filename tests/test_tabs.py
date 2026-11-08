@@ -28,6 +28,10 @@ class Tabs(QtCase):
         from budgetier.ui.widgets import Table
         return self.win.pages[self.win.tab].widget().findChildren(Table)
 
+    def asked(self) -> dict:
+        """What the Transactions tab was asked to show."""
+        return {k: self.win.options["transactions"][k] for k in ("category", "query")}
+
     def cells(self, table) -> list[list[str]]:
         return [[table.item(r, c).text() for c in range(table.columnCount())] for r in range(table.rowCount())]
 
@@ -106,7 +110,7 @@ class Overview(Tabs):
         housing = next(b for b in self.win.pages["Overview"].widget().findChildren(HBar) if "Housing" in b.accessibleName())
         housing.clicked.emit()
         self.assertEqual(self.win.tab, "Transactions")
-        self.assertEqual(self.win.transactions_asked, {"category": "Housing", "query": ""})
+        self.assertEqual(self.asked(), {"category": "Housing", "query": ""})
 
     def test_the_warnings_fold_into_one_line(self):
         from budgetier.ui.widgets import Notices
@@ -123,7 +127,7 @@ class Spending(Tabs):
         names = [row[0] for row in self.cells(table)]
         self.assertEqual(names, [c for c, _ in views.spending(self.win.snapshot, self.win.choice).categories])
         table.cellClicked.emit(names.index("Groceries"), 3)
-        self.assertEqual(self.win.transactions_asked["category"], "Groceries")
+        self.assertEqual(self.asked()["category"], "Groceries")
 
 
 class Recurring(Tabs):
@@ -134,7 +138,7 @@ class Recurring(Tabs):
         self.assertIn("Lakeside Apts Rent", merchants)
         self.assertEqual([row[0] for row in self.cells(income)], ["Acme Payroll", "Interest"])
         bills.cellClicked.emit(merchants.index("Netflix"), 0)
-        self.assertEqual(self.win.transactions_asked, {"category": "", "query": "Netflix"})
+        self.assertEqual(self.asked(), {"category": "", "query": "Netflix"})
 
     def test_including_stopped_payments_is_remembered(self):
         from PySide6.QtWidgets import QCheckBox
