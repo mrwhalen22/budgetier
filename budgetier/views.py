@@ -693,6 +693,32 @@ def investments(s: Snapshot, choice: Choice) -> Investments:
 
 
 @dataclass(frozen=True)
+class Grouped:
+    """Rows in investing accounts with the same name and category, to check together."""
+    merchant: str
+    category: str
+    count: int
+    total: int
+    descriptions: list[str]  # the bank's own wording, most recent first
+    txns: list[Tx] = field(default_factory=list)
+
+
+def investing_rows(s: Snapshot, ids: set[str] | None = None) -> list[Grouped]:
+    """What's in investing and retirement accounts, by name, under each of their three
+    categories in turn, biggest first."""
+    held = {a.id for a in s.accounts if a.type in INVESTED and (ids is None or a.id in ids)}
+    groups: dict[tuple[str, str], list[Tx]] = {}
+    for t in s.txns:
+        if t.account in held:
+            groups.setdefault((t.merchant, t.category), []).append(t)
+    order = {c: i for i, c in enumerate(analyze.INVESTING_CATEGORIES)}
+    found = [Grouped(merchant, category, len(txns), sum(t.cents for t in txns),
+                     list(dict.fromkeys(t.description for t in reversed(txns))), txns)
+             for (merchant, category), txns in groups.items()]
+    return sorted(found, key=lambda g: (order.get(g.category, len(order)), -abs(g.total), g.merchant))
+
+
+@dataclass(frozen=True)
 class Plan:
     """What the retirement estimate assumes. Rates are percents a year, after inflation, so
     what it shows is in today's dollars."""

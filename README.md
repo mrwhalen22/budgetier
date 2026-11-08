@@ -192,7 +192,10 @@ beyond what was paid in. Growth shows once there are two balances a while apart.
 
 Inside these accounts nothing counts as income or spending. Money paid in or taken out is
 `Contributions` or `Withdrawals`; dividends, trades and fees are `Investment Activity`,
-which is part of growth. Change a row's category if one is wrong.
+which is part of growth. Banks word these rows many ways, so after you mark an account,
+**Check what counts as paid in** lists its rows by name under each category. A change saves a
+rule in the bank's wording, so new rows like it follow; wording too short to be safe changes
+only those rows.
 
 The retirement estimate grows today's retirement balance at the rate you choose, with the
 same amount paid in each month, until the age you retire at. Rates are after inflation, so

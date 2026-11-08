@@ -8,7 +8,8 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDateEdit, QGridLayout, QLineEdit, QPushButton, QWidget
 
 from ... import views
-from .. import fmt, theme, widgets
+from ...accounts import INVESTED
+from .. import fmt, investing, theme, widgets
 from ..banking import sync_card
 from ..context import Context
 from ..dialogs import Dialog, attempt, busy, confirm
@@ -83,6 +84,9 @@ def edit_account(window, account: views.Account) -> Dialog:
                 return dialog.show_error(str(result))
             dialog.dismiss()
             window.changed("Account saved.", undo=True)
+            if kind.currentData() in INVESTED and account.type not in INVESTED:
+                window.reload_now()  # its rows are read as investing ones before they're shown to check
+                investing.review(window, {account.id})
         busy(dialog.main, "Saving...", work)
 
     dialog.set_buttons([("Cancel", dialog.dismiss, ""), ("Save", save, "primary")])

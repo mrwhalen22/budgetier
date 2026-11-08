@@ -271,6 +271,11 @@ class Window(QMainWindow):
         # where a real problem shows as it always has.
         self._show(snapshot if ok else views.from_budget(self.budget))
 
+    def reload_now(self) -> None:
+        """Read the data again here and now, for a step that needs the new numbers at once."""
+        self._again = self._again or self._loading  # one still being read is out of date
+        self._show(views.from_budget(self.budget))
+
     @property
     def loading(self) -> bool:
         return self._loading
