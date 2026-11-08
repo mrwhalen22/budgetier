@@ -214,7 +214,8 @@ class Motion(QtCase):
         win.toast.say("Saved.")
         self.assertTrue(win.toast.isVisible())
         win.resize(win.width() + 100, win.height())
-        self.app.processEvents()
+        from PySide6.QtTest import QTest
+        QTest.qWait(200)  # let the slide that say() started run out, as it does on a slow machine
         self.assertEqual(win.toast.x(), (win.width() - win.toast.width()) // 2)
 
 

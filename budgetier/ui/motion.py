@@ -43,6 +43,11 @@ def _keep(owner: QObject, animation: QObject, name: str) -> None:
     setattr(owner, name, animation)
 
 
+def stop(widget: QObject, name: str = "_slide") -> None:
+    """Stop a running animation, leaving the widget where it is now."""
+    _keep(widget, None, name)
+
+
 def fade_in(window: QWidget, ms: int = FAST) -> None:
     """A top-level window: popups, dialogs, the chart's note."""
     if not _on:

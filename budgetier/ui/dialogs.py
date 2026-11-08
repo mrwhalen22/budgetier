@@ -209,4 +209,5 @@ class Toast(QLabel):
     def follow(self) -> None:
         """Stay centered at the bottom when the window changes size."""
         if self.isVisible():
+            motion.stop(self)  # a slide still on its way to the old spot would pull it back
             self.move(self.spot())
