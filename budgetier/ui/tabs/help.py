@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QPushButton, QWidget
 
-from .. import theme, tour, widgets
+from .. import keys, theme, tour, widgets
 from ..context import Context
 
 # Bank, file, and whether it's been tried with real files.
@@ -56,6 +56,12 @@ def bank_table(ctx: Context) -> QWidget:
     return widgets.Table(["Bank", "File", "Status"], rows, ctx.tokens)
 
 
+def shortcut_table(ctx: Context) -> QWidget:
+    from ..app import TABS
+    return widgets.Table(["Does", "Keys"], [[widgets.Cell(does), widgets.Cell(pressed, bold=True)]
+                                            for does, pressed in keys.listing(TABS)], ctx.tokens)
+
+
 def build(ctx: Context) -> QWidget:
     steps = widgets.column(*(widgets.text(f"{i}. {lead} {rest}") for i, (lead, rest) in enumerate(STEPS, 1)))
     tips = widgets.column(*(widgets.column(widgets.text(title, "h3"), widgets.text(words), spacing=2) for title, words in TIPS),
@@ -83,6 +89,7 @@ def build(ctx: Context) -> QWidget:
                           "review screen asks what it can't tell."),
         widgets.card(widgets.text(SYNC), title="Bank sync"),
         widgets.card(tips, title="Tips for good numbers"),
+        widgets.card(shortcut_table(ctx), title="Keyboard shortcuts"),
         widgets.card(widgets.text(data), widgets.text(f"Budgetier version {ctx.version}" if ctx.version else "Budgetier", "dim"),
                      *updates, title="Your data"),
         spacing=theme.SPACE[4])

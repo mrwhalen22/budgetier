@@ -27,6 +27,7 @@ class Transactions(QWidget):
         self.query = QLineEdit(self.state["query"])
         self.query.setPlaceholderText("Search merchant or description")
         self.query.setAccessibleName("Search transactions")
+        self.query.setObjectName("search")  # Ctrl+F comes here
         self.query.setClearButtonEnabled(True)
         self.query.textChanged.connect(lambda words: self._change(query=words))
         self.category = Dropdown(dot_for=lambda name: ctx.color(name) if name else None)

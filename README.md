@@ -43,10 +43,26 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   because your pay may not have landed yet.
 - **Accounts** is where you edit an account, set a balance, remove one imported file or
   a whole account, export the Excel workbook, and open the data folder.
-- **Help** shows which banks work, tips for accurate numbers, and a short tour.
+- **Help** shows which banks work, tips for accurate numbers, the keyboard shortcuts, and a
+  short tour.
 
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
+
+Budgetier opens where you left it: the same size and place, tab, period and accounts. After
+a change it works out the new numbers in the background, so on a long history you can keep
+reading while **Updating...** shows beside the tab's title.
+
+| Keys | Does |
+| --- | --- |
+| Ctrl+1 to Ctrl+9 | Show the first nine tabs, in the sidebar's order |
+| Ctrl+F | Find a transaction |
+| Ctrl+I | Add files |
+| Ctrl+R | Sync banks |
+| Ctrl+, | Appearance |
+| F1 | Help |
+
+On a Mac, use Command in place of Ctrl.
 
 ## Updates
 
@@ -90,7 +106,7 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `accounts.json` | Account names, types and entered balances |
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
-| `settings.json` | Your look, motion, the retirement estimate's numbers, and whether you've seen the tour |
+| `settings.json` | Your look, motion, the retirement estimate's numbers, where the window was left, and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 
 ## Bank sync
