@@ -174,7 +174,7 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
             spend[r["category"]] -= r["cents"]
     end = max((r["date"] for r in rows), default=today or date.today())
     return Snapshot(
-        txns=[Tx(i, r["date"].isoformat(), r["date"].strftime("%Y-%m"), r["account"], r["description"], r["merchant"],
+        txns=[Tx(i, r["date"].isoformat(), analyze.month_of(r["date"]), r["account"], r["description"], r["merchant"],
                  r["category"], r["kind"], r["cents"], bool(r.get("edited"))) for i, r in enumerate(rows)],
         accounts=summaries, categories=[c for c, _ in spend.most_common()], end=end.isoformat(),
         partial_month=analyze.partial_month(end), coverage_from=analyze.coverage_start(rows, accounts),
