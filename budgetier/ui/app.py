@@ -44,6 +44,7 @@ FULL_HISTORY = {"Budgets", "Recurring", "Accounts", "Rules", "Help"}
 SIDE_WIDTH = 232
 ICON = 18
 PLACE = "window"  # where the window was left, in settings.json
+SEEN = "seen"  # what was here when you last looked, for what's new since
 UPDATING_AFTER = 150  # ms: a reload quicker than this never says it's happening
 
 
@@ -96,6 +97,11 @@ class Window(QMainWindow):
         hints.colorSchemeChanged.connect(lambda _scheme: self.restyle())
         self.mode = theme.mode_for(self.look, False)
         self.reload()
+        saved = settings.load(budget.home).get(SEEN)
+        self.seen = saved if isinstance(saved, dict) else views.seen(self.snapshot)  # the first time: nothing is news
+        self._looked = False  # whether the Overview was shown, so what's new there has been seen
+        if not isinstance(saved, dict):
+            self._keep_seen()
         self.restyle()
         self._ready = True
         self.show_tab(place["tab"])
@@ -424,6 +430,7 @@ class Window(QMainWindow):
         if not self._ready:
             return
         tab = self.tab
+        self._looked = self._looked or tab == "Overview"
         full = tab in FULL_HISTORY
         self.filters.setVisible(not full and bool(self.snapshot.txns))
         subtitle = "All history" if full else views.range_label(self.snapshot, self.choice)
@@ -477,8 +484,23 @@ class Window(QMainWindow):
         super().resizeEvent(event)
         self.toast.follow()
 
+    def mark_seen(self) -> None:
+        """What's new has been seen: the Overview stops showing it."""
+        self.seen = views.seen(self.snapshot)
+        self._keep_seen()
+        self.render()
+
+    def _keep_seen(self) -> None:
+        try:
+            settings.save(self.budget.home, **{SEEN: self.seen})
+        except OSError:
+            pass  # it shows again next time, which is no harm
+
     def closeEvent(self, event):  # noqa: N802 - Qt's name
-        """Remember where you were, to open there next time."""
+        """Remember where you were, to open there next time, and that you saw what was new."""
+        if self._looked:
+            self.seen = views.seen(self.snapshot)
+            self._keep_seen()
         accounts = None if self.choice.accounts is None else sorted(self.choice.accounts)
         try:
             settings.save(self.budget.home, **{PLACE: {"geometry": bytes(self.saveGeometry().toBase64()).decode("ascii"),

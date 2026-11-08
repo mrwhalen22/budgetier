@@ -539,6 +539,40 @@ def savings(s: Snapshot, choice: Choice) -> Savings:
         balance_lines=[(a.name, [a.balances.get(m) for m in months]) for a in shown])
 
 
+# ---- what's new since you last looked
+
+
+@dataclass(frozen=True)
+class News:
+    since: str  # the newest day there was last time
+    count: int  # transactions after it
+    spent: int
+    received: int
+    subscriptions: list[Recurring]  # payments found to recur that weren't before
+    prices: list[Recurring]  # bills whose price changed since
+
+
+def seen(s: Snapshot) -> dict:
+    """What's here now, to compare with next time. Kept small: a day and some names."""
+    return {"through": s.end if s.txns else None, "recurring": sorted({r.merchant for r in active_bills(s)})}
+
+
+def news(s: Snapshot, last: dict | None) -> News | None:
+    """What came in after the newest day seen last time. Old history imported since isn't
+    news, so it's left out by being dated before that day."""
+    if not isinstance(last, dict) or not isinstance(last.get("through"), str) or not s.txns:
+        return None
+    since = last["through"]
+    fresh = [t for t in s.txns if t.date > since]
+    known = set(last.get("recurring") or [])
+    bills = active_bills(s)
+    found = News(since, len(fresh), -sum(t.cents for t in fresh if t.kind in analyze.SPENDING_KINDS),
+                 sum(t.cents for t in fresh if t.kind == "income"),
+                 [r for r in bills if r.merchant not in known],
+                 [r for r in bills if r.price_change and r.last > since])
+    return found if found.count or found.subscriptions or found.prices else None
+
+
 # ---- reminders to bring things up to date
 
 SYNC_AFTER_DAYS = 7  # a week without a sync is worth a reminder

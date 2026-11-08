@@ -155,6 +155,35 @@ def hero(ctx: Context, o: views.Overview) -> QFrame:
     return frame
 
 
+def whats_new(ctx: Context) -> QWidget | None:
+    """What came in since you last looked: new transactions, newly recurring payments, price changes."""
+    window = ctx.window
+    found = views.news(ctx.snapshot, getattr(window, "seen", None))
+    if found is None:
+        return None
+    lines = []
+    if found.count:
+        money = [m for m in (f"{fmt.money(found.spent)} spent" if found.spent else "",
+                             f"{fmt.money(found.received)} in" if found.received else "") if m]
+        lines.append(widgets.text(fmt.plural(found.count, "new transaction") + (": " + ", ".join(money) if money else ".")))
+    for r in found.subscriptions:
+        lines.append(widgets.text(f"Newly recurring: {r.merchant}, {fmt.cents(r.amount)} {r.cadence.lower()}"))
+    for r in found.prices:
+        went = "up" if r.price_change > 0 else "down"
+        lines.append(widgets.text(f"{r.merchant} went {went} {fmt.cents(abs(r.price_change))}, to {fmt.cents(r.amount)}"))
+    see = QPushButton("See transactions")
+    see.setProperty("kind", "small")
+    see.clicked.connect(lambda _=False: ctx.open_transactions())
+    done = QPushButton("Got it")
+    done.setProperty("kind", "small")
+    done.clicked.connect(lambda _=False: window.mark_seen())
+    frame = widgets.card(widgets.column(*lines, spacing=theme.SPACE[1]),
+                         widgets.row(see if found.count else None, done),
+                         title="New since you last looked", note=f"After {fmt.day_name(found.since)}, the newest day you'd seen.")
+    frame.setObjectName("whatsNew")
+    return frame
+
+
 def reminder(ctx: Context) -> QWidget | None:
     """When the numbers are a while out of date: sync, or add recent files."""
     found = views.reminder(ctx.snapshot, ctx.sync)
@@ -202,7 +231,9 @@ def build(ctx: Context) -> QWidget:
     column = QVBoxLayout(page)
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(theme.SPACE[4])
-    for part in (reminder(ctx), widgets.notices(o.warnings, t), this_month(ctx, o.this_month), hero(ctx, o), figures, split):
+    parts = (reminder(ctx), whats_new(ctx), widgets.notices(o.warnings, t), this_month(ctx, o.this_month), hero(ctx, o),
+             figures, split)
+    for part in parts:
         if part is not None:
             column.addWidget(part)
     return page

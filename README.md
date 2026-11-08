@@ -49,6 +49,10 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
 
+After new transactions arrive, the Overview lists what's new since you last looked: how
+many came in and what they add up to, payments newly found to recur, and bills whose price
+changed. **Got it** clears it, as does closing Budgetier after seeing the Overview.
+
 When the numbers are a while out of date, the Overview says so with a button to fix it:
 after a week without a bank sync, or when your newest transaction is over a month old.
 
@@ -114,7 +118,7 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `accounts.json` | Account names, types and entered balances |
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
-| `settings.json` | Your look, motion, the retirement estimate's numbers, where the window was left, and whether you've seen the tour |
+| `settings.json` | Your look, motion, the retirement estimate's numbers, where the window was left, what you'd seen last time, and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 
 ## Bank sync
