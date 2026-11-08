@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QWidget
 
 from ... import views
 from .. import fmt, theme, widgets
-from ..charts import Chart, Series
+from ..charts import PICK, Chart, Series
 from ..context import Context
 from .overview import welcome
 
@@ -21,8 +21,8 @@ def build(ctx: Context) -> QWidget:
     colors = {name: (t["other"] if name == "Other" else ctx.color(name)) for name, _ in sp.series}
     chart = widgets.card(widgets.legend([(name, colors[name]) for name, _ in sp.series]),
                          Chart(sp.months, [Series(name, values, colors[name]) for name, values in reversed(sp.series)], t,
-                               stacked=True, height=300, partial_month=s.partial_month),
-                         title="Spending by category")
+                               stacked=True, height=300, partial_month=s.partial_month, on_pick=ctx.choose_range),
+                         title="Spending by category", note=PICK)
     longer = "; showing the latest 12 months, totals cover the full period" if len(sp.months) > 12 else ""
     accent = QColor(t["accent"])
     rows, names = [], [c for c, _ in sp.categories]

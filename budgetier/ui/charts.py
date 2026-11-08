@@ -9,7 +9,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -18,6 +18,7 @@ from .popup import SHADOW, paint_panel
 
 LEFT, RIGHT, TOP, BOTTOM = 44, 2, 8, 22
 LABEL_EVERY = 62  # pixels each month label needs
+PICK = "Select a month to see just that month."  # under charts that can
 STACK_GAP = 3  # a slice at least this tall gets a hairline between it and the next
 grow_next = True  # whether charts made now grow in; the window turns it off for a redraw after a change
 
@@ -151,12 +152,14 @@ class Tip(QWidget):
 class Chart(QWidget):
     def __init__(self, months: list[str], series: list[Series], tokens: dict[str, str], kind: str = "bars",
                  stacked: bool = False, height: int = 260, partial_month: str | None = None,
-                 labels: list[str] | None = None, titles: list[str] | None = None):
+                 labels: list[str] | None = None, titles: list[str] | None = None,
+                 on_pick: Callable[[str], None] | None = None):
         """labels and titles, for a chart that isn't of months: what the axis says under each
-        point, and what its note is headed."""
+        point, and what its note is headed. on_pick: what choosing a month does, by clicking it
+        or with Enter, such as showing just that month."""
         super().__init__()
         self.months, self.series, self.tokens = months, series, tokens
-        self.labels, self.titles = labels, titles
+        self.labels, self.titles, self.on_pick = labels, titles, on_pick
         self.kind, self.stacked, self.partial_month = kind, stacked, partial_month
         self.base = height
         self.at = -1  # the month being read
@@ -166,7 +169,8 @@ class Chart(QWidget):
         self.setMinimumHeight(height)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setAccessibleName("Chart. Use the left and right arrow keys to read each month.")
+        self.setAccessibleName("Chart. Use the left and right arrow keys to read each month"
+                               + (", and Enter to see just that one." if on_pick else "."))
         self.setAccessibleDescription(". ".join(self.spoken(i) for i in range(len(months))))
 
     def sizeHint(self):  # noqa: N802 - Qt's name
@@ -409,12 +413,30 @@ class Chart(QWidget):
         i = self.index_at(event.position().x())
         if i != self.at:
             self._read(i)
+        if self.on_pick:
+            self.setCursor(Qt.PointingHandCursor if i >= 0 else Qt.ArrowCursor)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt's name
+        i = self.index_at(event.position().x())
+        if event.button() == Qt.LeftButton and i >= 0:
+            self.pick(i)
+        super().mouseReleaseEvent(event)
+
+    def pick(self, i: int) -> None:
+        """Choose a month. It happens once this click is over, since choosing redraws the tab
+        this chart is on."""
+        if self.on_pick and 0 <= i < len(self.months):
+            month, chosen = self.months[i], self.on_pick
+            QTimer.singleShot(0, lambda: chosen(month))
 
     def leaveEvent(self, event):  # noqa: N802 - Qt's name
         self._read(-1)
         super().leaveEvent(event)
 
     def keyPressEvent(self, event):  # noqa: N802 - Qt's name
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space) and self.on_pick and self.at >= 0:
+            self.pick(self.at)
+            return
         move = {Qt.Key_Right: 1, Qt.Key_Left: -1}.get(event.key())
         if not move or not self.months:
             return super().keyPressEvent(event)

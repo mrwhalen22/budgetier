@@ -49,6 +49,9 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
 
+On the Overview, Spending and Savings charts, select a month, or press Enter on it, to show
+just that month.
+
 After new transactions arrive, the Overview lists what's new since you last looked: how
 many came in and what they add up to, payments newly found to recur, and bills whose price
 changed. **Got it** clears it, as does closing Budgetier after seeing the Overview.

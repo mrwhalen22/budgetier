@@ -7,7 +7,7 @@ from PySide6.QtWidgets import QFrame, QGridLayout, QPushButton, QVBoxLayout, QWi
 
 from ... import views
 from .. import fmt, theme, widgets
-from ..charts import Chart, Series
+from ..charts import PICK, Chart, Series
 from ..context import Context
 
 
@@ -211,8 +211,8 @@ def build(ctx: Context) -> QWidget:
     chart = widgets.card(widgets.legend([("Income", t["income"]), ("Spending", t["spending"])]),
                          Chart(o.months, [Series("Income", o.chart_income, t["income"]),
                                           Series("Spending", o.chart_spending, t["spending"])], t,
-                               partial_month=s.partial_month),
-                         title="Income and spending")
+                               partial_month=s.partial_month, on_pick=ctx.choose_range),
+                         title="Income and spending", note=PICK)
     if o.categories:
         went = widgets.hbars([(c, v, ctx.color(c), lambda c=c: ctx.open_transactions(category=c)) for c, v in o.categories],
                              fmt.money, t)
