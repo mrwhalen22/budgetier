@@ -49,6 +49,11 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
 
+Before bringing in your own accounts, **Try it with sample data** on the welcome screen shows
+a year and a half of made-up accounts to look around. It's kept in a folder of its own and
+thrown away when you choose **Leave sample data** or close Budgetier; adding files and bank
+sync wait until you've left it.
+
 **Export CSV** on the Transactions tab saves every transaction it lists, with your search,
 filters and period applied, for a spreadsheet or another app.
 

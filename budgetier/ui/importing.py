@@ -127,6 +127,8 @@ class Importing:
         return self.window.budget
 
     def add_files(self) -> None:
+        if self.window.blocked_by_sample():
+            return
         paths = self.window.ask_files()
         if not paths:
             return

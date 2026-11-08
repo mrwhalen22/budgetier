@@ -1,6 +1,8 @@
 """The window: a sidebar of tabs beside the tab that's showing."""
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 
 from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, QTimer
@@ -22,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import views
+from .. import sample, views
 from ..service import Budget, app_version
 from . import banking, charts, icons, keys, look, motion, popup, settings, theme, tour, widgets
 from .banking import Banking
@@ -58,6 +60,8 @@ class Window(QMainWindow):
     def __init__(self, budget: Budget, look: theme.Look | None = None):
         super().__init__()
         self.budget = budget
+        self.mine = budget  # your own data; budget is the sample's while you look around it
+        self.sample_home: Path | None = None
         self.look = look or theme.load_look(budget.home)
         place = _place(settings.load(budget.home).get(PLACE))
         self.choice = place["choice"]
@@ -225,6 +229,15 @@ class Window(QMainWindow):
         header.addLayout(words, 1)
         self.filters = self._filters()
         header.addWidget(self.filters, 0, Qt.AlignVCenter)
+        self.sample_bar = widgets.banner(
+            "info", "You're looking at sample data",
+            "None of it is real, and changes to it are thrown away. Your own data is untouched.", theme.current(),
+            self._leave_button())
+        self.sample_bar.hide()
+        bar = QHBoxLayout()
+        bar.setContentsMargins(0, 0, SCROLL_ROOM, 0)  # lined up with the header, clear of the scroll bar's gutter
+        bar.addWidget(self.sample_bar)
+        column.addLayout(bar)
         column.addLayout(header)
 
         self.stack = QStackedWidget()
@@ -501,23 +514,69 @@ class Window(QMainWindow):
         self.render()
 
     def _keep_seen(self) -> None:
+        if self.sample_home:
+            return  # what you saw in the sample isn't what's new in yours
         try:
-            settings.save(self.budget.home, **{SEEN: self.seen})
+            settings.save(self.mine.home, **{SEEN: self.seen})
         except OSError:
             pass  # it shows again next time, which is no harm
 
     def closeEvent(self, event):  # noqa: N802 - Qt's name
         """Remember where you were, to open there next time, and that you saw what was new."""
+        if self.sample_home:
+            self.leave_sample()
         if self._looked:
             self.seen = views.seen(self.snapshot)
             self._keep_seen()
         accounts = None if self.choice.accounts is None else sorted(self.choice.accounts)
         try:
-            settings.save(self.budget.home, **{PLACE: {"geometry": bytes(self.saveGeometry().toBase64()).decode("ascii"),
+            settings.save(self.mine.home, **{PLACE: {"geometry": bytes(self.saveGeometry().toBase64()).decode("ascii"),
                                                        "tab": self.tab, "range": self.choice.range, "accounts": accounts}})
         except OSError:
             pass  # not being able to remember this is no reason to stop closing
         super().closeEvent(event)
+
+    # ---- sample data
+
+    def _leave_button(self) -> QPushButton:
+        button = QPushButton("Leave sample data")
+        button.clicked.connect(lambda _=False: self.leave_sample())
+        return button
+
+    def try_sample(self) -> None:
+        """Look around made-up data, kept in a folder of its own and thrown away afterwards."""
+        if self.sample_home:
+            return
+        folder = Path(tempfile.mkdtemp(prefix="budgetier-sample-"))
+        try:
+            budget = sample.build(folder / "home")
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        self.sample_home, self.budget = folder, budget
+        self.choice = views.Choice()
+        self.sample_bar.show()
+        self.reload_now()
+        self.show_tab(TABS[0])
+        self.toast.say("Here's some sample data to look around.")
+
+    def leave_sample(self) -> None:
+        folder = self.sample_home
+        if folder is None:
+            return
+        self.sample_home, self.budget = None, self.mine
+        self.choice = views.Choice()
+        self.sample_bar.hide()
+        self.reload_now()
+        self.show_tab(TABS[0])
+        shutil.rmtree(folder, ignore_errors=True)
+
+    def blocked_by_sample(self) -> bool:
+        """Files and bank connections are for your own data: say so while the sample is up."""
+        if self.sample_home:
+            self.toast.say("Leave the sample data first, so this goes into your own.")
+            return True
+        return False
 
     # ---- what the keyboard shortcuts do
 
@@ -542,12 +601,12 @@ class Window(QMainWindow):
 
     def set_motion(self, on: bool) -> None:
         motion.set_on(on)
-        settings.save(self.budget.home, reduce_motion=not on)
+        settings.save(self.mine.home, reduce_motion=not on)
         QApplication.setEffectEnabled(Qt.UI_FadeTooltip, on)
 
     def set_look(self, look: theme.Look) -> None:
         self.look = look
-        theme.save_look(self.budget.home, look)
+        theme.save_look(self.mine.home, look)
         self.restyle()
 
 
