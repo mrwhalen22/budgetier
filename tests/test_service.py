@@ -2,7 +2,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from budgetier import analyze, pdf2csv, service
+from budgetier import analyze, pdf2csv, service, views
 from budgetier.ledger import Ledger
 from tests import test_parse
 from tests.support import AppCase, Tmp
@@ -23,7 +23,7 @@ class AppImports(AppCase):
         self.assertTrue(Path(path).exists())
         self.assertTrue((self.budget.imported / "Chase_4001.csv").exists())
         self.assertEqual(len(Ledger(self.budget.home).rows), 2)
-        self.assertIn("Chase Card 4001", self.budget.html_path.read_text(encoding="utf-8"))
+        self.assertIn("Chase Card 4001", [a.name for a in views.from_budget(self.budget).accounts])
 
     def test_second_look_at_a_known_account_counts_new_rows(self):
         self.add(self.chase("a_4001.csv", [1, 2]))
@@ -105,7 +105,7 @@ class AppImports(AppCase):
         self.budget.remove_import(self.budget.ledger.imports[0]["stored"])
         self.assertFalse(self.budget.ledger.accounts)
         self.assertEqual(list(self.budget.imported.iterdir()), [])
-        self.assertIn('"txns":[]', self.budget.html_path.read_text(encoding="utf-8"))
+        self.assertEqual(views.from_budget(self.budget).txns, [])
 
     def test_older_imports_without_a_stored_name_still_remove(self):
         self.add(self.chase("a_4001.csv", [1, 2]))
@@ -155,8 +155,9 @@ class AppImports(AppCase):
         self.budget.export_workbook(self.dir / "x.xlsx")
         self.assertTrue((self.dir / "x.xlsx").exists())
 
-    def test_empty_app_has_a_page(self):
-        self.assertTrue(self.budget.refresh().exists())
+    def test_an_empty_folder_still_has_something_to_show(self):
+        s = views.from_budget(self.budget)
+        self.assertEqual((s.txns, len(s.months)), ([], 1))
 
     def test_pdf_goes_through_conversion_and_both_files_are_kept(self):
         pdf = self.src / "Synchrony.pdf"
@@ -220,7 +221,7 @@ class Rules(AppCase):
         self.assertEqual(self.categories()["ZZYZX HARDWARE #12"], ("Home", "Zzyzx"))
         rule = self.budget.rules()[0]
         self.assertEqual((rule["text"], rule["advanced"], rule["count"]), ("ZZYZX HARDWARE", False, 2))
-        self.assertIn('"rules":[{', self.budget.html_path.read_text(encoding="utf-8"))
+        self.assertEqual(views.from_budget(self.budget).rules[0]["text"], "ZZYZX HARDWARE")
 
     def test_text_is_literal_not_a_pattern(self):
         self.budget.save_rule(None, "A.B (C)*", "Home", "")
@@ -313,7 +314,7 @@ class Rules(AppCase):
     def test_broken_hand_edit_does_not_stop_the_app(self):
         with self.budget.rules_path.open("a", encoding="utf-8") as f:
             f.write("(unclosed,Home,\nno category here\n")
-        self.budget.refresh()
+        views.from_budget(self.budget)
         self.assertEqual(self.budget.rules()[0]["broken"], True)
         self.assertEqual(self.categories()["KROGER 123"][0], "Groceries")
 
@@ -324,8 +325,7 @@ class Rules(AppCase):
 
     def test_rules_appear_in_the_category_list(self):
         self.budget.save_rule(None, "KROGER", "Hobbies", "")
-        self.assertIn('"allCategories":', self.budget.html_path.read_text(encoding="utf-8"))
-        self.assertIn("Hobbies", self.budget.html_path.read_text(encoding="utf-8"))
+        self.assertIn("Hobbies", views.from_budget(self.budget).all_categories)
 
 
 class SavingBudgets(Tmp):
@@ -368,9 +368,9 @@ class SavingBudgets(Tmp):
         with self.assertRaises(service.BudgetError):
             self.budget.delete_budget("Groceries")
 
-    def test_saved_budget_reaches_the_page(self):
+    def test_a_saved_budget_reaches_the_window(self):
         self.budget.save_budget("Groceries", "amount", "100")
-        self.assertIn('"category":"Groceries"', self.budget.html_path.read_text(encoding="utf-8"))
+        self.assertIn("Groceries", [t["category"] for t in views.from_budget(self.budget).budget_targets])
 
 
 class SingleTransactions(AppCase):
@@ -382,7 +382,7 @@ class SingleTransactions(AppCase):
                    "description": first["description"], "n": 0}
 
     def analysed(self):
-        return self.budget._analysis()[0]
+        return self.budget.analysis()[0]
 
     def test_one_transaction_changes_and_the_others_dont(self):
         self.budget.save_edit(self.tx, "Gifts", "Birthday")
@@ -402,11 +402,12 @@ class SingleTransactions(AppCase):
         with self.assertRaises(service.BudgetError):
             self.budget.clear_edit(self.tx)
 
-    def test_an_edit_survives_a_restart_and_reaches_the_page(self):
+    def test_an_edit_survives_a_restart_and_reaches_the_window(self):
         self.budget.save_edit(self.tx, "Gifts", "Birthday")
         again = service.Budget(self.budget.home)
-        self.assertEqual(again._analysis()[0][0]["category"], "Gifts")
-        self.assertIn('"Birthday","Gifts","expense",-1.0,1]', again.html_path.read_text(encoding="utf-8"))
+        self.assertEqual(again.analysis()[0][0]["category"], "Gifts")
+        [t] = [t for t in views.from_budget(again).txns if t.edited]
+        self.assertEqual((t.merchant, t.category, t.cents), ("Birthday", "Gifts", -100))
 
     def test_an_edit_survives_its_file_being_removed_and_added_again(self):
         self.budget.save_edit(self.tx, "Gifts", "")
@@ -424,9 +425,9 @@ class SingleTransactions(AppCase):
     def test_a_damaged_edits_file_is_kept_and_the_app_still_opens(self):
         self.budget.edits_path.write_text("{oops", encoding="utf-8")
         again = service.Budget(self.budget.home)
-        again.refresh()
+        titles = [c["title"] for c in views.from_budget(again).checks]
         self.assertEqual((again.home / "edits.damaged.json").read_text(encoding="utf-8"), "{oops")
-        self.assertIn("transaction changes couldn't be read", again.html_path.read_text(encoding="utf-8"))
+        self.assertIn("Some transaction changes couldn't be read", titles)
 
 
 if __name__ == "__main__":

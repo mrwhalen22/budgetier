@@ -161,10 +161,8 @@ class BalanceCommands(Tmp):
         self.assertEqual(self.run_cli(["--set-balance", "9999", "5"], tty=False)[0], 2)
         self.assertEqual(self.run_cli(["--set-balance", "4003", "lots"], tty=False)[0], 2)
 
-    def test_balance_shows_in_both_reports(self):
+    def test_balance_shows_in_the_workbook(self):
         self.run_cli(["--set-balance", "4003", "250.00"], tty=False)
-        html = (self.dir / "output" / "budget.html").read_text(encoding="utf-8")
-        self.assertIn('"calculated":true', html)
         from openpyxl import load_workbook
         ws = load_workbook(self.dir / "output" / "budget.xlsx")["Accounts"]
         self.assertEqual((ws["H5"].value, ws["I5"].value), (250, "Calculated"))

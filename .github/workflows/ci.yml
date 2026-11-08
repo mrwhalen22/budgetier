@@ -31,48 +31,22 @@ jobs:
             constraints.txt
 
       - name: Install dependencies
-        run: python -m pip install -r requirements-dev.txt
-
-      - name: Lint
-        run: python -m ruff check .
-
-      - name: Install browsers for the page tests
-        run: python -m playwright install --with-deps chromium webkit
-
-      - name: Run tests
-        env:
-          BUDGETIER_BROWSERS: required  # so the page tests can't quietly stop running
-        run: python -m unittest discover -s tests -t .
-
-  build:
-    runs-on: ubuntu-22.04  # the oldest we support: a Linux build only runs on the same or newer
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            requirements*.txt
-            constraints.txt
-
-      - name: Install dependencies
         run: |
           python -m pip install -r requirements-dev.txt
           sh packaging/linux_deps.sh
 
-      - name: Build installer
-        run: python packaging/build_installer.py
+      - name: Lint
+        run: python -m ruff check .
 
-      - name: Open the built app
-        run: xvfb-run -a python packaging/self_check.py
+      - name: Run tests
+        env:
+          BUDGETIER_QT: required  # the window's tests draw offscreen, so they can't quietly skip
+        run: python -m unittest discover -s tests -t .
 
-      - name: Keep the installer for testing
-        uses: actions/upload-artifact@v4
-        with:
-          name: Budgetier-Linux
-          path: dist/Budgetier-Linux.tar.gz
-          retention-days: 7
-          if-no-files-found: error
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      os: ubuntu-22.04  # the oldest we support: a Linux build only runs on the same or newer
+      tests: false  # the test job has
+      artifact: Budgetier-Linux
+      retention: 7
