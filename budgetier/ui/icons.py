@@ -22,6 +22,8 @@ TABS = {
     "Help": '<circle cx="12" cy="12" r="8.5"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.6 2.2c-.7.4-1.1.9-1.1 1.8"/>'
             '<path d="M12 16.8h.01"/>',
 }
+SUN = ('<circle cx="12" cy="12" r="4"/><path d="M12 3v2M12 19v2M3 12h2M19 12h2"/>'
+       '<path d="M5.6 5.6 7 7M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>')
 # The brand mark is filled, not drawn in lines.
 BRAND = '<rect x="3" y="12" width="4.5" height="9" rx="1.5"/><rect x="9.75" y="7" width="4.5" height="14" rx="1.5"/>' \
         '<rect x="16.5" y="3" width="4.5" height="18" rx="1.5"/>'
@@ -46,9 +48,13 @@ def pixmap(body: str, color: str, size: int, ratio: float = 1.0, filled: bool = 
     return result
 
 
+def icon(body: str, color: str, size: int = 18, ratio: float = 1.0) -> QIcon:
+    return QIcon(pixmap(body, color, size, ratio))
+
+
 def tab_icon(name: str, normal: str, selected: str, size: int = 18, ratio: float = 1.0) -> QIcon:
     """One color normally and another when the tab is the one showing."""
-    icon = QIcon()
-    icon.addPixmap(pixmap(TABS[name], normal, size, ratio), QIcon.Normal, QIcon.Off)
-    icon.addPixmap(pixmap(TABS[name], selected, size, ratio), QIcon.Normal, QIcon.On)
-    return icon
+    both = QIcon()
+    both.addPixmap(pixmap(TABS[name], normal, size, ratio), QIcon.Normal, QIcon.Off)
+    both.addPixmap(pixmap(TABS[name], selected, size, ratio), QIcon.Normal, QIcon.On)
+    return both

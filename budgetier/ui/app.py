@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QSize, Qt, QTimer
+from PySide6.QtCore import QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -31,19 +31,20 @@ from PySide6.QtWidgets import (
 
 from .. import views
 from ..service import Budget, app_version
-from . import banking, icons, theme, widgets
+from . import banking, icons, look, theme, tour, widgets
 from .banking import Banking
 from .context import Context
 from .dialogs import Toast
 from .editing import Editing
 from .importing import Importing
 from .tabs import BUILDERS, transactions
+from .updating import Updating
 from .work import Runner
 
 # The order the sidebar lists them in, as on the page.
 TABS = ("Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help")
 # Which step of docs/qt-migration.md brings each tab, until it's here.
-COMING = {"Budgets": 6}
+COMING: dict[str, int] = {}
 # These cover all of history, so the period and account filters don't apply.
 FULL_HISTORY = {"Budgets", "Recurring", "Accounts", "Rules", "Help"}
 SIDE_WIDTH = 232
@@ -90,6 +91,8 @@ class Window(QMainWindow):
         self.runner = Runner(self)
         self.importing = Importing(self)
         self.banking = Banking(self)
+        self.updating = Updating(self)
+        self.tour: tour.Tour | None = None
 
         hints = QApplication.instance().styleHints()
         hints.colorSchemeChanged.connect(lambda _scheme: self.restyle())
@@ -99,6 +102,10 @@ class Window(QMainWindow):
         self._ready = True
         self.show_tab(TABS[0])
         self.stack.setFocus()  # not the first tab's button, which would show a focus ring at once
+        updates = self.updating.status()
+        if updates["supported"] and updates["automatic"]:
+            self.updating.check_quietly()
+        tour.maybe_start(self)
 
     # ---- building
 
@@ -129,8 +136,12 @@ class Window(QMainWindow):
         actions = QVBoxLayout()
         actions.setSpacing(theme.SPACE[2])
         actions.setContentsMargins(0, 0, 0, theme.SPACE[4])
+        self.update_button = QPushButton()
+        self.update_button.clicked.connect(lambda: self.updating.form())
+        self.update_button.hide()  # until an update is found
         actions.addWidget(self.add_button)
         actions.addWidget(self.bank_button)
+        actions.addWidget(self.update_button)
         column.addLayout(actions)
 
         self.tab_group = QButtonGroup(self)
@@ -145,11 +156,18 @@ class Window(QMainWindow):
             button.setCursor(Qt.PointingHandCursor)
             button.setFocusPolicy(Qt.TabFocus)  # a click shouldn't leave a focus ring, as on the page
             button.clicked.connect(lambda _checked=False, tab=tab: self.show_tab(tab))
+            button.installEventFilter(self)  # the arrow keys move between tabs
             self.tab_group.addButton(button)
             self.tab_buttons[tab] = button
             column.addWidget(button)
 
         column.addStretch(1)
+        self.look_button = QPushButton("Appearance")
+        self.look_button.setProperty("kind", "nav-link")
+        self.look_button.setIconSize(QSize(ICON, ICON))
+        self.look_button.setFocusPolicy(Qt.TabFocus)
+        self.look_button.clicked.connect(lambda: look.appearance(self))
+        column.addWidget(self.look_button)
         self.foot = widgets.text("", wrap=True)
         self.foot.setObjectName("foot")
         column.addWidget(self.foot)
@@ -289,6 +307,18 @@ class Window(QMainWindow):
     def tab(self) -> str:
         return TABS[self.stack.currentIndex()]
 
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+        """Up and Down on a tab's button show the tab above or below, as in a list of tabs."""
+        if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
+            tab = next((t for t, b in self.tab_buttons.items() if b is watched), None)
+            if tab is not None:
+                step = -1 if event.key() == Qt.Key_Up else 1
+                chosen = TABS[(TABS.index(tab) + step) % len(TABS)]
+                self.show_tab(chosen)
+                self.tab_buttons[chosen].setFocus(Qt.TabFocusReason)
+                return True
+        return super().eventFilter(watched, event)
+
     def show_tab(self, tab: str) -> None:
         self.stack.setCurrentWidget(self.pages[tab])
         self.title.setText(tab)
@@ -367,6 +397,7 @@ class Window(QMainWindow):
         for tab, button in self.tab_buttons.items():
             button.setIcon(icons.tab_icon(tab, t["ink-2"], t["accent"], ICON, ratio))
         self.brand_mark.setPixmap(icons.pixmap(icons.BRAND, t["accent"], 24, ratio, filled=True))
+        self.look_button.setIcon(icons.icon(icons.SUN, t["ink-2"], ICON, ratio))
         if self._ready:
             self.render()
 

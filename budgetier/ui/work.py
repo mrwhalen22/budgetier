@@ -39,6 +39,8 @@ class Runner(QObject):
         self.pool.setMaxThreadCount(1)
         self.busy = False
         self._done: _Done | None = None
+        self.quiet_pool = QThreadPool(self)
+        self._quiet: set[_Done] = set()
 
     def start(self, work: Callable, args: tuple, then: Callable[[bool, object], None], note: str = "") -> bool:
         if self.busy:
@@ -58,13 +60,21 @@ class Runner(QObject):
         self.pool.start(_Job(work, args, self._done))
         return True
 
+    def quietly(self, work: Callable, args: tuple, then: Callable[[bool, object], None]) -> None:
+        """For work that doesn't touch your data, like asking whether there's an update: it
+        neither waits for nor holds up anything else, and nothing says it's running."""
+        done = _Done(self)
+        done.finished.connect(lambda ok, result: (self._quiet.discard(done), then(ok, result)))
+        self._quiet.add(done)
+        self.quiet_pool.start(_Job(work, args, done))
+
     def wait(self, seconds: float = 30) -> bool:
         """For tests: let the work finish and its answer arrive. False if it didn't in time."""
         import time
 
         from PySide6.QtCore import QCoreApplication, QEventLoop
         deadline = time.monotonic() + seconds
-        while self.busy and time.monotonic() < deadline:
+        while (self.busy or self._quiet) and time.monotonic() < deadline:
             QCoreApplication.processEvents(QEventLoop.AllEvents, 50)
             time.sleep(.01)
-        return not self.busy
+        return not self.busy and not self._quiet
