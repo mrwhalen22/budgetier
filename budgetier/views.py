@@ -48,6 +48,9 @@ class Tx:
     kind: str
     cents: int
     edited: bool = False
+    key: str = ""  # how edits and splits find it, when there are any
+    whole: int = 0  # for a part of a split transaction: the whole of it; otherwise its own amount
+    split: bool = False
 
 
 @dataclass(frozen=True)
@@ -178,7 +181,8 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
     end = max((r["date"] for r in rows), default=today or date.today())
     return Snapshot(
         txns=[Tx(i, r["date"].isoformat(), analyze.month_of(r["date"]), r["account"], r["description"], r["merchant"],
-                 r["category"], r["kind"], r["cents"], bool(r.get("edited"))) for i, r in enumerate(rows)],
+                 r["category"], r["kind"], r["cents"], bool(r.get("edited")), r.get("key", ""), r.get("whole", r["cents"]),
+                 bool(r.get("split"))) for i, r in enumerate(rows)],
         accounts=summaries, categories=[c for c, _ in spend.most_common()], end=end.isoformat(),
         partial_month=analyze.partial_month(end), coverage_from=analyze.coverage_start(rows, accounts),
         recurring=[Recurring(e["merchant"], e["category"], e["kind"], e["cadence"], e["count"], _cents(e["amount"]),
@@ -846,6 +850,8 @@ def transactions(s: Snapshot, choice: Choice, query: str = "", category: str = "
 def edit_target(s: Snapshot, t: Tx) -> dict:
     """What Budget.save_edit needs to find this one transaction: n tells apart identical
     rows, counted the way analyze.edit_keys counts them."""
+    if t.key:
+        return {"key": t.key, "date": t.date, "account": t.account, "cents": t.whole, "description": t.description}
     words = " ".join(t.description.upper().split())
     n = sum(1 for x in s.txns[:t.i] if x.date == t.date and x.account == t.account and x.cents == t.cents
             and " ".join(x.description.upper().split()) == words)

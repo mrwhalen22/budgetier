@@ -126,7 +126,8 @@ class Transactions(QWidget):
         rows = [[widgets.Cell(fmt.day_name(t.date), tone="dim", tip=t.description),
                  widgets.Cell(t.merchant, icon=widgets.mono_icon(t.merchant, ctx.color(t.category)), tip=t.description,
                               bold=True),
-                 widgets.Cell(t.category + ("  ·  edited" if t.edited else ""), icon=widgets.dot_icon(ctx.color(t.category))),
+                 widgets.Cell(t.category + ("  ·  split" if t.split else "  ·  edited" if t.edited else ""),
+                              icon=widgets.dot_icon(ctx.color(t.category))),
                  widgets.Cell(names.get(t.account, ""), tone="dim"),
                  widgets.Cell(("+" if t.cents > 0 else "") + fmt.cents(t.cents), right=True, tone=fmt.gain(t.cents))]
                 for t in shown]

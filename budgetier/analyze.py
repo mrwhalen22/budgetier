@@ -313,9 +313,10 @@ def _kind(category: str, cents: int, account_type: str) -> str:
     return "refund"
 
 
-def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: dict | None = None) -> list[dict]:
+def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: dict | None = None,
+             splits: dict | None = None) -> list[dict]:
     """A transaction changed by hand beats everything, then your rules, then what's built in."""
-    keys = edit_keys(rows) if edits else [""] * len(rows)
+    keys = edit_keys(rows) if edits or splits else [""] * len(rows)
     default_rules = [(re.compile(p), c, m) for p, c, m in DEFAULT_RULES]
     saved_at = [(re.compile(p), SAVED, m) for p, m in _SAVED_AT]
 
@@ -355,7 +356,7 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: d
             "date": r["date"], "account": r["account"], "description": r["description"],
             "merchant": merchant, "category": category, "cents": r["cents"],
             "balance": r["balance"], "kind": _kind(category, r["cents"], account_type),
-            "ruled": ruled, "edited": bool(edit), "matched": False, "source": r.get("source", ""),
+            "ruled": ruled, "edited": bool(edit), "matched": False, "source": r.get("source", ""), "key": key,
         })
     _pair_transfers(out, accounts)
     first_seen: dict[str, date] = {}
@@ -370,6 +371,35 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: d
             cards = paid_cards(r["description"], accounts)
             if not cards or any((r["date"] - first_seen[c]).days < 31 for c in cards if c in first_seen):
                 r["kind"], r["category"] = "estimate", ESTIMATED
+    return _split(out, accounts, splits) if splits else out
+
+
+def valid_split(split) -> bool:
+    """Two or more parts, each with a category and an amount above zero, in cents."""
+    parts = split.get("parts") if isinstance(split, dict) else None
+    return (isinstance(parts, list) and len(parts) >= 2
+            and all(isinstance(p, dict) and isinstance(p.get("category"), str) and p["category"].strip()
+                    and type(p.get("cents")) is int and p["cents"] > 0 and isinstance(p.get("merchant", ""), str)
+                    for p in parts))
+
+
+def _split(rows: list[dict], accounts: dict, splits: dict) -> list[dict]:
+    """A transaction split by hand stands as its parts, each with its own category, all on
+    the same day and in the same direction. A split that no longer adds up to the amount,
+    because the transaction changed since, is left out rather than guessed at."""
+    out = []
+    for r in rows:
+        split = splits.get(r["key"])
+        if not split or sum(p["cents"] for p in split["parts"]) != abs(r["cents"]):
+            out.append(r)
+            continue
+        sign = 1 if r["cents"] > 0 else -1
+        for part in split["parts"]:
+            cents = sign * part["cents"]
+            out.append({**r, "cents": cents, "category": part["category"].strip(),
+                        "merchant": part.get("merchant", "").strip() or r["merchant"],
+                        "kind": _kind(part["category"].strip(), cents, accounts[r["account"]]["type"]),
+                        "edited": True, "split": True, "whole": r["cents"], "matched": False})
     return out
 
 
