@@ -8,7 +8,6 @@ from __future__ import annotations
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QButtonGroup,
-    QComboBox,
     QFrame,
     QGridLayout,
     QLineEdit,
@@ -20,6 +19,7 @@ from PySide6.QtWidgets import (
 
 from . import fmt, theme, widgets
 from .dialogs import Dialog, attempt, busy
+from .popup import Dropdown
 
 TYPES = (("checking", "Checking"), ("savings", "Savings"), ("credit", "Credit card"))
 LIST_HEIGHT = 520  # the review scrolls past this
@@ -29,8 +29,8 @@ def field(label: str, editor: QWidget) -> QWidget:
     return widgets.column(widgets.text(label, "field"), editor, spacing=theme.SPACE[1])
 
 
-def type_box(chosen: str, enabled: bool = True) -> QComboBox:
-    box = QComboBox()
+def type_box(chosen: str, enabled: bool = True) -> Dropdown:
+    box = Dropdown()
     box.setAccessibleName("Type")
     for value, label in TYPES:
         box.addItem(label, value)

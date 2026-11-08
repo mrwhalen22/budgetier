@@ -6,11 +6,12 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtWidgets import QComboBox, QFrame, QGridLayout, QLineEdit, QVBoxLayout
+from PySide6.QtWidgets import QFrame, QGridLayout, QLineEdit, QVBoxLayout
 
 from . import fmt, theme, widgets
 from .dialogs import Dialog, attempt, busy, confirm
 from .importing import done_rows, field, scrolling, type_box
+from .popup import Dropdown
 
 NEW, SKIP = "", "skip"
 
@@ -48,7 +49,7 @@ class AccountPanel(QFrame):
         if not usd:
             column.addWidget(widgets.text("Only US dollar accounts can sync, so this one is skipped.", "sub"))
             return
-        self.link = QComboBox()
+        self.link = Dropdown()
         self.link.setAccessibleName("Add to")
         for choice in existing:
             self.link.addItem(choice["name"], choice["id"])

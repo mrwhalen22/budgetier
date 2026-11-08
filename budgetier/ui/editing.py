@@ -8,11 +8,12 @@ from __future__ import annotations
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QFont
-from PySide6.QtWidgets import QButtonGroup, QComboBox, QFrame, QGridLayout, QLineEdit, QRadioButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QButtonGroup, QFrame, QGridLayout, QLineEdit, QRadioButton, QVBoxLayout, QWidget
 
 from .. import analyze, views
 from . import fmt, theme, widgets
 from .dialogs import Dialog, attempt, busy, confirm
+from .popup import Dropdown
 
 JUST_THIS = "Changes only this transaction. Rules won't change it again."
 EVERYTHING = "Applies to every matching transaction, past and future."
@@ -67,7 +68,7 @@ class RuleDialog(Dialog):
         self.name = QLineEdit()
         self.name.setPlaceholderText("Name to display")
         self.name.setAccessibleName("Show as")
-        self.category = QComboBox()
+        self.category = Dropdown()
         self.category.setAccessibleName("Category")
         self.category.activated.connect(self._category_chosen)
         self.new = QLineEdit()

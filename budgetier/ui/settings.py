@@ -1,6 +1,6 @@
-"""The window's own settings, in settings.json in the data folder: the look, and whether the
-tour has been seen. The page kept these in the browser; a setting that can't be read is
-worth no more than its default."""
+"""The window's own settings, in settings.json in the data folder: the look, motion, and
+whether the tour has been seen. A setting that can't be read is worth no more than its
+default."""
 from __future__ import annotations
 
 import json
