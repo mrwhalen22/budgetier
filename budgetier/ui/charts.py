@@ -74,10 +74,10 @@ class Tip(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.title, self.rows = "", []
         self.font_title = QFont(chart.font())
-        self.font_title.setPixelSize(theme.TEXT["sm"])
+        self.font_title.setPixelSize(theme.px("sm"))
         self.font_title.setWeight(QFont.DemiBold)
         self.font_row = _tabular(QFont(chart.font()))
-        self.font_row.setPixelSize(theme.TEXT["sm"])
+        self.font_row.setPixelSize(theme.px("sm"))
         self.font_total = _tabular(QFont(self.font_row))
         self.font_total.setWeight(QFont.DemiBold)
 
@@ -162,6 +162,7 @@ class Chart(QWidget):
         self.labels, self.titles, self.on_pick = labels, titles, on_pick
         self.kind, self.stacked, self.partial_month = kind, stacked, partial_month
         self.base = height
+        self.left, self.bottom = theme.px(LEFT), theme.px(BOTTOM)  # room for the axis labels, as big as the text
         self.at = -1  # the month being read
         self.grown = 0.0 if motion.on() and grow_next else 1.0  # how far the bars have grown in
         self.shade = 0.0  # how strongly the month being read is shaded
@@ -232,19 +233,19 @@ class Chart(QWidget):
         width, height = max(self.width(), 280), self.height()
         lo, hi = self.bounds()
         bottom, top, tick = scale(lo, hi)
-        band = (width - LEFT - RIGHT) / max(len(self.months), 1)
+        band = (width - self.left - RIGHT) / max(len(self.months), 1)
 
         def y(v: float) -> float:
-            return TOP + (height - TOP - BOTTOM) * (top - v) / (top - bottom)
+            return TOP + (height - TOP - self.bottom) * (top - v) / (top - bottom)
 
         def x(i: int) -> float:
-            return LEFT + band * i
+            return self.left + band * i
 
         return width, height, top, tick, bottom, band, x, y
 
     def index_at(self, px: float) -> int:
         _, _, _, _, _, band, _, _ = self.frame()
-        i = int((px - LEFT) // band) if band else -1
+        i = int((px - self.left) // band) if band else -1
         return i if 0 <= i < len(self.months) else -1
 
     def peak(self, i: int) -> float:
@@ -266,7 +267,7 @@ class Chart(QWidget):
             return
         width, height, top, tick, bottom, band, x, y = self.frame()
         small = QFont(self.font())
-        small.setPixelSize(11)
+        small.setPixelSize(theme.px(11))
         painter.setFont(small)
 
         if 0 <= self.at < len(self.months) and self.shade > 0:
@@ -274,21 +275,23 @@ class Chart(QWidget):
             shade.setAlphaF(shade.alphaF() * self.shade)
             painter.setPen(Qt.NoPen)
             painter.setBrush(shade)
-            painter.drawRoundedRect(QRectF(x(self.at) + 2, TOP, band - 4, height - TOP - BOTTOM), 6, 6)
+            painter.drawRoundedRect(QRectF(x(self.at) + 2, TOP, band - 4, height - TOP - self.bottom), 6, 6)
         v = bottom
         while v <= top + tick / 2:
             painter.setPen(QPen(_qcolor(t["line"] if v == 0 else t["line-soft"]), 1))
-            painter.drawLine(QPointF(LEFT, y(v)), QPointF(width - RIGHT, y(v)))
+            painter.drawLine(QPointF(self.left, y(v)), QPointF(width - RIGHT, y(v)))
             painter.setPen(QColor(t["muted"]))
-            painter.drawText(QRectF(0, y(v) - 8, LEFT - 8, 16), Qt.AlignRight | Qt.AlignVCenter, fmt.short(v))
+            painter.drawText(QRectF(0, y(v) - self.bottom / 2, self.left - 8, self.bottom), Qt.AlignRight | Qt.AlignVCenter,
+                             fmt.short(v))
             v += tick
-        every = math.ceil(len(self.months) / max(1, math.floor((width - LEFT - RIGHT) / LABEL_EVERY)))
+        every = math.ceil(len(self.months) / max(1, math.floor((width - self.left - RIGHT) / theme.px(LABEL_EVERY))))
         for i, m in enumerate(self.months):
             if i % every == 0:
                 year = len(self.months) <= 6 or m.endswith("-01")
                 middle = x(i) + band / 2
                 painter.setPen(QColor(t["ink"] if i == self.at else t["muted"]))
-                painter.drawText(QRectF(middle - 60, height - BOTTOM + 4, 120, BOTTOM - 4), Qt.AlignHCenter | Qt.AlignTop,
+                painter.drawText(QRectF(middle - 60, height - self.bottom + 4, 120, self.bottom - 4),
+                                 Qt.AlignHCenter | Qt.AlignTop,
                                  self.labels[i] if self.labels else fmt.month_name(m, year))
 
         def grown(v: float) -> float:
@@ -404,7 +407,7 @@ class Chart(QWidget):
             self.note = Tip(self)
         self.note.set(*self.tip(i))
         _, _, _, _, _, band, x, y = self.frame()
-        anchor = self.mapToGlobal(QPointF(x(i) + band / 2, min(y(self.peak(i)), self.height() - BOTTOM)).toPoint())
+        anchor = self.mapToGlobal(QPointF(x(i) + band / 2, min(y(self.peak(i)), self.height() - self.bottom)).toPoint())
         window = self.window()
         bounds = QRect(window.mapToGlobal(QPoint(0, 0)), window.size())
         self.note.show_at(anchor, bounds)
