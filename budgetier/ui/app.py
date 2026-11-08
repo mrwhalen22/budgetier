@@ -375,10 +375,19 @@ class Window(QMainWindow):
             old.deleteLater()
         if not again:
             motion.reveal(page)
+            self._drop(self._drawn)
         self._drawn = tab
         if at:
             QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(at))
         self.setWindowTitle(f"{tab} · Budgetier")
+
+    def _drop(self, tab: str | None) -> None:
+        """Let go of a tab that's no longer showing. It's drawn again whenever it's shown, and
+        every widget kept alive makes a change of look slower, since Qt restyles them all."""
+        if tab in self.pages and self.pages[tab] is not self.stack.currentWidget():
+            old = self.pages[tab].takeWidget()
+            if old is not None:
+                old.deleteLater()
 
     def restyle(self) -> None:
         """Apply the chosen look, and follow the system when the look says to."""

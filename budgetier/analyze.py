@@ -14,7 +14,10 @@ Every row gets a kind, and the totals depend on it:
 """
 from __future__ import annotations
 
+import bisect
 import calendar
+import functools
+import itertools
 import json
 import re
 import statistics
@@ -209,6 +212,7 @@ def category_names() -> list[str]:
     return sorted(names - {UNCATEGORIZED})
 
 
+@functools.lru_cache(maxsize=65536)  # the same few hundred merchants, over and over
 def clean_merchant(description: str) -> str:
     text = description.upper()
     for _ in range(2):
@@ -293,23 +297,36 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: d
     keys = edit_keys(rows) if edits else [""] * len(rows)
     default_rules = [(re.compile(p), c, m) for p, c, m in DEFAULT_RULES]
     saved_at = [(re.compile(p), SAVED, m) for p, m in _SAVED_AT]
+    def match(text: str, positive: bool, account_type: str, bank_category: str) -> tuple:
+        """(category, merchant or None, ruled), from the rules alone."""
+        hit = next((rule for rule in user_rules if rule[0].search(text)), None)
+        ruled = hit is not None
+        if not hit:
+            hit = next((rule for rule in saved_at if rule[0].search(text)), None)
+        if not hit and is_transfer(text, 1 if positive else -1, account_type, bank_category):
+            hit = (None, "Transfer", CARD_PAYMENT if account_type == "credit" else None)
+        if not hit:  # money out is never income, whatever the name: GUSTO'S PIZZA, a pay reversal
+            hit = next((rule for rule in default_rules if rule[0].search(text)
+                        and (rule[1] != "Income" or positive)), None)
+        category = hit[1] if hit else (_bank_category(bank_category) or UNCATEGORIZED)
+        return category, hit[2] if hit else None, ruled
+
+    # A long history repeats the same descriptions again and again, and trying every rule
+    # on each is most of the time a report takes, so each one is matched only once.
+    matched: dict[tuple, tuple] = {}
     out = []
     for r, key in zip(rows, keys):
         account_type = accounts[r["account"]]["type"]
         text = r["description"].upper()
         edit = (edits or {}).get(key)
-        hit = (None, edit["category"], edit.get("merchant") or None) if edit else \
-            next((rule for rule in user_rules if rule[0].search(text)), None)
-        ruled = hit is not None
-        if not hit:
-            hit = next((rule for rule in saved_at if rule[0].search(text)), None)
-        if not hit and is_transfer(text, r["cents"], account_type, r["bank_category"]):
-            hit = (None, "Transfer", CARD_PAYMENT if account_type == "credit" else None)
-        if not hit:  # money out is never income, whatever the name: GUSTO'S PIZZA, a pay reversal
-            hit = next((rule for rule in default_rules if rule[0].search(text)
-                        and (rule[1] != "Income" or r["cents"] > 0)), None)
-        category = hit[1] if hit else (_bank_category(r["bank_category"]) or UNCATEGORIZED)
-        merchant = (hit[2] if hit and hit[2] else None) or clean_merchant(r["description"])
+        if edit:
+            category, named, ruled = edit["category"], edit.get("merchant") or None, True
+        else:
+            facts = (text, r["cents"] > 0, account_type, r["bank_category"])
+            if facts not in matched:
+                matched[facts] = match(*facts)
+            category, named, ruled = matched[facts]
+        merchant = named or clean_merchant(r["description"])
         out.append({
             "date": r["date"], "account": r["account"], "description": r["description"],
             "merchant": merchant, "category": category, "cents": r["cents"],
@@ -464,11 +481,18 @@ def find_recurring(rows: list[dict]) -> list[dict]:
     return found
 
 
+@functools.lru_cache(maxsize=65536)  # one for each day there's data, used for every row
+def month_of(day: date) -> str:
+    """2026-03 for a day in March 2026."""
+    return f"{day.year:04d}-{day.month:02d}"
+
+
 def monthly_summary(rows: list[dict]) -> list[dict]:
     months: dict[str, dict] = {}
     for r in rows:
-        m = months.setdefault(r["date"].strftime("%Y-%m"), {
-            "month": r["date"].strftime("%Y-%m"), "income": 0, "spending": 0, "categories": defaultdict(int)})
+        month = month_of(r["date"])
+        m = months.setdefault(month, {
+            "month": month, "income": 0, "spending": 0, "categories": defaultdict(int)})
         if r["kind"] == "income":
             m["income"] += r["cents"]
         elif r["kind"] in SPENDING_KINDS:
@@ -495,10 +519,15 @@ def _calculated(own: list[dict], info: dict) -> dict:
     if not own:  # a linked account that's been quiet still has a balance
         return {"months": {anchor["date"][:7]: start}, "current": start, "as_of": anchor["date"], "calculated": True}
 
-    def on(day: date) -> int:
-        after = sum(r["cents"] for r in own if pinned < r["date"] <= day)
-        undone = sum(r["cents"] for r in own if day < r["date"] <= pinned)
-        return start + after - undone
+    days = [r["date"] for r in own]  # own is in date order
+    totals = list(itertools.accumulate((r["cents"] for r in own), initial=0))
+
+    def through(day: date) -> int:
+        """Every transaction up to and including day, added up."""
+        return totals[bisect.bisect_right(days, day)]
+
+    def on(day: date) -> int:  # what came after the pinned day is added, what came before it undone
+        return start + through(day) - through(pinned)
 
     last = max(pinned, own[-1]["date"])
     return {"months": {m: on(end) for m, end in _month_ends(own[0]["date"], last)},
@@ -526,7 +555,7 @@ def account_balances(rows: list[dict], accounts: dict) -> dict[str, dict]:
 def coverage_start(rows: list[dict], accounts: dict) -> str | None:
     """First month with checking history. Rent and most bills live there, so a month
     before it shows only card spending and would drag every average down."""
-    months = [r["date"].strftime("%Y-%m") for r in rows if accounts[r["account"]]["type"] == "checking"]
+    months = [month_of(r["date"]) for r in rows if accounts[r["account"]]["type"] == "checking"]
     return min(months, default=None)
 
 
@@ -568,7 +597,7 @@ def month_end_balances(rows: list[dict]) -> dict[str, dict[str, int]]:
     balances: dict[str, dict[str, int]] = defaultdict(dict)
     for r in sorted(rows, key=lambda r: r["date"]):  # stable: last row of a month is the close
         if r["balance"] is not None:
-            balances[r["account"]][r["date"].strftime("%Y-%m")] = r["balance"]
+            balances[r["account"]][month_of(r["date"])] = r["balance"]
     return dict(balances)
 
 
