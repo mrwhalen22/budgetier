@@ -4,7 +4,7 @@ from datetime import date
 from pathlib import Path
 
 from budgetier import views
-from tests.browser import build
+from tests.fake import build
 from tests.qt import QtCase
 
 BUILT = ("Overview", "Spending", "Recurring", "Largest", "Savings", "Help")

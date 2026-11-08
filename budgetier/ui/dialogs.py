@@ -1,6 +1,6 @@
 """Dialogs, the note that pops up after a change, and the button that's busy while it works.
 
-As on the page: Escape does what a dialog's first button does, because closing can have a job
+Escape does what a dialog's first button does, because closing can have a job
 to finish, and Enter in a field presses the dialog's main button.
 """
 from __future__ import annotations
@@ -154,7 +154,7 @@ def confirm(parent: QWidget, title: str, words: str, run: Callable[[], tuple[boo
 
 
 def announce(widget: QWidget) -> None:
-    """Tell a screen reader that this just appeared, as the page's live regions did."""
+    """Tell a screen reader that this just appeared."""
     try:
         from PySide6.QtGui import QAccessible, QAccessibleEvent
         QAccessible.updateAccessibility(QAccessibleEvent(widget, QAccessible.Event.Alert))

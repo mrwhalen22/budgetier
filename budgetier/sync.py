@@ -113,7 +113,6 @@ class BankSync:
             credentials.save(self.home, simplefin.claim(token))
             self.state = {"connected": True, "links": {}}
             self._save()
-            self.budget.refresh()
         try:
             return self.review()
         except BudgetError as e:
@@ -133,7 +132,6 @@ class BankSync:
             self._feed.accounts.sort(key=lambda a: (a.connection, a.name))
             self._feed_at = now
             self._record_outcome(self._feed, synced=False)
-            self.budget.refresh()
         return {"accounts": [self._proposal(a) for a in self._feed.accounts], "existing": self._existing(),
                 "problems": self._feed.problems}
 
@@ -200,7 +198,6 @@ class BankSync:
             raise
         self._record_outcome(self._feed)
         self._feed = None
-        self.budget.refresh()
         return {"results": results, "added": sum(r["added"] for r in results)}
 
     def _since(self, key: str, account: str) -> str | None:
@@ -259,7 +256,6 @@ class BankSync:
 
         self.budget._transaction(change)
         self._record_outcome(feed)
-        self.budget.refresh()
         return {"added": sum(r["added"] for r in results), "problems": feed.problems,
                 "unlinked": self.state["unlinked"]}
 
@@ -284,4 +280,3 @@ class BankSync:
             if anchor:
                 anchor.pop("live", None)
         self.budget.ledger.save_accounts()
-        self.budget.refresh()

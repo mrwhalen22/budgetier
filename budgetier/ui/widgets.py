@@ -89,7 +89,7 @@ def card(*children, title: str = "", note: str = "") -> QFrame:
 
 
 class Grid(QWidget):
-    """Lays its children out in as many equal columns as fit, like the page's auto-fit grids."""
+    """Lays its children out in as many equal columns as fit, like a wrapping grid."""
 
     def __init__(self, children: list[QWidget], least: int, gap: int = theme.SPACE[4], most: int = 4, top: bool = False):
         super().__init__()

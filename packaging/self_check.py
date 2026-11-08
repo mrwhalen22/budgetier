@@ -2,10 +2,10 @@
 
     python packaging/self_check.py
 
-Run after build_installer.py. Every tab must draw, the page must reach the app, and the
-monthly totals the page works out must match the workbook's to the cent. Bank sync's
-packaged parts must be present too: secure storage, and certificates for HTTPS. The data
-folder has a space in its name, as the real one on macOS does.
+Run after build_installer.py. Every tab must draw, and the monthly totals the window shows
+must match the workbook's to the cent. Bank sync's packaged parts must be present too:
+secure storage, and certificates for HTTPS. The data folder has a space in its name, as the
+real one on macOS does. On Linux with no screen, Qt draws offscreen.
 """
 import json
 import os
@@ -32,7 +32,7 @@ def run(*args: object) -> None:
 
 
 def python_totals() -> list[list]:
-    """What the workbook reports for the demo data. The page works this out separately."""
+    """What the workbook reports for the demo data. The window works this out separately."""
     ledger = Ledger(DEMO)
     rows = analyze.classify(ledger.rows, ledger.accounts, analyze.load_rules(DEMO / "rules.csv"))
     return [[m["month"], m["income"], m["spending"]] for m in analyze.monthly_summary(rows)]
@@ -45,6 +45,8 @@ def main() -> int:
         home, result = Path(folder) / "Budget Data", Path(folder) / "result.json"
         shutil.copytree(DEMO, home)
         env = {**os.environ, "BUDGETIER_HOME": str(home), "BUDGETIER_SELF_CHECK": str(result)}
+        if sys.platform == "linux" and not os.environ.get("DISPLAY"):
+            env["QT_QPA_PLATFORM"] = "offscreen"
         try:
             code = subprocess.run([APP[sys.platform]], env=env, timeout=120).returncode
         except subprocess.TimeoutExpired:
@@ -59,8 +61,8 @@ def main() -> int:
     if not matched:
         print(f"Totals differ. Python: {totals}")
     syncing = report.get("certificates", 0) > 0 and "fail" not in report.get("secure_store", "fail").lower()
-    good = (code == 0 and report.get("api") == "function" and report.get("rows", 0) > 0 and not report["failed"]
-            and matched and syncing and report.get("first_click") is True)
+    good = (code == 0 and report.get("window") == "Window" and report.get("rows", 0) > 0 and not report["failed"]
+            and matched and syncing)
     print("Self check passed." if good else "Self check FAILED.")
     return 0 if good else 1
 

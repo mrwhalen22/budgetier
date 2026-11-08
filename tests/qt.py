@@ -14,7 +14,7 @@ try:
 except ImportError:
     QApplication = None
 
-from tests.browser import build
+from tests.fake import build
 from tests.support import Tmp
 
 REQUIRED = os.environ.get("BUDGETIER_QT") == "required"

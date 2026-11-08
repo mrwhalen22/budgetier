@@ -1,10 +1,4 @@
-"""The Qt window: a sidebar of tabs beside the tab that's showing.
-
-This is the move described in docs/qt-migration.md. Until the move is done the desktop app
-still opens the page, and this window opens only from the command line:
-
-    python -m budgetier.ui [--home FOLDER]
-"""
+"""The window: a sidebar of tabs beside the tab that's showing."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -41,7 +35,7 @@ from .tabs import BUILDERS, transactions
 from .updating import Updating
 from .work import Runner
 
-# The order the sidebar lists them in, as on the page.
+# The order the sidebar lists them in.
 TABS = ("Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help")
 # Which step of docs/qt-migration.md brings each tab, until it's here.
 COMING: dict[str, int] = {}
@@ -154,7 +148,7 @@ class Window(QMainWindow):
             button.setIconSize(QSize(ICON, ICON))
             button.setAccessibleName(tab)
             button.setCursor(Qt.PointingHandCursor)
-            button.setFocusPolicy(Qt.TabFocus)  # a click shouldn't leave a focus ring, as on the page
+            button.setFocusPolicy(Qt.TabFocus)  # a click shouldn't leave a focus ring
             button.clicked.connect(lambda _checked=False, tab=tab: self.show_tab(tab))
             button.installEventFilter(self)  # the arrow keys move between tabs
             self.tab_group.addButton(button)
@@ -257,7 +251,7 @@ class Window(QMainWindow):
                 if group is not None:
                     box.insertSeparator(box.count())
                 box.addItem(name)
-                model.item(box.count() - 1).setEnabled(False)  # a heading, as the page's list had
+                model.item(box.count() - 1).setEnabled(False)  # a heading, not a choice
                 group = name
             box.addItem(label, value)
         box.setCurrentIndex(box.findData(self.choice.range))

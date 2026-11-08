@@ -5,7 +5,7 @@ from pathlib import Path
 from unittest import mock
 
 from budgetier import updates
-from tests.browser import build
+from tests.fake import build
 from tests.qt import QtCase
 
 

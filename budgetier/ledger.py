@@ -1,6 +1,6 @@
 """The durable store: every transaction ever imported, per account, in plain CSV.
 
-Everything else (dashboard, workbook, categories) is regenerated from these
+Everything else (the window, the workbook, categories) is worked out again from these
 files, so changing a rule applies to the whole history.
 """
 from __future__ import annotations

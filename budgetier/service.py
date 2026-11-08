@@ -19,7 +19,7 @@ import tempfile
 from datetime import date
 from pathlib import Path
 
-from . import analyze, pdf2csv, report_html, report_xlsx, rules
+from . import analyze, pdf2csv, report_xlsx, rules
 from .accounts import TYPES, account_id, account_name, pin_balance, purchases_look_positive, sample_row
 from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
@@ -57,7 +57,6 @@ class Budget:
         self.home = Path(home)
         self.imported = self.home / "imported"
         self.output = self.home / "output"
-        self.html_path = self.output / "budget.html"
         self.rules_path = self.home / "rules.csv"
         self.budgets_path = self.home / "budgets.json"
         self.edits_path = self.home / analyze.EDITS_FILE
@@ -80,17 +79,6 @@ class Budget:
         rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path), edits)
         checks = analyze.checks(rows, self.ledger.accounts, self.ledger.imports)
         return rows, analyze.find_recurring(rows), self.notices + checks
-
-    def refresh(self) -> Path:
-        budgets = self.budgets()  # first: a damaged file adds a notice to the checks
-        rows, recurring, checks = self.analysis()
-        report_html.write(self.html_path, rows, self.ledger.accounts, recurring, checks, self.ledger.imports,
-                          {"rules": self.rules(), "version": app_version(), "sync": self.sync.status(),
-                           "updates": self.updates.status(),
-                           "budgets": analyze.budget_report(rows, self.ledger.accounts, budgets),
-                           "allCategories": sorted({*analyze.category_names(), *(r["category"] for r in self.rules()),
-                                                    "Transfer", analyze.SAVED})})
-        return self.html_path
 
     def export_workbook(self, path: Path) -> None:
         if not self.ledger.rows:
@@ -305,7 +293,6 @@ class Budget:
             if undo:
                 undo()
             raise
-        self.refresh()
 
     def remove_import(self, key: str) -> dict:
         entries = [i for i in self.ledger.imports if self._key(i) == key]
@@ -397,7 +384,6 @@ class Budget:
 
     def _write_rule_lines(self, lines: list[str]) -> None:
         write_files({self.rules_path: "\n".join(lines) + "\n"})
-        self.refresh()
 
     def save_rule(self, original: str | None, text: str, category: str, merchant: str, advanced: bool = False) -> dict:
         """New rules go first: the first match wins, and a new one is usually the more specific."""
@@ -444,7 +430,6 @@ class Budget:
 
     def _write_edits(self, edits: dict[str, dict]) -> None:
         write_files({self.edits_path: json.dumps(edits, indent=2, sort_keys=True)})
-        self.refresh()
 
     def save_edit(self, tx: dict, category: str, merchant: str) -> None:
         """Change one transaction, leaving rules and everything else as they are."""
@@ -489,7 +474,6 @@ class Budget:
 
     def _write_budgets(self, budgets: dict[str, dict]) -> None:
         write_files({self.budgets_path: json.dumps(budgets, indent=2, sort_keys=True)})
-        self.refresh()
 
     def save_budget(self, category: str, mode: str, value: str) -> None:
         category = category.strip()
@@ -543,4 +527,3 @@ class Budget:
         if cents is not None:
             pin_balance(info, cents, day)
         self.ledger.save_accounts()
-        self.refresh()

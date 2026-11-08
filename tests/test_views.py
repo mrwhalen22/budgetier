@@ -5,7 +5,7 @@ from datetime import date
 from pathlib import Path
 
 from budgetier import views
-from tests.browser import FIRST, LAST, UNSORTED, build
+from tests.fake import FIRST, LAST, UNSORTED, build
 
 
 class Made(unittest.TestCase):

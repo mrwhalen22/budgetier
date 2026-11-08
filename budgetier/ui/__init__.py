@@ -1,1 +1,1 @@
-"""The Qt Widgets window that replaces the page. See docs/qt-migration.md."""
+"""The Qt Widgets window. See docs/qt-migration.md for how it came to be."""

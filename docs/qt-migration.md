@@ -1,5 +1,7 @@
 # Moving Budgetier to Qt Widgets
 
+**Done.** All seven steps are in. This page stays as the record of why and how.
+
 Budgetier's window today is a web page: 23 JavaScript files and 5 stylesheets, run in three
 different browsers (WebView2 on Windows, WebKit on a Mac, Qt's browser on Linux), talking
 to Python through pywebview. This plan replaces that page with a Qt Widgets window written

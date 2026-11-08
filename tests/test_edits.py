@@ -6,7 +6,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from tests.browser import UNSORTED, build
+from tests.fake import UNSORTED, build
 from tests.qt import QtCase
 
 
