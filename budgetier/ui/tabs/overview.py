@@ -155,6 +155,17 @@ def hero(ctx: Context, o: views.Overview) -> QFrame:
     return frame
 
 
+def reminder(ctx: Context) -> QWidget | None:
+    """When the numbers are a while out of date: sync, or add recent files."""
+    found = views.reminder(ctx.snapshot, ctx.sync)
+    if found is None or ctx.window is None:
+        return None
+    go = QPushButton("Sync now" if found.action == "sync" else "Add files")
+    go.setProperty("kind", "primary")
+    go.clicked.connect(lambda _=False: ctx.window.sync() if found.action == "sync" else ctx.window.add_files())
+    return widgets.banner("info", found.title, found.detail, ctx.tokens, go)
+
+
 def build(ctx: Context) -> QWidget:
     s, t = ctx.snapshot, ctx.tokens
     if not s.txns:
@@ -191,7 +202,7 @@ def build(ctx: Context) -> QWidget:
     column = QVBoxLayout(page)
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(theme.SPACE[4])
-    for part in (widgets.notices(o.warnings, t), this_month(ctx, o.this_month), hero(ctx, o), figures, split):
+    for part in (reminder(ctx), widgets.notices(o.warnings, t), this_month(ctx, o.this_month), hero(ctx, o), figures, split):
         if part is not None:
             column.addWidget(part)
     return page

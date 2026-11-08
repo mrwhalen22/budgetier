@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime
 
 from . import analyze
 from .accounts import INVESTED, KEPT
@@ -537,6 +537,47 @@ def savings(s: Snapshot, choice: Choice) -> Savings:
         moved=moved, balance=sum(a.balance for a in held) if held else None, months=[r.month for r in scope], nets=nets,
         running=running, balance_months=months,
         balance_lines=[(a.name, [a.balances.get(m) for m in months]) for a in shown])
+
+
+# ---- reminders to bring things up to date
+
+SYNC_AFTER_DAYS = 7  # a week without a sync is worth a reminder
+FILES_AFTER_DAYS = 30  # files come monthly, as statements do
+
+
+@dataclass(frozen=True)
+class Reminder:
+    title: str
+    detail: str
+    action: str  # "sync" or "add": what its button does
+
+
+def _ago(days: int) -> str:
+    return "today" if days == 0 else "yesterday" if days == 1 else f"{days} days ago"
+
+
+def reminder(s: Snapshot, sync: dict, now: datetime | None = None) -> Reminder | None:
+    """Whether the numbers are out of date enough to say so: a bank connection that hasn't
+    synced in a week, or files that stop more than a month back."""
+    now = now or datetime.now()
+    if sync.get("connected") and sync.get("linked"):
+        last = sync.get("lastSync")
+        if not last:
+            return Reminder("Not synced yet", "Sync to bring in your linked accounts' recent transactions.", "sync")
+        try:
+            days = (now.date() - datetime.fromisoformat(last).date()).days  # calendar days, as people count them
+        except (TypeError, ValueError):
+            return None
+        if days < SYNC_AFTER_DAYS:
+            return None
+        return Reminder(f"Last synced {_ago(days)}", "Sync to bring these numbers up to date.", "sync")
+    if sync.get("connected") or not s.txns:
+        return None
+    days = (now.date() - date.fromisoformat(s.end)).days
+    if days < FILES_AFTER_DAYS:
+        return None
+    return Reminder(f"Your newest transaction is from {day_name(s.end)}, {_ago(days)}",
+                    "Download recent history from your banks and add it to bring these numbers up to date.", "add")
 
 
 # ---- Investments

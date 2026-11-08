@@ -414,10 +414,10 @@ class Window(QMainWindow):
             self.toast.say(str(result))
 
     def context(self) -> Context:
-        status = self.budget.updates.status()
+        status, sync = self.budget.updates.status(), self.budget.sync.status()
         return Context(self.snapshot, self.choice, theme.tokens(self.mode, self.look.palette), self.open_transactions,
                        self.choose_range, self.render, self.options, app_version(),
-                       self.budget.sync.status()["connected"], status, self.editing, self)
+                       sync["connected"], status, self.editing, self, sync)
 
     def render(self) -> None:
         """Draw the tab that's showing, from the data and filters as they are now."""

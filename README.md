@@ -49,6 +49,9 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
 
+When the numbers are a while out of date, the Overview says so with a button to fix it:
+after a week without a bank sync, or when your newest transaction is over a month old.
+
 A change to a category, a rule, a budget or an account's details can be undone: choose
 **Undo** in the note that appears, or press Ctrl+Z. Removing a file or an account asks
 first instead, since it rebuilds the account.
