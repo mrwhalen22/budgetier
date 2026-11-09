@@ -269,6 +269,8 @@ class Editing:
             buttons = [("Cancel", dialog.dismiss, ""),
                        *([("Undo change", self._clear_edit, "")] if tx is not None and tx.edited and not tx.split else []),
                        *([("Change split" if tx.split else "Split", lambda: self._split(tx), "")] if tx is not None else []),
+                       *([("Edit note" if tx.note or tx.tags else "Add note", lambda: self._note(tx), "")]
+                         if tx is not None else []),
                        ("Save", self._save, "primary")]
         dialog.load(o, lead, buttons)
         if not dialog.isVisible():
@@ -338,6 +340,12 @@ class Editing:
         from .splitting import split
         self.dialog.dismiss()
         split(self.window, tx)
+
+    def _note(self, tx: views.Tx) -> None:
+        """A note and tags, in a dialog of their own."""
+        from .noting import note
+        self.dialog.dismiss()
+        note(self.window, tx)
 
     def _clear_edit(self) -> None:
         dialog = self.dialog

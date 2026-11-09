@@ -39,7 +39,10 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   transaction and nothing else, select its row and choose **Just this transaction**.
   To give one transaction several categories, like a Costco trip that was part groceries
   and part household, choose **Split** and give each part an amount; they need to add up
-  to the whole.
+  to the whole. **Add note** keeps a few words with one transaction, like "reimbursed by
+  work", and tags gather transactions across categories: tag everything a trip cost
+  "Japan trip" and the Spending tab shows what it came to. Search `#Japan trip` on the
+  Transactions tab to list them.
 - **Budgets** sets a monthly target for a category, as a dollar amount or a percent of
   income, and shows what's left. A percent target follows each month's income. While a
   month is still in progress it uses the average of the last 3 complete months instead,
@@ -146,6 +149,7 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `imported/` | A copy of each imported file, needed to remove files safely |
 | `splits.json` | Transactions you split into parts |
 | `goals.json` | Your savings goals |
+| `notes.json` | Notes and tags on transactions |
 | `settings.json` | Your look, motion, the retirement estimate's numbers, where the window was left, what you'd seen last time, and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 

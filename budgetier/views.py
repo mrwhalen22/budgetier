@@ -52,6 +52,8 @@ class Tx:
     key: str = ""  # how edits and splits find it, when there are any
     whole: int = 0  # for a part of a split transaction: the whole of it; otherwise its own amount
     split: bool = False
+    note: str = ""
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -187,7 +189,7 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
     return Snapshot(
         txns=[Tx(i, r["date"].isoformat(), analyze.month_of(r["date"]), r["account"], r["description"], r["merchant"],
                  r["category"], r["kind"], r["cents"], bool(r.get("edited")), r.get("key", ""), r.get("whole", r["cents"]),
-                 bool(r.get("split"))) for i, r in enumerate(rows)],
+                 bool(r.get("split")), r.get("note", ""), tuple(r.get("tags", ()))) for i, r in enumerate(rows)],
         accounts=summaries, categories=[c for c, _ in spend.most_common()], end=end.isoformat(),
         partial_month=analyze.partial_month(end), coverage_from=analyze.coverage_start(rows, accounts),
         recurring=[Recurring(e["merchant"], e["category"], e["kind"], e["cadence"], e["count"], _cents(e["amount"]),
@@ -946,10 +948,13 @@ class Found:
 
 def transactions(s: Snapshot, choice: Choice, query: str = "", category: str = "", kind: str = "",
                  sort: str = "date", descending: bool = True) -> Found:
-    """Newest first unless asked otherwise. Ties keep the ledger's order either way."""
-    q = query.lower()
+    """Newest first unless asked otherwise. Ties keep the ledger's order either way. A search
+    looks in notes too, and #japan finds what's tagged Japan, but not what merely mentions it."""
+    q = query.lower().strip()
+    tag = q[1:].strip() if q.startswith("#") else None
     found = [t for t in selected(s, choice) if (not category or t.category == category) and (not kind or t.kind == kind)
-             and (not q or q in f"{t.description} {t.merchant}".lower())]
+             and (not q or (any(x.lower() == tag for x in t.tags) if tag is not None
+                            else q in f"{t.description} {t.merchant} {t.note}".lower()))]
     names = {a.id: a.name for a in s.accounts}
     key = SORTS[sort]
     found.sort(key=lambda t: key(t, names), reverse=descending)
@@ -1294,3 +1299,45 @@ def forecast(s: Snapshot, today: date | None = None, ahead: int = AHEAD_DAYS) ->
     return Forecast(items, today.isoformat(), start.isoformat() if start and known else None,
                     sum(a.balance for a in known) if known else None, days, path, low, low_day,
                     sum(u.cents for u in upcoming if u.cents < 0), sum(u.cents for u in upcoming if u.cents > 0))
+
+
+# ---- Tags
+
+
+@dataclass(frozen=True)
+class Tagged:
+    tag: str
+    spent: int  # spending less refunds, so positive
+    received: int  # income
+    count: int
+    first: str
+    last: str
+    categories: list[tuple[str, int]]  # where the spending went, most first
+
+
+def tags(s: Snapshot, choice: Choice) -> list[Tagged]:
+    """What each tag gathers, in the period: a trip or a project across all its categories."""
+    by: dict[str, list[Tx]] = {}
+    names: dict[str, str] = {}
+    for t in selected(s, choice):
+        for tag in t.tags:
+            names.setdefault(tag.lower(), tag)
+            by.setdefault(tag.lower(), []).append(t)
+    out = []
+    for key, found in by.items():
+        spending = [t for t in found if t.kind in analyze.SPENDING_KINDS]
+        where: Counter = Counter()
+        for t in spending:
+            where[t.category] -= t.cents
+        out.append(Tagged(names[key], -sum(t.cents for t in spending), sum(t.cents for t in found if t.kind == "income"),
+                          len(found), min(t.date for t in found), max(t.date for t in found), where.most_common()))
+    return sorted(out, key=lambda x: (-x.spent, x.tag.lower()))
+
+
+def all_tags(s: Snapshot) -> list[str]:
+    """Every tag used, for suggesting as you type."""
+    found: dict[str, str] = {}
+    for t in s.txns:
+        for tag in t.tags:
+            found.setdefault(tag.lower(), tag)  # the spelling first used
+    return sorted(found.values(), key=str.lower)

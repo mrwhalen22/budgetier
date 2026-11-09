@@ -19,7 +19,8 @@ class TheFile(unittest.TestCase):
     def test_one_row_each_with_plain_amounts(self):
         rows = self.rows([tx(), tx("ACME PAYROLL", 312100, "Acme", "Income")])
         self.assertEqual(rows[0], export.HEADERS)
-        self.assertEqual(rows[1], ["2026-10-01", "Kroger", "KROGER #123", "Groceries", "expense", "-45.00", "Chase Card 0002"])
+        self.assertEqual(rows[1], ["2026-10-01", "Kroger", "KROGER #123", "Groceries", "expense", "-45.00", "Chase Card 0002",
+                                   "", ""])
         self.assertEqual(rows[2][5], "3121.00")
 
     def test_text_a_spreadsheet_would_run_is_kept_as_text(self):

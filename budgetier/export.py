@@ -5,7 +5,7 @@ import csv
 import io
 from pathlib import Path
 
-HEADERS = ["Date", "Merchant", "Description", "Category", "Kind", "Amount", "Account"]
+HEADERS = ["Date", "Merchant", "Description", "Category", "Kind", "Amount", "Account", "Note", "Tags"]
 # A spreadsheet runs a cell that starts with one of these as a formula, and a bank description
 # can say anything, so text like that is kept as text with a leading apostrophe.
 _FORMULA = ("=", "+", "-", "@", "\t", "\r")
@@ -22,7 +22,8 @@ def csv_text(txns, account_names: dict[str, str]) -> str:
     writer.writerow(HEADERS)
     for t in txns:
         writer.writerow([t.date, _text(t.merchant), _text(t.description), _text(t.category), t.kind,
-                         f"{t.cents / 100:.2f}", _text(account_names.get(t.account, ""))])
+                         f"{t.cents / 100:.2f}", _text(account_names.get(t.account, "")), _text(t.note),
+                         _text(", ".join(t.tags))])
     return out.getvalue()
 
 

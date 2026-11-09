@@ -96,6 +96,7 @@ class Budget:
         self.edits_path = self.home / analyze.EDITS_FILE
         self.splits_path = self.home / "splits.json"
         self.goals_path = self.home / "goals.json"
+        self.notes_path = self.home / "notes.json"
         self.updates = Updater(self.home, app_version())
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
@@ -112,9 +113,13 @@ class Budget:
 
     def analysis(self):
         """Every transaction with its category and kind, the recurring payments, and the checks."""
-        edits, splits = self.edits(), self.splits()  # first: a damaged file adds a notice to the checks
+        edits, splits, notes = self.edits(), self.splits(), self.notes()  # first: a damaged file adds a notice to the checks
         rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path), edits,
-                                splits)
+                                splits, keyed=bool(notes))
+        for r in rows if notes else ():
+            found = notes.get(r["key"])
+            if found:
+                r["note"], r["tags"] = found.get("note", "").strip(), list(found.get("tags", []))
         checks = analyze.checks(rows, self.ledger.accounts, self.ledger.imports)
         return rows, analyze.find_recurring(rows), self.notices + checks
 
@@ -529,6 +534,26 @@ class Budget:
             raise BudgetError("That split is already gone.")
         self._write_splits(splits)
 
+    # ---- notes and tags
+
+    def notes(self) -> dict[str, dict]:
+        """Transactions with a note or tags, by analyze.edit_key."""
+        return self._choices(self.notes_path, analyze.valid_note, "notes")
+
+    def save_note(self, tx: dict, note: str, tags: str) -> None:
+        """Words about one transaction, and tags separated by commas. Neither of them clears it."""
+        note = note.strip()
+        if len(note) > analyze.NOTE_LONGEST:
+            raise BudgetError(f"Keep the note under {analyze.NOTE_LONGEST} characters.")
+        key = self._edit_key(tx)
+        notes = self.notes()
+        found = analyze.read_tags(tags)
+        if note or found:
+            notes[key] = {"note": note, "tags": found}
+        elif notes.pop(key, None) is None:
+            return
+        write_files({self.notes_path: json.dumps(notes, indent=2, sort_keys=True)})
+
     # ---- budgets
 
     def budgets(self) -> dict[str, dict]:
@@ -649,7 +674,7 @@ class Budget:
     def _undo_files(self) -> list[Path]:
         """What the small changes write: rules, single transactions, budgets and account details.
         Imports and removals rebuild the ledger and ask first, so they aren't undone this way."""
-        return [self.rules_path, self.edits_path, self.splits_path, self.budgets_path, self.goals_path,
+        return [self.rules_path, self.edits_path, self.splits_path, self.budgets_path, self.goals_path, self.notes_path,
                 self.ledger.accounts_path]
 
     @staticmethod
