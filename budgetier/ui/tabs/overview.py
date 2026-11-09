@@ -46,9 +46,12 @@ def welcome(ctx: Context) -> QWidget:
                               "this computer.")], 300, most=2)
     banks = QPushButton("See which banks work")
     banks.clicked.connect(lambda: w.show_tab("Help"))
+    try_it = QPushButton("Try it with sample data")
+    try_it.setToolTip("Look around made-up data first. It's kept apart from yours and thrown away afterwards.")
+    try_it.clicked.connect(lambda: w.try_sample())
     return widgets.column(widgets.text("Welcome to Budgetier", "h1"),
                           widgets.text("See where your money goes. Start by bringing in your accounts.", "dim"),
-                          start, widgets.row(banks), spacing=theme.SPACE[4])
+                          start, widgets.row(banks, try_it), spacing=theme.SPACE[4])
 
 
 def stat(key: str, value: str, sub: str = "", tone: str = "") -> QWidget:
@@ -158,6 +161,8 @@ def hero(ctx: Context, o: views.Overview) -> QFrame:
 def whats_new(ctx: Context) -> QWidget | None:
     """What came in since you last looked: new transactions, newly recurring payments, price changes."""
     window = ctx.window
+    if getattr(window, "sample_home", None):
+        return None  # what's new is about your own data
     found = views.news(ctx.snapshot, getattr(window, "seen", None))
     if found is None:
         return None

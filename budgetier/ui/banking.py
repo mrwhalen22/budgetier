@@ -100,6 +100,8 @@ class Banking:
 
     def act(self) -> None:
         """What the sidebar's bank button does, by how far along the connection is."""
+        if self.window.blocked_by_sample():
+            return
         s = self.status()
         if not s["connected"]:
             self.connect_form()
@@ -110,7 +112,9 @@ class Banking:
 
     # ---- connecting
 
-    def connect_form(self) -> Dialog:
+    def connect_form(self) -> Dialog | None:
+        if self.window.blocked_by_sample():
+            return None
         dialog = Dialog(self.window, "Connect SimpleFIN",
                         "Paste the setup token from your SimpleFIN account. It only works once.")
         self.token = QLineEdit()
