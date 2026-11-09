@@ -510,10 +510,13 @@ class Syncing(Server):
         self.later()
         self.assertEqual(self.budget.sync.sync()["unlinked"], 1)
 
-    def test_other_currencies_are_skipped(self):
+    def test_another_currency_needs_a_rate_or_is_skipped(self):
         self.bridge.feed["eur"] = {"name": "Euro 1111", "balance": "5.00", "currency": "EUR", "transactions": []}
         plan = self.connect()
-        self.budget.sync.link(plan["accounts"])
+        with self.assertRaises(BudgetError):  # see tests/test_currencies.py for the rest
+            self.budget.sync.link(plan["accounts"])
+        plan = self.budget.sync.review()
+        self.budget.sync.link([{**a, "account": "skip"} if a["currency"] == "EUR" else a for a in plan["accounts"]])
         self.assertNotIn("c1/eur", self.budget.sync.links)
 
     def test_syncing_adds_only_what_is_new(self):

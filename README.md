@@ -187,6 +187,12 @@ that was. Under **Sync** on the Accounts tab you can also have it sync by itself
 Budgetier opens (unless it synced within the hour), or once a day while it's open. A sync
 by itself waits for the passcode, and a problem shows as a note rather than stopping you.
 
+An account in another currency asks what one unit is worth in dollars when you choose it.
+Its amounts and balance are turned into dollars at that rate as they come in, and each row
+keeps its own amount at the end of its description, like `CAFE PARIS (EUR -12.50)`. A new
+rate, set under **Exchange rates** on the Accounts tab, applies to what comes in after it.
+Accounts in something with no exchange rate, such as reward points, are skipped.
+
 - **Privacy:** with sync on, SimpleFIN and the services behind it handle your transactions.
   Budgetier gets read-only access, sends SimpleFIN nothing but the request, and keeps the
   connection in Windows Credential Manager or the macOS Keychain, not the data folder.
