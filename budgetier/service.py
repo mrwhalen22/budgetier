@@ -52,6 +52,34 @@ def _valid_target(target) -> bool:
             and type(target.get("value")) in (int, float) and target["value"] > 0)
 
 
+def _new_id(taken) -> str:
+    n = 1
+    while f"goal-{n}" in taken:
+        n += 1
+    return f"goal-{n}"
+
+
+def _valid_goal(goal) -> bool:
+    """A name, a target above zero in cents, and either accounts that hold it or an amount
+    kept up to date by hand. A date to reach it by is optional."""
+    if not isinstance(goal, dict) or not isinstance(goal.get("name"), str) or not goal["name"].strip():
+        return False
+    if type(goal.get("target")) is not int or goal["target"] <= 0:
+        return False
+    accounts = goal.get("accounts", [])
+    if not isinstance(accounts, list) or not all(isinstance(a, str) for a in accounts):
+        return False
+    if not accounts and (type(goal.get("saved")) is not int or goal["saved"] < 0):
+        return False
+    for day in (goal.get("by"), goal.get("since")):
+        if day is not None:
+            try:
+                date.fromisoformat(day)
+            except (TypeError, ValueError):
+                return False
+    return True
+
+
 class Budget:
     def __init__(self, home: Path):
         self.home = Path(home)
@@ -61,6 +89,7 @@ class Budget:
         self.budgets_path = self.home / "budgets.json"
         self.edits_path = self.home / analyze.EDITS_FILE
         self.splits_path = self.home / "splits.json"
+        self.goals_path = self.home / "goals.json"
         self.updates = Updater(self.home, app_version())
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
@@ -553,12 +582,62 @@ class Budget:
         del budgets[category]
         self._write_budgets(budgets)
 
+    # ---- savings goals
+
+    def goals(self) -> dict[str, dict]:
+        """Goal id to goal: what it's for, the target, and how far along it is."""
+        return self._choices(self.goals_path, _valid_goal, "savings goals")
+
+    def save_goal(self, goal_id: str | None, name: str, target: str, by: str | None, accounts: list[str],
+                  saved: str = "", today: date | None = None) -> str:
+        """Add a goal, or change one. It's held in the accounts chosen, or else in an amount
+        you keep up to date. When it was set and what it started from stay as they were, so
+        how it's going is still measured from the start."""
+        name = " ".join(name.split())
+        if not name:
+            raise BudgetError("Give the goal a name.")
+        cents = parse_money(target)
+        if cents is None or cents <= 0:
+            raise BudgetError("Enter a target above zero.")
+        accounts = [a for a in dict.fromkeys(accounts) if a]
+        missing = [a for a in accounts if a not in self.ledger.accounts]
+        if missing:
+            raise BudgetError("One of those accounts is gone. Choose again.")
+        today = today or date.today()
+        if by:
+            try:
+                when = date.fromisoformat(by)
+            except ValueError as e:
+                raise BudgetError("Choose a date to reach it by, or none.") from e
+            if when <= today:
+                raise BudgetError("Choose a date in the future to reach it by.")
+        goals = self.goals()
+        old = goals.get(goal_id or "", {})
+        goal = {"name": name, "target": cents, "by": by or None, "accounts": accounts,
+                "since": old.get("since", today.isoformat())}
+        if not accounts:
+            amount = parse_money(saved) if saved.strip() else 0
+            if amount is None or amount < 0:
+                raise BudgetError("Enter what's saved so far, or leave it blank for nothing yet.")
+            goal["saved"] = amount
+            goal["start"] = old.get("start", amount) if not old.get("accounts") else amount
+        goal_id = goal_id if goal_id in goals else _new_id(goals)
+        write_files({self.goals_path: json.dumps({**goals, goal_id: goal}, indent=2, sort_keys=True)})
+        return goal_id
+
+    def delete_goal(self, goal_id: str) -> None:
+        goals = self.goals()
+        if goals.pop(goal_id, None) is None:
+            raise BudgetError("That goal is already gone.")
+        write_files({self.goals_path: json.dumps(goals, indent=2, sort_keys=True)})
+
     # ---- undoing the last small change
 
     def _undo_files(self) -> list[Path]:
         """What the small changes write: rules, single transactions, budgets and account details.
         Imports and removals rebuild the ledger and ask first, so they aren't undone this way."""
-        return [self.rules_path, self.edits_path, self.splits_path, self.budgets_path, self.ledger.accounts_path]
+        return [self.rules_path, self.edits_path, self.splits_path, self.budgets_path, self.goals_path,
+                self.ledger.accounts_path]
 
     @staticmethod
     def _read(path: Path) -> bytes | None:
