@@ -43,7 +43,9 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
 - **Budgets** sets a monthly target for a category, as a dollar amount or a percent of
   income, and shows what's left. A percent target follows each month's income. While a
   month is still in progress it uses the average of the last 3 complete months instead,
-  because your pay may not have landed yet.
+  because your pay may not have landed yet. Tick **Carry what's left into next month** for
+  costs that come and go, like gifts or car repairs: what's left at a month's end adds to the
+  next month's target, and going over takes from it, starting from last month.
 - **Savings goals**, also on the Budgets tab, track saving toward something: an emergency
   fund, a trip, next year's car insurance. Keep a goal in a savings or investing account, so
   its balance is the progress, or in an amount you update yourself. Give it a date and it
