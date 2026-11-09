@@ -60,6 +60,7 @@ class Budget:
         self.rules_path = self.home / "rules.csv"
         self.budgets_path = self.home / "budgets.json"
         self.edits_path = self.home / analyze.EDITS_FILE
+        self.splits_path = self.home / "splits.json"
         self.updates = Updater(self.home, app_version())
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
@@ -76,8 +77,9 @@ class Budget:
 
     def analysis(self):
         """Every transaction with its category and kind, the recurring payments, and the checks."""
-        edits = self.edits()  # first: a damaged file adds a notice to the checks
-        rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path), edits)
+        edits, splits = self.edits(), self.splits()  # first: a damaged file adds a notice to the checks
+        rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path), edits,
+                                splits)
         checks = analyze.checks(rows, self.ledger.accounts, self.ledger.imports)
         return rows, analyze.find_recurring(rows), self.notices + checks
 
@@ -421,6 +423,10 @@ class Budget:
         return self._choices(self.edits_path, analyze.valid_edit, "transaction changes")
 
     def _edit_key(self, tx: dict) -> str:
+        if isinstance(tx.get("key"), str) and tx["key"]:  # given straight from the analysis: a split's part has it
+            if tx["key"] not in analyze.edit_keys(self.ledger.rows):
+                raise BudgetError("That transaction is gone.")
+            return tx["key"]
         try:
             key = analyze.edit_key(tx["date"], tx["account"], int(tx["cents"]), tx["description"], int(tx["n"]))
         except (KeyError, TypeError, ValueError, AttributeError) as e:
@@ -438,12 +444,55 @@ class Budget:
             raise BudgetError("Choose a category.")
         key = self._edit_key(tx)
         self._write_edits({**self.edits(), key: {"category": category.strip(), "merchant": merchant.strip()}})
+        splits = self.splits()
+        if splits.pop(key, None) is not None:  # one category for the whole of it now
+            self._write_splits(splits)
 
     def clear_edit(self, tx: dict) -> None:
         edits = self.edits()
         if edits.pop(self._edit_key(tx), None) is None:
             raise BudgetError("That change is already gone.")
         self._write_edits(edits)
+
+    # ---- splitting one transaction into parts
+
+    def splits(self) -> dict[str, dict]:
+        """Transactions split by hand, by analyze.edit_key: parts, each a category and cents."""
+        return self._choices(self.splits_path, analyze.valid_split, "split transactions")
+
+    def _write_splits(self, splits: dict[str, dict]) -> None:
+        write_files({self.splits_path: json.dumps(splits, indent=2, sort_keys=True)})
+
+    def save_split(self, tx: dict, whole: int, parts: list[dict]) -> None:
+        """whole: the transaction's amount in cents. parts: category, amount as typed, and
+        maybe a name; together they must add up to the whole."""
+        kept = []
+        for part in parts:
+            category = (part.get("category") or "").strip()
+            amount = (part.get("amount") or "").strip()
+            if not category and not amount:
+                continue  # an empty line
+            if not category:
+                raise BudgetError("Choose a category for each part.")
+            cents = parse_money(amount) if amount else None
+            if cents is None or cents <= 0:
+                raise BudgetError("Enter an amount above zero for each part.")
+            kept.append({"category": category, "cents": cents, "merchant": (part.get("merchant") or "").strip()})
+        if len(kept) < 2:
+            raise BudgetError("Split it into at least two parts.")
+        total = sum(p["cents"] for p in kept)
+        if total != abs(whole):
+            gap = abs(whole) - total
+            raise BudgetError(f"The parts add up to ${total / 100:,.2f}, {'short' if gap > 0 else 'over'} by "
+                              f"${abs(gap) / 100:,.2f}. They need to come to ${abs(whole) / 100:,.2f}.")
+        key = self._edit_key(tx)
+        self._write_splits({**self.splits(), key: {"parts": kept}})
+
+    def clear_split(self, tx: dict) -> None:
+        splits = self.splits()
+        if splits.pop(self._edit_key(tx), None) is None:
+            raise BudgetError("That split is already gone.")
+        self._write_splits(splits)
 
     # ---- budgets
 
@@ -509,7 +558,7 @@ class Budget:
     def _undo_files(self) -> list[Path]:
         """What the small changes write: rules, single transactions, budgets and account details.
         Imports and removals rebuild the ledger and ask first, so they aren't undone this way."""
-        return [self.rules_path, self.edits_path, self.budgets_path, self.ledger.accounts_path]
+        return [self.rules_path, self.edits_path, self.splits_path, self.budgets_path, self.ledger.accounts_path]
 
     @staticmethod
     def _read(path: Path) -> bytes | None:
