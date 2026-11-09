@@ -1,5 +1,6 @@
 -c constraints.txt
 certifi==2026.10.23
+cryptography==50.0.2  # encrypting the data folder; pdfplumber needs it too
 keyring==25.7.0
 openpyxl==3.1.5
 pdfplumber==0.11.10

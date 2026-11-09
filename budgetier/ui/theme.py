@@ -71,7 +71,10 @@ class Look:
 
 def load_look(home: Path) -> Look:
     """A look that can't be read is worth nothing more than the default."""
-    saved = settings.load(home).get("look")
+    return read_look(settings.load(home).get("look"))
+
+
+def read_look(saved) -> Look:
     if not isinstance(saved, dict):
         saved = {}
     mode = saved.get("mode") if saved.get("mode") in MODES else Look.mode
@@ -145,7 +148,7 @@ def style_sheet(t: dict[str, str], scale: float = 1.0) -> str:
     return f"""
 * {{ font-size: {text['md']}px; }}
 QWidget {{ color: {c['ink']}; }}
-QMainWindow, #content, #view {{ background: {c['page']}; }}
+QMainWindow, #content, #view, #lockScreen {{ background: {c['page']}; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
 QToolTip {{ color: {c['ink']}; background: {c['surface']}; border: 1px solid {c['line']};
     padding: {SPACE[2]}px {SPACE[3]}px; font-size: {text['sm']}px; }}
