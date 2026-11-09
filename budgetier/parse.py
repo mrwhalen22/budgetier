@@ -260,6 +260,8 @@ def _guess_type(text: str) -> str | None:
     text = text.lower()
     if re.search(r"\b(401 ?\(?k\)?|403 ?\(?b\)?|457 ?\(b\)|ira|roth|retirement|pension)(\b|$)", text):
         return "retirement"
+    if re.search(r"\b(loan|mortgage|heloc|line of credit|auto finance)\b", text):
+        return "loan"
     if re.search(r"saving", text):
         return "savings"
     if re.search(r"checking", text):

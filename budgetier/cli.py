@@ -41,12 +41,12 @@ def _resolve(parsed: ParsedFile, args, known: dict) -> tuple[str | None, str | N
 
 
 def _ask_type(bank: str, number: str, guess: str) -> str:
-    choices = {"1": "checking", "2": "savings", "3": "credit", "4": "investment", "5": "retirement",
-               "c": "checking", "s": "savings", "cc": "credit", "credit": "credit"}
+    choices = {"1": "checking", "2": "savings", "3": "credit", "4": "investment", "5": "retirement", "6": "loan",
+               "c": "checking", "s": "savings", "cc": "credit", "credit": "credit", "loan": "loan"}
     while True:
         default = next(k for k, v in choices.items() if v == guess)
         answer = _ask(f"    {bank} {number} is new. 1 = checking, 2 = savings, "
-                      f"3 = credit card, 4 = investing, 5 = retirement [{default}]: ").lower()
+                      f"3 = credit card, 4 = investing, 5 = retirement, 6 = loan [{default}]: ").lower()
         if not answer:
             return guess
         if answer in choices:
@@ -132,7 +132,7 @@ def _ask_balances(ledger: Ledger) -> None:
         if (account in has_column or account not in has_rows
                 or "balance_anchor" in info or info.get("balance_skipped")):
             continue
-        question = (f"What do you owe on {info['name']} right now?" if info["type"] == "credit"
+        question = (f"What do you owe on {info['name']} right now?" if info["type"] in ("credit", "loan")
                     else f"What's the balance of {info['name']} right now?")
         while True:
             try:
