@@ -9,7 +9,7 @@ import sys
 import traceback
 from pathlib import Path
 
-from . import credentials, simplefin, views
+from . import credentials, simplefin, vault, views
 from .storage import DataError, app_home, hold_lock
 
 log = logging.getLogger("budgetier")
@@ -40,7 +40,8 @@ def self_check(window, result: str) -> None:
     months = sorted({t.month for t in txns})
     report = {"window": type(window).__name__, "rows": len(txns), "failed": failed,
               "months": [[m.month, m.income, m.spending] for m in views.monthly(txns, months)],
-              "secure_store": credentials.backend(), "certificates": simplefin.certificate_count()}
+              "secure_store": credentials.backend(), "certificates": simplefin.certificate_count(),
+              "encryption": vault.self_test()}
     Path(result).write_text(json.dumps(report), encoding="utf-8")
     window.close()
 
@@ -60,9 +61,11 @@ def main(home: Path | None = None) -> int:
         from PySide6.QtCore import QTimer
 
         from .service import Budget
+        from .ui import locking
         from .ui.app import Window, application
-
         app = application()
+        if not locking.unlock_at_start(home):  # encrypted, and you chose not to open it
+            return 0
         budget = Budget(home)
         budget.updates.clean()
         window = Window(budget)
