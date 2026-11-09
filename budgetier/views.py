@@ -1341,3 +1341,128 @@ def all_tags(s: Snapshot) -> list[str]:
         for tag in t.tags:
             found.setdefault(tag.lower(), tag)  # the spelling first used
     return sorted(found.values(), key=str.lower)
+
+
+# ---- Year in review
+
+
+TAX_LINES = (  # label, what's counted, a word on it
+    ("Donations and gifts", "Gifts & Donations", "Gifts to people are in here too, so pick out the donations."),
+    ("Taxes paid", "Taxes", "Payments to the IRS and state, beyond what came out of your pay."),
+    ("Medical", "Health", "Doctors, pharmacies and the like."),
+    ("Education", "Education", "Tuition and student loan payments filed as Education."),
+    ("Loan interest", analyze.INTEREST, "Interest charged inside a loan account, like a mortgage."),
+    ("Paid into retirement", analyze.CONTRIBUTED, "Contributions into retirement accounts."),
+)
+
+
+@dataclass(frozen=True)
+class TaxLine:
+    label: str
+    category: str
+    total: int  # positive
+    count: int
+    note: str
+
+
+@dataclass(frozen=True)
+class Change:
+    category: str
+    now: int
+    before: int
+
+    @property
+    def gap(self) -> int:
+        return self.now - self.before
+
+
+@dataclass(frozen=True)
+class YearReview:
+    year: str
+    years: list[str]  # newest first
+    months: list[Month]  # the year's months that have data
+    complete: bool  # all twelve months are in
+    income: int
+    spending: int
+    before: tuple[int, int] | None  # last year's income and spending, over the months both years have
+    compared: int  # how many months that is
+    matched: tuple[int, int] | None  # this year's income and spending over those same months
+    categories: list[Change]  # by this year's spending
+    up: list[Change]  # the biggest rises on last year
+    down: list[Change]
+    merchants: list[tuple[str, int, int]]  # name, spent, how many
+    largest: list[Tx]
+    busiest: Month | None  # the month with the most spending
+    quietest: Month | None
+    tax: list[TaxLine]
+
+    @property
+    def kept(self) -> int:
+        return self.income - self.spending
+
+    @property
+    def rate(self) -> float | None:
+        return self.kept / self.income if self.income > 0 else None
+
+
+def review_years(s: Snapshot) -> list[str]:
+    return sorted({m[:4] for m in s.months}, reverse=True)
+
+
+def year_review(s: Snapshot, year: str | None = None) -> YearReview:
+    """A year at a glance, beside the same months of the year before, and what to look at
+    when doing taxes. Over all accounts: the filters at the top don't apply."""
+    years = review_years(s)
+    year = year if year in years else (years[0] if years else str(date.today().year))
+    shown = [m for m in s.months if m.startswith(year)]
+    txns = [t for t in s.txns if t.month[:4] == year]
+    rows = [m for m in monthly(txns, shown) if m.income or m.spending]
+    prior_months = [f"{int(year) - 1}{m.month[4:]}" for m in rows]
+    earlier = [t for t in s.txns if t.month in set(prior_months)]
+    # Only months both years have, or a year that began partway would look like a jump.
+    pairs = [(m, b) for m, b in zip(rows, monthly(earlier, prior_months)) if b.income or b.spending]
+    income, spending = sum(m.income for m in rows), sum(m.spending for m in rows)
+    all_now, now_by, before_by = Counter(), Counter(), Counter()
+    for m in rows:
+        all_now.update(m.categories)
+    for m, b in pairs:
+        now_by.update(m.categories)
+        before_by.update(b.categories)
+    categories = sorted((Change(c, v, before_by[c]) for c, v in all_now.items() if v), key=lambda c: -c.now)
+    compared = [Change(c, now_by[c], before_by[c]) for c in {*now_by, *before_by} if now_by[c] or before_by[c]]
+    spent = [t for t in txns if t.kind in ("expense", "estimate")]
+    merchants: dict[str, list[int]] = {}
+    for t in spent:
+        merchants.setdefault(t.merchant, []).append(-t.cents)
+    held = {a.id for a in s.accounts if a.type == "retirement"}
+    tax = []
+    for label, category, note in TAX_LINES:
+        if category == analyze.CONTRIBUTED:
+            found = [t for t in txns if t.category == category and t.account in held and t.cents > 0]
+            total = sum(t.cents for t in found)
+        else:
+            found = [t for t in txns if t.category == category and t.kind in analyze.SPENDING_KINDS]
+            total = -sum(t.cents for t in found)
+        if found:
+            tax.append(TaxLine(label, category, total, len(found), note))
+    return YearReview(
+        year, years, rows, len(rows) == 12 and not (s.partial_month or "").startswith(year),
+        income, spending,
+        (sum(b.income for _, b in pairs), sum(b.spending for _, b in pairs)) if pairs else None, len(pairs),
+        (sum(m.income for m, _ in pairs), sum(m.spending for m, _ in pairs)) if pairs else None,
+        categories,
+        sorted((c for c in compared if c.gap >= 100), key=lambda c: -c.gap)[:3],  # a dollar or more
+        sorted((c for c in compared if c.gap <= -100), key=lambda c: c.gap)[:3],
+        sorted(((n, sum(v), len(v)) for n, v in merchants.items()), key=lambda x: -x[1])[:TOP_MERCHANTS],
+        sorted(spent, key=lambda t: t.cents)[:5],
+        max(rows, key=lambda m: m.spending) if rows else None,
+        min(rows, key=lambda m: m.spending) if len(rows) > 1 else None,
+        tax)
+
+
+def tax_rows(s: Snapshot, year: str) -> list[Tx]:
+    """Every transaction behind the tax-time lines, for a spreadsheet."""
+    wanted = {category for _, category, _ in TAX_LINES}
+    held = {a.id for a in s.accounts if a.type == "retirement"}
+    return [t for t in s.txns if t.month[:4] == year and t.category in wanted
+            and (t.category != analyze.CONTRIBUTED or t.account in held)]
