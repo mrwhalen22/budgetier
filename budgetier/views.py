@@ -117,6 +117,7 @@ class Snapshot:
     rules: list[dict]
     all_categories: list[str]
     months: list[str] = field(default_factory=list)  # every month from the first transaction to the end
+    goals: list[dict] = field(default_factory=list)  # savings goals as saved, each with its id
 
     def __post_init__(self):
         if not self.months:
@@ -155,7 +156,8 @@ def _cents(dollars) -> int:
 
 
 def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[dict], imports: list[dict],
-          budget_report: dict, rules: list[dict], all_categories: list[str], today: date | None = None) -> Snapshot:
+          budget_report: dict, rules: list[dict], all_categories: list[str], today: date | None = None,
+          goals: dict | None = None) -> Snapshot:
     """From the classified rows, recurring payments, checks, imports, budgets and rules."""
     ids = sorted(accounts, key=lambda a: accounts[a]["name"])
     balances = analyze.account_balances(rows, accounts)
@@ -197,7 +199,8 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
         budget_months=[BudgetMonth(m["month"], m["partial"], _cents(m["income"]), _cents(m["base"]),
                                    {c: _cents(v) for c, v in m["spent"].items()},
                                    {c: _cents(v) for c, v in m["targets"].items()}) for m in budget_report["months"]],
-        rules=list(rules), all_categories=list(all_categories))
+        rules=list(rules), all_categories=list(all_categories),
+        goals=[{**g, "id": goal_id} for goal_id, g in (goals or {}).items()])
 
 
 def from_budget(budget) -> Snapshot:
@@ -208,7 +211,7 @@ def from_budget(budget) -> Snapshot:
     names = sorted({*analyze.category_names(), *(r["category"] for r in rules), "Transfer", analyze.SAVED,
                     *analyze.INVESTING_CATEGORIES})
     return build(rows, budget.ledger.accounts, recurring, checks, budget.ledger.imports,
-                 analyze.budget_report(rows, budget.ledger.accounts, budgets), rules, names)
+                 analyze.budget_report(rows, budget.ledger.accounts, budgets), rules, names, goals=budget.goals())
 
 
 # ---- the period and accounts chosen at the top
@@ -1053,3 +1056,81 @@ def budget_preview(s: Snapshot, category: str, mode: str, value: str) -> BudgetP
     amount = round(income * number / 100) if mode == "percent" and number > 0 else None
     share = number * 100 / income if mode == "amount" and number > 0 and income > 0 else None
     return BudgetPreview(average, income, amount, share)
+
+
+# ---- Savings goals
+
+
+@dataclass(frozen=True)
+class Goal:
+    id: str
+    name: str
+    target: int
+    saved: int | None  # None while the accounts it's held in have no balance
+    by: str | None  # YYYY-MM-DD
+    accounts: tuple[str, ...]  # ids; none means an amount kept up to date by hand
+    held_in: str  # where it's kept, in words
+    share: float  # of the target, 0 to 1
+    left: int  # still to save
+    monthly: int | None  # a month from now on, to reach it by its date
+    expected: int | None  # where it would be by now, saving steadily from when it was set
+    state: str  # reached, on track, behind, no date or no balance
+    since: str  # when it was set
+
+
+def _months_until(today: date, when: date) -> int:
+    return max((when.year - today.year) * 12 + when.month - today.month, 1)
+
+
+def _held(accounts: list[Account], month: str) -> int | None:
+    """What these accounts held at a month's end: the last balance known by then, or the
+    first known after it for an account that's newer than the goal."""
+    found = []
+    for a in accounts:
+        before = [m for m in a.balances if m <= month]
+        if before:
+            found.append(a.balances[max(before)])
+        elif a.balances:
+            found.append(a.balances[min(a.balances)])
+    return sum(found) if found else None
+
+
+def goals(s: Snapshot, today: date | None = None) -> list[Goal]:
+    today = today or date.today()
+    by_id = s.by_id
+    out = []
+    for g in s.goals:
+        held = [by_id[a] for a in g.get("accounts", []) if a in by_id]
+        since = g.get("since") or today.isoformat()
+        if g.get("accounts"):
+            known = [a for a in held if a.balance is not None]
+            saved = sum(a.balance for a in known) if known else None
+            start = _held(known, since[:7])
+            where = ", ".join(a.name for a in held) or "an account that's been removed"
+        else:
+            saved, start, where = g.get("saved", 0), g.get("start", g.get("saved", 0)), "an amount you keep up to date"
+        target, by = g["target"], g.get("by")
+        left = max(target - (saved or 0), 0)
+        monthly = expected = None
+        if by and left:
+            monthly = -(-left // _months_until(today, date.fromisoformat(by)))  # rounded up, so it's enough
+        if by and start is not None:
+            begun, end = date.fromisoformat(since), date.fromisoformat(by)
+            elapsed = min(max((today - begun).days, 0), (end - begun).days)
+            expected = round(start + (target - start) * elapsed / max((end - begun).days, 1))
+        if saved is None:
+            state = "no balance"
+        elif saved >= target:
+            state = "reached"
+        elif not by:
+            state = "no date"
+        else:
+            state = "on track" if expected is None or saved >= expected - target // 100 else "behind"
+        out.append(Goal(g["id"], g["name"], target, saved, by, tuple(g.get("accounts", [])), where,
+                        min(max((saved or 0) / target, 0), 1), left, monthly, expected, state, since))
+    return sorted(out, key=lambda x: (x.state == "reached", x.by or "9999", x.name.lower()))
+
+
+def goal_accounts(s: Snapshot) -> list[Account]:
+    """Where a goal can be kept: anything that holds money, not a card or loan."""
+    return [a for a in s.accounts if a.type not in OWED]

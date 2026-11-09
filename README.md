@@ -44,6 +44,10 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   income, and shows what's left. A percent target follows each month's income. While a
   month is still in progress it uses the average of the last 3 complete months instead,
   because your pay may not have landed yet.
+- **Savings goals**, also on the Budgets tab, track saving toward something: an emergency
+  fund, a trip, next year's car insurance. Keep a goal in a savings or investing account, so
+  its balance is the progress, or in an amount you update yourself. Give it a date and it
+  shows what a month gets it there, and whether you're on track from where it started.
 - **Accounts** is where you edit an account, set a balance, remove one imported file or
   a whole account, export the Excel workbook, and open the data folder.
 - **Help** shows which banks work, tips for accurate numbers, the keyboard shortcuts, and a
@@ -134,6 +138,7 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
 | `splits.json` | Transactions you split into parts |
+| `goals.json` | Your savings goals |
 | `settings.json` | Your look, motion, the retirement estimate's numbers, where the window was left, what you'd seen last time, and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 
