@@ -145,7 +145,7 @@ def style_sheet(t: dict[str, str], scale: float = 1.0) -> str:
     return f"""
 * {{ font-size: {text['md']}px; }}
 QWidget {{ color: {c['ink']}; }}
-QMainWindow, #content, #view {{ background: {c['page']}; }}
+QMainWindow, #content, #view, #lockScreen {{ background: {c['page']}; }}
 QScrollArea, QScrollArea > QWidget > QWidget {{ background: transparent; border: none; }}
 QToolTip {{ color: {c['ink']}; background: {c['surface']}; border: 1px solid {c['line']};
     padding: {SPACE[2]}px {SPACE[3]}px; font-size: {text['sm']}px; }}

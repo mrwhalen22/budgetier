@@ -110,9 +110,22 @@ reading while **Updating...** shows beside the tab's title.
 | Ctrl+I | Add files |
 | Ctrl+R | Sync banks |
 | Ctrl+, | Appearance |
+| Ctrl+L | Lock, with a passcode set |
 | F1 | Help |
 
 On a Mac, use Command in place of Ctrl.
+
+## Passcode
+
+**Passcode** on the Accounts tab asks for a passcode when Budgetier opens, and after the time
+away you choose: 5 or 15 minutes, an hour, or only when it opens. Ctrl+L locks it at once.
+Changing or turning it off needs the passcode. Only a salted hash of it is kept, in
+`settings.json`.
+
+It keeps other people at this computer out of the app, but it doesn't encrypt the files in
+your data folder. Those are protected by your sign-in to the computer; to protect them from
+someone who has the disk, turn on BitLocker (Windows) or FileVault (Mac). If you forget the
+passcode, delete the `"lock"` entry from `settings.json` while Budgetier is closed.
 
 ## Updates
 
