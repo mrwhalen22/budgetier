@@ -48,8 +48,9 @@ class AccountPanel(QFrame):
         column.addWidget(widgets.text(f"Balance {fmt.cents(round(account['balance'] * 100))}{currency}, "
                                       f"{account['count']:,} recent transactions", "sub"))
         self.link = None
-        if not usd:
-            column.addWidget(widgets.text("Only US dollar accounts can sync, so this one is skipped.", "sub"))
+        self.rate = None
+        if not account.get("convertible", usd):
+            column.addWidget(widgets.text("Its currency has no exchange rate, so this one is skipped.", "sub"))
             return
         self.link = Dropdown()
         self.link.setAccessibleName("Add to")
@@ -73,6 +74,16 @@ class AccountPanel(QFrame):
         grid.addWidget(field("Last 4 digits, optional", self.number), 0, 1)
         grid.addWidget(field("Type", self.type), 0, 2)
         column.addWidget(self.new)
+        if not usd:
+            code = account["currency"]
+            self.rate = QLineEdit(f"{account['rate']:g}" if account.get("rate") else "")
+            self.rate.setAccessibleName(f"Dollars for 1 {code}")
+            self.rate.setPlaceholderText("1.08")
+            self.rate.setMaximumWidth(theme.px(140))
+            column.addWidget(field(f"Dollars for 1 {code}", self.rate))
+            column.addWidget(widgets.text(f"Amounts are turned into dollars at this rate as they come in, and each keeps "
+                                          f"its {code} amount in its description. Change the rate any time on the "
+                                          "Accounts tab.", "sub"))
         self.link.currentIndexChanged.connect(self._shown)
         self._shown()
 
@@ -84,7 +95,8 @@ class AccountPanel(QFrame):
         if self.link is None:
             return {"key": a["key"], "name": a["name"], "account": SKIP}
         return {"key": a["key"], "name": a["name"], "account": self.link.currentData(), "bank": self.bank.text(),
-                "number": self.number.text(), "type": self.type.currentData()}
+                "number": self.number.text(), "type": self.type.currentData(),
+                **({"rate": self.rate.text()} if self.rate is not None else {})}
 
 
 class Banking:
@@ -239,6 +251,32 @@ class Banking:
                       "Synced. Everything's up to date.")
         return w.runner.start(self.sync.sync, (), answered, "Syncing with your bank...")
 
+    def rates_form(self) -> Dialog:
+        """Change what another currency is worth in dollars, for what comes in from now on."""
+        rates = self.status().get("rates", {})
+        dialog = Dialog(self.window, "Exchange rates",
+                        "What each currency is worth in dollars. A new rate applies to what comes in from now on; what's "
+                        "already in keeps the rate it came in at.")
+        boxes = {}
+        for code, rate in sorted(rates.items()):
+            box = QLineEdit(f"{rate:g}")
+            box.setAccessibleName(f"Dollars for 1 {code}")
+            boxes[code] = box
+            dialog.body.addWidget(field(f"Dollars for 1 {code}", box))
+        dialog.rate_boxes = boxes
+
+        def save():
+            for code, box in boxes.items():
+                ok, result = attempt(self.sync.set_rate, code, box.text())
+                if not ok:
+                    return dialog.show_error(str(result))
+            dialog.dismiss()
+            self.window.changed("Exchange rates saved.")
+
+        dialog.set_buttons([("Cancel", dialog.dismiss, ""), ("Save", save, "primary")])
+        dialog.open()
+        return dialog
+
     def set_auto(self, mode: str) -> None:
         ok, result = attempt(self.sync.set_auto, mode)
         if not ok:
@@ -287,5 +325,9 @@ def sync_card(window) -> QFrame:
     when_box.activated.connect(lambda i: window.banking.set_auto(when_box.itemData(i)))
     when_box.setObjectName("autoSync")
     when_row = widgets.row(widgets.text("Sync", "sub"), when_box, spacing=theme.SPACE[2]) if linked else None
-    return widgets.card(*parts, widgets.row(*actions), when_row, title="Bank sync",
+    rates = s.get("rates") or {}
+    rates_row = widgets.row(widgets.text("Exchange rates: " + ", ".join(f"1 {c} = ${r:g}" for c, r in sorted(rates.items())),
+                                         "sub"), button("Change", window.banking.rates_form), spacing=theme.SPACE[2]) \
+        if rates else None
+    return widgets.card(*parts, widgets.row(*actions), when_row, rates_row, title="Bank sync",
                         note=f"Connected through SimpleFIN. Last synced {when}.{updating}")
