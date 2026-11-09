@@ -86,6 +86,11 @@ After new transactions arrive, the Overview lists what's new since you last look
 many came in and what they add up to, payments newly found to recur, and bills whose price
 changed. **Got it** clears it, as does closing Budgetier after seeing the Overview.
 
+The Overview also gives a heads-up when a budget has used 80% of this month's target with
+days to go, or gone over, and when a charge in the last week is three times what that merchant
+usually takes, or a first charge from somewhere new is $250 or more. **Dismiss all** keeps those
+away; a budget that then goes over is news again.
+
 When the numbers are a while out of date, the Overview says so with a button to fix it:
 after a week without a bank sync, or when your newest transaction is over a month old.
 
