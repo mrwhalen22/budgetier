@@ -48,6 +48,11 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   fund, a trip, next year's car insurance. Keep a goal in a savings or investing account, so
   its balance is the progress, or in an amount you update yourself. Give it a date and it
   shows what a month gets it there, and whether you're on track from where it started.
+- **Recurring** lists bills, subscriptions and regular income, and what's coming up over
+  the next 30 days: each bill and paycheck on its usual day, and card and loan payments
+  guessed from recent ones. With a checking balance set, it shows what they'd do to
+  checking and its lowest point, and the Overview warns when bills would take checking
+  below zero before payday.
 - **Accounts** is where you edit an account, set a balance, remove one imported file or
   a whole account, export the Excel workbook, and open the data folder.
 - **Help** shows which banks work, tips for accurate numbers, the keyboard shortcuts, and a

@@ -5,9 +5,10 @@ for what it needs, given the period and accounts chosen at the top of the window
 """
 from __future__ import annotations
 
+import calendar
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 from . import analyze
 from .accounts import INVESTED, KEPT, OWED
@@ -89,6 +90,7 @@ class Recurring:
     variable: bool
     price_change: int
     account: str  # the account's name
+    account_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -189,7 +191,8 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
         partial_month=analyze.partial_month(end), coverage_from=analyze.coverage_start(rows, accounts),
         recurring=[Recurring(e["merchant"], e["category"], e["kind"], e["cadence"], e["count"], _cents(e["amount"]),
                              _cents(e["per_month"]), _cents(e["low"]), _cents(e["high"]), e["first"], e["last"], e["next"],
-                             e["active"], e["variable"], _cents(e["price_change"]), accounts[e["account"]]["name"])
+                             e["active"], e["variable"], _cents(e["price_change"]), accounts[e["account"]]["name"],
+                             e["account"])
                    for e in recurring],
         checks=list(checks),
         imports=[{**i, "key": i.get("stored") or i["file"], "account": accounts[i["account"]]["name"],
@@ -1134,3 +1137,134 @@ def goals(s: Snapshot, today: date | None = None) -> list[Goal]:
 def goal_accounts(s: Snapshot) -> list[Account]:
     """Where a goal can be kept: anything that holds money, not a card or loan."""
     return [a for a in s.accounts if a.type not in OWED]
+
+
+# ---- What's coming up
+
+
+AHEAD_DAYS = 30
+CARD_PAYMENTS_FROM = 3  # recent payments a card's next one is guessed from
+
+
+@dataclass(frozen=True)
+class Upcoming:
+    day: str  # YYYY-MM-DD
+    merchant: str
+    category: str
+    cents: int  # money out is negative
+    account: str  # the account's name
+    from_checking: bool  # so it moves the forecast
+    variable: bool  # the amount changes from time to time
+    estimated: bool = False  # a card payment, guessed from recent ones
+
+
+@dataclass(frozen=True)
+class Forecast:
+    items: list[Upcoming]  # from the day after the balance through the days ahead, in date order
+    today: str
+    start: str | None  # the checking balance's date, which the forecast starts from
+    balance: int | None  # checking, then
+    days: list[str]
+    path: list[int]  # checking at each day's end
+    low: int | None
+    low_day: str | None
+    bills: int  # due from today on, negative
+    income: int  # due from today on
+
+    @property
+    def short(self) -> bool:
+        return self.low is not None and self.low < 0
+
+
+def _add_months(day: date, months: int, keep: int) -> date:
+    """The same day of the month, months on: the 31st becomes the 30th in a 30-day month."""
+    year, month = divmod(day.month - 1 + months, 12)
+    year, month = day.year + year, month + 1
+    return date(year, month, min(keep, calendar.monthrange(year, month)[1]))
+
+
+MONTHS_APART = {"Monthly": 1, "Quarterly": 3, "Annual": 12}
+
+
+def _repeats(last: date, cadence: str, until: date):
+    """Each day a payment is due after the last one, through until. A monthly bill keeps its
+    day of the month, where 30 days on would drift a day or two each time."""
+    months = MONTHS_APART.get(cadence)
+    step = {"Weekly": 7, "Biweekly": 14}.get(cadence, 30)
+    n = 1
+    while True:
+        day = _add_months(last, months * n, last.day) if months else last + timedelta(days=step * n)
+        if day > until:
+            return
+        yield day
+        n += 1
+
+
+def _debt_payments(s: Snapshot, checking: set[str], after: date, until: date) -> list[Upcoming]:
+    """Paying a card or a loan isn't spending, so Recurring leaves it out, but it leaves checking
+    all the same. The next is guessed from each one's recent payments: their average, a month on."""
+    by_name: dict[tuple[str, str], list[Tx]] = {}
+    for t in s.txns:
+        if t.account not in checking or t.cents >= 0 or t.kind not in ("transfer", "estimate"):
+            continue
+        if analyze.is_card_payment(t.description):
+            by_name.setdefault((t.merchant, "Card payment"), []).append(t)
+        elif analyze.is_loan_payment(t.description):
+            by_name.setdefault((t.merchant, analyze.LOAN_PAYMENT), []).append(t)
+    found = []
+    for (name, what), paid in by_name.items():
+        recent = paid[-CARD_PAYMENTS_FROM:]
+        last = date.fromisoformat(recent[-1].date)
+        if (after - last).days > 45:
+            continue  # no longer paid from here
+        amount = round(sum(t.cents for t in recent) / len(recent))
+        for day in _repeats(last, "Monthly", until):
+            if day > after:
+                found.append(Upcoming(day.isoformat(), name, what, amount, s.by_id[recent[-1].account].name, True,
+                                      len({t.cents for t in recent}) > 1, estimated=True))
+    return found
+
+
+def forecast(s: Snapshot, today: date | None = None, ahead: int = AHEAD_DAYS) -> Forecast:
+    """Bills, income and card payments due over the days ahead, and what they'd do to checking.
+
+    It starts from checking's latest balance, so anything due between then and today that
+    hasn't come in yet counts too."""
+    today = today or date.today()
+    until = today + timedelta(days=ahead)
+    accounts = [a for a in s.accounts if a.type == "checking"]
+    known = [a for a in accounts if a.balance is not None]
+    ids = {a.id for a in accounts}
+    start = max((date.fromisoformat(a.balance_as_of) for a in known if a.balance_as_of), default=None)
+    after = min(start or today, today)
+    items, by_id = [], s.by_id
+    for r in s.recurring:
+        if not r.active or r.kind not in ("expense", "income"):
+            continue
+        if r.account_id in by_id and by_id[r.account_id].type == "loan":
+            continue  # a loan's interest is part of its payment, which is counted already
+        sign = -1 if r.kind == "expense" else 1
+        for day in _repeats(date.fromisoformat(r.last), r.cadence, until):
+            if day > after:
+                items.append(Upcoming(day.isoformat(), r.merchant, r.category, sign * r.amount, r.account, r.account_id in ids,
+                                      r.variable))
+    items += _debt_payments(s, ids, after, until)
+    items.sort(key=lambda u: (u.day, u.cents))
+    upcoming = [u for u in items if u.day >= today.isoformat()]
+    days, path, low, low_day = [], [], None, None
+    if known and start:
+        balance, day, i = sum(a.balance for a in known), start, 0
+        running = balance
+        while day <= until:
+            while i < len(items) and items[i].day <= day.isoformat():
+                running += items[i].cents if items[i].from_checking else 0
+                i += 1
+            if day >= today:
+                days.append(day.isoformat())
+                path.append(running)
+                if low is None or running < low:
+                    low, low_day = running, day.isoformat()
+            day += timedelta(days=1)
+    return Forecast(items, today.isoformat(), start.isoformat() if start and known else None,
+                    sum(a.balance for a in known) if known else None, days, path, low, low_day,
+                    sum(u.cents for u in upcoming if u.cents < 0), sum(u.cents for u in upcoming if u.cents > 0))
