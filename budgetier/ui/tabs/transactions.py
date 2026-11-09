@@ -27,7 +27,7 @@ class Transactions(QWidget):
         s = ctx.snapshot
 
         self.query = QLineEdit(self.state["query"])
-        self.query.setPlaceholderText("Search merchant or description")
+        self.query.setPlaceholderText("Search merchant, description or note, or #tag")
         self.query.setAccessibleName("Search transactions")
         self.query.setObjectName("search")  # Ctrl+F comes here
         self.query.setClearButtonEnabled(True)
@@ -124,9 +124,12 @@ class Transactions(QWidget):
         names = {a.id: a.name for a in ctx.snapshot.accounts}
         shown = found.txns[:st["shown"]]
         rows = [[widgets.Cell(fmt.day_name(t.date), tone="dim", tip=t.description),
-                 widgets.Cell(t.merchant, icon=widgets.mono_icon(t.merchant, ctx.color(t.category)), tip=t.description,
-                              bold=True),
-                 widgets.Cell(t.category + ("  ·  edited" if t.edited else ""), icon=widgets.dot_icon(ctx.color(t.category))),
+                 widgets.Cell(t.merchant + "".join(f"  #{tag}" for tag in t.tags), bold=True,
+                              icon=widgets.mono_icon(t.merchant, ctx.color(t.category)),
+                              tip=t.description + (f"\n\n{t.note}" if t.note else "")),
+                 widgets.Cell(t.category + ("  ·  split" if t.split else "  ·  edited" if t.edited else "")
+                              + ("  ·  note" if t.note else ""),
+                              icon=widgets.dot_icon(ctx.color(t.category))),
                  widgets.Cell(names.get(t.account, ""), tone="dim"),
                  widgets.Cell(("+" if t.cents > 0 else "") + fmt.cents(t.cents), right=True, tone=fmt.gain(t.cents))]
                 for t in shown]

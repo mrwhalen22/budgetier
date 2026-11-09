@@ -46,9 +46,12 @@ def welcome(ctx: Context) -> QWidget:
                               "this computer.")], 300, most=2)
     banks = QPushButton("See which banks work")
     banks.clicked.connect(lambda: w.show_tab("Help"))
+    try_it = QPushButton("Try it with sample data")
+    try_it.setToolTip("Look around made-up data first. It's kept apart from yours and thrown away afterwards.")
+    try_it.clicked.connect(lambda: w.try_sample())
     return widgets.column(widgets.text("Welcome to Budgetier", "h1"),
                           widgets.text("See where your money goes. Start by bringing in your accounts.", "dim"),
-                          start, widgets.row(banks), spacing=theme.SPACE[4])
+                          start, widgets.row(banks, try_it), spacing=theme.SPACE[4])
 
 
 def stat(key: str, value: str, sub: str = "", tone: str = "") -> QWidget:
@@ -158,6 +161,8 @@ def hero(ctx: Context, o: views.Overview) -> QFrame:
 def whats_new(ctx: Context) -> QWidget | None:
     """What came in since you last looked: new transactions, newly recurring payments, price changes."""
     window = ctx.window
+    if getattr(window, "sample_home", None):
+        return None  # what's new is about your own data
     found = views.news(ctx.snapshot, getattr(window, "seen", None))
     if found is None:
         return None
@@ -193,6 +198,40 @@ def reminder(ctx: Context) -> QWidget | None:
     go.setProperty("kind", "primary")
     go.clicked.connect(lambda _=False: ctx.window.sync() if found.action == "sync" else ctx.window.add_files())
     return widgets.banner("info", found.title, found.detail, ctx.tokens, go)
+
+
+def heads_up(ctx: Context) -> QWidget | None:
+    """Budgets running out this month, and charges far from the usual."""
+    window = ctx.window
+    found = views.alerts(ctx.snapshot, set(getattr(window, "dismissed", [])))
+    if not found:
+        return None
+    rows = []
+    for a in found:
+        see = QPushButton("See")
+        see.setProperty("kind", "small")
+        see.clicked.connect(lambda _=False, a=a: ctx.open_transactions(category=a.category, query=a.query))
+        rows.append(widgets.banner(a.level, a.title, a.detail, ctx.tokens, see))
+    done = QPushButton("Dismiss all")
+    done.setProperty("kind", "small")
+    done.clicked.connect(lambda _=False: window.dismiss([a.key for a in found]))
+    frame = widgets.card(*rows, widgets.row(done) if window is not None else None, title="Heads up")
+    frame.setObjectName("headsUp")
+    return frame
+
+
+def running_short(ctx: Context) -> QWidget | None:
+    """When the bills ahead would take checking below zero, before payday does."""
+    f = views.forecast(ctx.snapshot)
+    if not f.short:
+        return None
+    go = QPushButton("See what's due")
+    go.setProperty("kind", "small")
+    go.clicked.connect(lambda _=False: ctx.window.show_tab("Recurring"))
+    return widgets.banner("warning", f"Checking could run short around {fmt.day_name(f.low_day)}",
+                          f"The bills and card payments due before then would take it to {fmt.money(f.low)}, from "
+                          f"{fmt.money(f.balance)} on {fmt.day_name(f.start)}.", ctx.tokens,
+                          go if ctx.window is not None else None)
 
 
 def build(ctx: Context) -> QWidget:
@@ -231,7 +270,8 @@ def build(ctx: Context) -> QWidget:
     column = QVBoxLayout(page)
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(theme.SPACE[4])
-    parts = (reminder(ctx), whats_new(ctx), widgets.notices(o.warnings, t), this_month(ctx, o.this_month), hero(ctx, o),
+    parts = (reminder(ctx), running_short(ctx), heads_up(ctx), whats_new(ctx), widgets.notices(o.warnings, t),
+             this_month(ctx, o.this_month), hero(ctx, o),
              figures, split)
     for part in parts:
         if part is not None:

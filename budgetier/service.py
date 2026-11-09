@@ -23,7 +23,7 @@ from . import analyze, pdf2csv, report_xlsx, rules
 from .accounts import TYPES, account_id, account_name, pin_balance, purchases_look_positive, sample_row
 from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
-from .storage import BudgetError, app_home, read_text, unique_path, write_files
+from .storage import BudgetError, app_home, copy_in, read_bytes, read_text, unique_path, write_files
 from .sync import BankSync
 from .updates import Updater
 
@@ -49,7 +49,41 @@ def literal(pattern: str) -> str | None:
 
 def _valid_target(target) -> bool:
     return (isinstance(target, dict) and target.get("mode") in ("amount", "percent")
-            and type(target.get("value")) in (int, float) and target["value"] > 0)
+            and type(target.get("value")) in (int, float) and target["value"] > 0
+            and isinstance(target.get("rollover", False), bool)
+            and (target.get("since") is None or (isinstance(target["since"], str) and len(target["since"]) == 7)))
+
+
+def _last_month(today: date) -> str:
+    return f"{today.year - 1}-12" if today.month == 1 else f"{today.year}-{today.month - 1:02d}"
+
+
+def _new_id(taken) -> str:
+    n = 1
+    while f"goal-{n}" in taken:
+        n += 1
+    return f"goal-{n}"
+
+
+def _valid_goal(goal) -> bool:
+    """A name, a target above zero in cents, and either accounts that hold it or an amount
+    kept up to date by hand. A date to reach it by is optional."""
+    if not isinstance(goal, dict) or not isinstance(goal.get("name"), str) or not goal["name"].strip():
+        return False
+    if type(goal.get("target")) is not int or goal["target"] <= 0:
+        return False
+    accounts = goal.get("accounts", [])
+    if not isinstance(accounts, list) or not all(isinstance(a, str) for a in accounts):
+        return False
+    if not accounts and (type(goal.get("saved")) is not int or goal["saved"] < 0):
+        return False
+    for day in (goal.get("by"), goal.get("since")):
+        if day is not None:
+            try:
+                date.fromisoformat(day)
+            except (TypeError, ValueError):
+                return False
+    return True
 
 
 class Budget:
@@ -60,11 +94,14 @@ class Budget:
         self.rules_path = self.home / "rules.csv"
         self.budgets_path = self.home / "budgets.json"
         self.edits_path = self.home / analyze.EDITS_FILE
+        self.splits_path = self.home / "splits.json"
+        self.goals_path = self.home / "goals.json"
+        self.notes_path = self.home / "notes.json"
         self.updates = Updater(self.home, app_version())
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
         if not self.rules_path.exists():
-            self.rules_path.write_text(rules.TEMPLATE, encoding="utf-8")
+            write_files({self.rules_path: rules.TEMPLATE})
         self.ledger = Ledger(self.home)
         self.notices: list[dict] = []  # problems found while loading, shown with the checks
         self._pending: dict[str, dict] = {}
@@ -76,8 +113,13 @@ class Budget:
 
     def analysis(self):
         """Every transaction with its category and kind, the recurring payments, and the checks."""
-        edits = self.edits()  # first: a damaged file adds a notice to the checks
-        rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path), edits)
+        edits, splits, notes = self.edits(), self.splits(), self.notes()  # first: a damaged file adds a notice to the checks
+        rows = analyze.classify(self.ledger.rows, self.ledger.accounts, analyze.load_rules(self.rules_path), edits,
+                                splits, keyed=bool(notes))
+        for r in rows if notes else ():
+            found = notes.get(r["key"])
+            if found:
+                r["note"], r["tags"] = found.get("note", "").strip(), list(found.get("tags", []))
         checks = analyze.checks(rows, self.ledger.accounts, self.ledger.imports)
         return rows, analyze.find_recurring(rows), self.notices + checks
 
@@ -162,7 +204,7 @@ class Budget:
             for source, kept in ((csv_path, target), (original, unique_path(self.imported, original.name))):
                 if source != csv_path or kept == target:
                     copies.append(kept)
-                    shutil.copy2(source, kept)
+                    copy_in(source, kept)
         except OSError as e:
             raise BudgetError(f"{original.name} couldn't be read. If it was moved, choose it again.") from e
         return target.name
@@ -421,6 +463,10 @@ class Budget:
         return self._choices(self.edits_path, analyze.valid_edit, "transaction changes")
 
     def _edit_key(self, tx: dict) -> str:
+        if isinstance(tx.get("key"), str) and tx["key"]:  # given straight from the analysis: a split's part has it
+            if tx["key"] not in analyze.edit_keys(self.ledger.rows):
+                raise BudgetError("That transaction is gone.")
+            return tx["key"]
         try:
             key = analyze.edit_key(tx["date"], tx["account"], int(tx["cents"]), tx["description"], int(tx["n"]))
         except (KeyError, TypeError, ValueError, AttributeError) as e:
@@ -438,12 +484,75 @@ class Budget:
             raise BudgetError("Choose a category.")
         key = self._edit_key(tx)
         self._write_edits({**self.edits(), key: {"category": category.strip(), "merchant": merchant.strip()}})
+        splits = self.splits()
+        if splits.pop(key, None) is not None:  # one category for the whole of it now
+            self._write_splits(splits)
 
     def clear_edit(self, tx: dict) -> None:
         edits = self.edits()
         if edits.pop(self._edit_key(tx), None) is None:
             raise BudgetError("That change is already gone.")
         self._write_edits(edits)
+
+    # ---- splitting one transaction into parts
+
+    def splits(self) -> dict[str, dict]:
+        """Transactions split by hand, by analyze.edit_key: parts, each a category and cents."""
+        return self._choices(self.splits_path, analyze.valid_split, "split transactions")
+
+    def _write_splits(self, splits: dict[str, dict]) -> None:
+        write_files({self.splits_path: json.dumps(splits, indent=2, sort_keys=True)})
+
+    def save_split(self, tx: dict, whole: int, parts: list[dict]) -> None:
+        """whole: the transaction's amount in cents. parts: category, amount as typed, and
+        maybe a name; together they must add up to the whole."""
+        kept = []
+        for part in parts:
+            category = (part.get("category") or "").strip()
+            amount = (part.get("amount") or "").strip()
+            if not category and not amount:
+                continue  # an empty line
+            if not category:
+                raise BudgetError("Choose a category for each part.")
+            cents = parse_money(amount) if amount else None
+            if cents is None or cents <= 0:
+                raise BudgetError("Enter an amount above zero for each part.")
+            kept.append({"category": category, "cents": cents, "merchant": (part.get("merchant") or "").strip()})
+        if len(kept) < 2:
+            raise BudgetError("Split it into at least two parts.")
+        total = sum(p["cents"] for p in kept)
+        if total != abs(whole):
+            gap = abs(whole) - total
+            raise BudgetError(f"The parts add up to ${total / 100:,.2f}, {'short' if gap > 0 else 'over'} by "
+                              f"${abs(gap) / 100:,.2f}. They need to come to ${abs(whole) / 100:,.2f}.")
+        key = self._edit_key(tx)
+        self._write_splits({**self.splits(), key: {"parts": kept}})
+
+    def clear_split(self, tx: dict) -> None:
+        splits = self.splits()
+        if splits.pop(self._edit_key(tx), None) is None:
+            raise BudgetError("That split is already gone.")
+        self._write_splits(splits)
+
+    # ---- notes and tags
+
+    def notes(self) -> dict[str, dict]:
+        """Transactions with a note or tags, by analyze.edit_key."""
+        return self._choices(self.notes_path, analyze.valid_note, "notes")
+
+    def save_note(self, tx: dict, note: str, tags: str) -> None:
+        """Words about one transaction, and tags separated by commas. Neither of them clears it."""
+        note = note.strip()
+        if len(note) > analyze.NOTE_LONGEST:
+            raise BudgetError(f"Keep the note under {analyze.NOTE_LONGEST} characters.")
+        key = self._edit_key(tx)
+        notes = self.notes()
+        found = analyze.read_tags(tags)
+        if note or found:
+            notes[key] = {"note": note, "tags": found}
+        elif notes.pop(key, None) is None:
+            return
+        write_files({self.notes_path: json.dumps(notes, indent=2, sort_keys=True)})
 
     # ---- budgets
 
@@ -476,7 +585,9 @@ class Budget:
     def _write_budgets(self, budgets: dict[str, dict]) -> None:
         write_files({self.budgets_path: json.dumps(budgets, indent=2, sort_keys=True)})
 
-    def save_budget(self, category: str, mode: str, value: str) -> None:
+    def save_budget(self, category: str, mode: str, value: str, rollover: bool = False, today: date | None = None) -> None:
+        """rollover carries what's left each month into the next, and what's overspent out of it,
+        from last month on: carrying from the start of history would pile up years of it."""
         category = category.strip()
         if not category:
             raise BudgetError("Choose a category.")
@@ -495,7 +606,12 @@ class Budget:
                 raise BudgetError("Enter a percentage above 0, up to 100.")
         else:
             raise BudgetError("Choose a dollar amount or a percent of income.")
-        self._write_budgets({**self.budgets(), category: {"mode": mode, "value": target}})
+        saved = {"mode": mode, "value": target}
+        if rollover:
+            old = self.budgets().get(category, {})
+            saved.update(rollover=True, since=old.get("since") if old.get("rollover") and old.get("since")
+                         else _last_month(today or date.today()))
+        self._write_budgets({**self.budgets(), category: saved})
 
     def delete_budget(self, category: str) -> None:
         budgets = self.budgets()
@@ -504,16 +620,67 @@ class Budget:
         del budgets[category]
         self._write_budgets(budgets)
 
+    # ---- savings goals
+
+    def goals(self) -> dict[str, dict]:
+        """Goal id to goal: what it's for, the target, and how far along it is."""
+        return self._choices(self.goals_path, _valid_goal, "savings goals")
+
+    def save_goal(self, goal_id: str | None, name: str, target: str, by: str | None, accounts: list[str],
+                  saved: str = "", today: date | None = None) -> str:
+        """Add a goal, or change one. It's held in the accounts chosen, or else in an amount
+        you keep up to date. When it was set and what it started from stay as they were, so
+        how it's going is still measured from the start."""
+        name = " ".join(name.split())
+        if not name:
+            raise BudgetError("Give the goal a name.")
+        cents = parse_money(target)
+        if cents is None or cents <= 0:
+            raise BudgetError("Enter a target above zero.")
+        accounts = [a for a in dict.fromkeys(accounts) if a]
+        missing = [a for a in accounts if a not in self.ledger.accounts]
+        if missing:
+            raise BudgetError("One of those accounts is gone. Choose again.")
+        today = today or date.today()
+        if by:
+            try:
+                when = date.fromisoformat(by)
+            except ValueError as e:
+                raise BudgetError("Choose a date to reach it by, or none.") from e
+            if when <= today:
+                raise BudgetError("Choose a date in the future to reach it by.")
+        goals = self.goals()
+        old = goals.get(goal_id or "", {})
+        goal = {"name": name, "target": cents, "by": by or None, "accounts": accounts,
+                "since": old.get("since", today.isoformat())}
+        if not accounts:
+            amount = parse_money(saved) if saved.strip() else 0
+            if amount is None or amount < 0:
+                raise BudgetError("Enter what's saved so far, or leave it blank for nothing yet.")
+            goal["saved"] = amount
+            goal["start"] = old.get("start", amount) if not old.get("accounts") else amount
+        goal_id = goal_id if goal_id in goals else _new_id(goals)
+        write_files({self.goals_path: json.dumps({**goals, goal_id: goal}, indent=2, sort_keys=True)})
+        return goal_id
+
+    def delete_goal(self, goal_id: str) -> None:
+        goals = self.goals()
+        if goals.pop(goal_id, None) is None:
+            raise BudgetError("That goal is already gone.")
+        write_files({self.goals_path: json.dumps(goals, indent=2, sort_keys=True)})
+
     # ---- undoing the last small change
 
     def _undo_files(self) -> list[Path]:
         """What the small changes write: rules, single transactions, budgets and account details.
         Imports and removals rebuild the ledger and ask first, so they aren't undone this way."""
-        return [self.rules_path, self.edits_path, self.budgets_path, self.ledger.accounts_path]
+        return [self.rules_path, self.edits_path, self.splits_path, self.budgets_path, self.goals_path, self.notes_path,
+                self.ledger.accounts_path]
 
     @staticmethod
     def _read(path: Path) -> bytes | None:
-        return path.read_bytes() if path.exists() else None
+        """What a file says, decrypted: an encrypted file's bytes differ every time it's saved."""
+        return read_bytes(path) if path.exists() else None
 
     def undoable(self, work, *args):
         """Make a small change and keep what it replaced, so it can be undone."""
