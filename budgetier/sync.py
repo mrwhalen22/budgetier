@@ -23,6 +23,9 @@ OVERLAP_DAYS = 5  # some banks date a row before the day it reaches the feed; re
 RECENT = timedelta(minutes=5)  # a second press this soon can't have anything new, and a
 # review this recent is reused: opening the same screen twice shouldn't cost a request
 DAILY_LIMIT = 20  # the server allows about 24 a day and disables access beyond that
+# Syncing by itself: when Budgetier opens, unless it synced within the hour; or once a day.
+AUTO = (("off", "Only when I press Sync now"), ("open", "When Budgetier opens"), ("daily", "Once a day, while it's open"))
+AUTO_AFTER = {"open": timedelta(hours=1), "daily": timedelta(hours=20)}
 
 
 class BankSync:
@@ -64,7 +67,32 @@ class BankSync:
         names = [accounts[link["account"]]["name"] for link in self.links.values() if link["account"] in accounts]
         return {"connected": bool(self.state.get("connected")), "lastSync": self.state.get("last_sync"),
                 "linked": sorted(names), "problems": self.state.get("problems", []),
-                "unlinked": self.state.get("unlinked", 0)}
+                "unlinked": self.state.get("unlinked", 0), "auto": self.auto}
+
+    # ---- syncing by itself
+
+    @property
+    def auto(self) -> str:
+        mode = self.state.get("auto", "off")
+        return mode if mode in AUTO_AFTER else "off"
+
+    def set_auto(self, mode: str) -> None:
+        if mode not in (*AUTO_AFTER, "off"):
+            raise BudgetError("Choose when to sync.")
+        self.state["auto"] = mode
+        self._save()
+
+    def auto_due(self, now: datetime | None = None, opening: bool = False) -> bool:
+        """Whether to sync by itself now: it's set to, there are accounts to update, and the last
+        sync is old enough. When Budgetier opens counts only as it opens."""
+        mode = self.auto
+        if mode == "off" or (mode == "open" and not opening) or not self.state.get("connected") or not self.links:
+            return False
+        last = self.state.get("last_sync")
+        try:
+            return last is None or (now or datetime.now()) - datetime.fromisoformat(last) >= AUTO_AFTER[mode]
+        except ValueError:
+            return True
 
     # ---- limits
 

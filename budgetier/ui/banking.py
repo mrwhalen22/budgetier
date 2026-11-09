@@ -1,6 +1,7 @@
 """Bank sync through SimpleFIN: connect, choose accounts, sync now, and disconnect.
 
-Anything that talks to SimpleFIN runs off the window's thread. A sync only happens when asked.
+Anything that talks to SimpleFIN runs off the window's thread. A sync happens when asked, or
+by itself when Budgetier opens or once a day, if you choose that.
 """
 from __future__ import annotations
 
@@ -8,6 +9,7 @@ from datetime import datetime
 
 from PySide6.QtWidgets import QFrame, QGridLayout, QLineEdit, QVBoxLayout
 
+from ..sync import AUTO
 from . import fmt, theme, widgets
 from .dialogs import Dialog, attempt, busy, confirm
 from .importing import done_rows, field, scrolling, type_box
@@ -219,6 +221,30 @@ class Banking:
             self.window.changed(note)
         self.window.runner.start(self.sync.sync, (), answered, "Syncing...")
 
+    def auto(self, opening: bool = False) -> bool:
+        """Sync by itself, if it's set to and due. Quietly: a problem says so in a note, and the
+        next try waits for the next check, so a bank that's down isn't asked again and again."""
+        w = self.window
+        if w.sample_home or w.locked or w.runner.busy or any(d.isVisible() for d in w.findChildren(Dialog)):
+            return False  # not now: the next check will try again
+        if not self.sync.auto_due(opening=opening):
+            return False
+
+        def answered(ok, done):
+            if not ok:
+                return w.toast.say(f"Couldn't sync by itself: {done}")
+            if done.get("skipped"):
+                return None
+            w.changed(f"Synced: {fmt.plural(done['added'], 'new transaction')}." if done["added"] else
+                      "Synced. Everything's up to date.")
+        return w.runner.start(self.sync.sync, (), answered, "Syncing with your bank...")
+
+    def set_auto(self, mode: str) -> None:
+        ok, result = attempt(self.sync.set_auto, mode)
+        if not ok:
+            return self.window.toast.say(str(result))
+        self.window.toast.say(dict(AUTO)[mode] + ".")
+
     def disconnect(self) -> None:
         confirm(self.window, "Disconnect SimpleFIN?",
                 "Budgetier stops syncing and forgets the connection. Your transactions stay. To cut off access completely, "
@@ -253,5 +279,13 @@ def sync_card(window) -> QFrame:
     actions = [button("Sync now", window.banking.sync_now, "primary")] if linked else []
     actions += [button("Choose accounts", window.banking.choose, "" if linked else "primary"),
                 button("Disconnect", window.banking.disconnect)]
-    return widgets.card(*parts, widgets.row(*actions), title="Bank sync",
+    when_box = Dropdown()
+    when_box.setAccessibleName("Sync")
+    for value, label in AUTO:
+        when_box.addItem(label, value)
+    when_box.setCurrentIndex(max(when_box.findData(s.get("auto", "off")), 0))
+    when_box.activated.connect(lambda i: window.banking.set_auto(when_box.itemData(i)))
+    when_box.setObjectName("autoSync")
+    when_row = widgets.row(widgets.text("Sync", "sub"), when_box, spacing=theme.SPACE[2]) if linked else None
+    return widgets.card(*parts, widgets.row(*actions), when_row, title="Bank sync",
                         note=f"Connected through SimpleFIN. Last synced {when}.{updating}")
