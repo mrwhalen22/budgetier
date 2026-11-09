@@ -286,6 +286,14 @@ def is_transfer(description: str, cents: int, account_type: str, bank_category: 
     return bool(_CARD_PAYMENT.search(text) or _OWN_TRANSFER.search(text))
 
 
+def is_card_payment(text: str) -> bool:
+    return bool(_CARD_PAYMENT.search(text.upper()))
+
+
+def is_loan_payment(text: str) -> bool:
+    return bool(_TO_LOAN.search(text.upper()))
+
+
 def paid_cards(text: str, accounts: dict) -> list[str]:
     """Imported card accounts this bank-side payment description names."""
     found = []

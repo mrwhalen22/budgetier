@@ -200,6 +200,20 @@ def reminder(ctx: Context) -> QWidget | None:
     return widgets.banner("info", found.title, found.detail, ctx.tokens, go)
 
 
+def running_short(ctx: Context) -> QWidget | None:
+    """When the bills ahead would take checking below zero, before payday does."""
+    f = views.forecast(ctx.snapshot)
+    if not f.short:
+        return None
+    go = QPushButton("See what's due")
+    go.setProperty("kind", "small")
+    go.clicked.connect(lambda _=False: ctx.window.show_tab("Recurring"))
+    return widgets.banner("warning", f"Checking could run short around {fmt.day_name(f.low_day)}",
+                          f"The bills and card payments due before then would take it to {fmt.money(f.low)}, from "
+                          f"{fmt.money(f.balance)} on {fmt.day_name(f.start)}.", ctx.tokens,
+                          go if ctx.window is not None else None)
+
+
 def build(ctx: Context) -> QWidget:
     s, t = ctx.snapshot, ctx.tokens
     if not s.txns:
@@ -236,7 +250,8 @@ def build(ctx: Context) -> QWidget:
     column = QVBoxLayout(page)
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(theme.SPACE[4])
-    parts = (reminder(ctx), whats_new(ctx), widgets.notices(o.warnings, t), this_month(ctx, o.this_month), hero(ctx, o),
+    parts = (reminder(ctx), running_short(ctx), whats_new(ctx), widgets.notices(o.warnings, t),
+             this_month(ctx, o.this_month), hero(ctx, o),
              figures, split)
     for part in parts:
         if part is not None:
