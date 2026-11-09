@@ -243,11 +243,19 @@ class Tab(QtCase):
         today = views.retirement(self.win.snapshot, estimate.plan).balance
         self.assertEqual(today - views.retirement(self.win.snapshot, before).balance, 1_250_000)
 
-    def test_without_investing_accounts_it_says_how_to_mark_one(self):
+    def test_without_investing_accounts_the_tab_waits(self):
         win = self.window(fake.build(Path(self.dir) / "plain"))
+        self.assertFalse(win.tab_buttons["Investments"].isVisibleTo(win))
         win.show_tab("Investments")
+        self.assertEqual(win.tab, "Overview")
+
+    def test_without_investing_accounts_it_says_how_to_mark_one(self):
+        from budgetier.ui import tabs
+        from budgetier.ui.context import Context
+        win = self.window(fake.build(Path(self.dir) / "plain"))
         from PySide6.QtWidgets import QLabel, QPushButton
-        page = win.pages["Investments"].widget()
+        ctx: Context = win.context()
+        page = tabs.investments.build(ctx)
         self.assertIn("No investing or retirement accounts yet", [label.text() for label in page.findChildren(QLabel)])
         [go] = [b for b in page.findChildren(QPushButton) if b.text() == "Open Accounts"]
         go.click()

@@ -91,11 +91,11 @@ class OnTrackFromTheAccountsStart(Tmp):
 
 
 class TheCard(QtCase):
-    def test_adding_a_goal_from_the_budgets_tab(self):
+    def test_adding_a_goal_from_the_savings_tab(self):
         from PySide6.QtWidgets import QLabel, QPushButton
         win = self.window()
-        win.show_tab("Budgets")
-        page = win.pages["Budgets"].widget()
+        win.show_tab("Savings")
+        page = win.pages["Savings"].widget()
         [add] = [b for b in page.findChildren(QPushButton) if b.text() == "Add goal"]
         add.click()
         from budgetier.ui.dialogs import Dialog
@@ -107,7 +107,7 @@ class TheCard(QtCase):
         dialog.main.click()
         self.assertEqual([g["name"] for g in self.budget.goals().values()], ["Trip"])
         self.assertEqual(win.toast.action[0], "Undo")
-        page = win.pages["Budgets"].widget()
+        page = win.pages["Savings"].widget()
         words = [label.text() for label in page.findChildren(QLabel)]
         self.assertIn("Trip", words)
         self.assertIn("$500 of $3,000", words)

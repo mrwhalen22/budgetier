@@ -28,6 +28,17 @@ class Forecasting(Tmp):
         self.assertIn(("2026-10-20", "Comcast Cable"), due)
         self.assertEqual([d for d, m in due if m == "Comcast Cable"], ["2026-10-20"])  # Nov 20 is past the 30 days
 
+    def test_each_bill_is_due_the_same_day_in_both_lists(self):
+        _, s = snapshot(Path(self.dir) / "home")
+        f = views.forecast(s, date.fromisoformat(s.end))
+        first = {}
+        for u in f.items:
+            first.setdefault(u.merchant, u.day)
+        found = [r for r in s.recurring if r.active and r.merchant in first and r.next > s.end]
+        self.assertTrue(found)
+        for r in found:
+            self.assertEqual(first[r.merchant], r.next, r.merchant)
+
     def test_card_payments_are_guessed_from_recent_ones(self):
         _, s = snapshot(Path(self.dir) / "home")
         f = views.forecast(s, date(2026, 10, 20))

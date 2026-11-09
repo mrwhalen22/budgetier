@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from .. import sample, storage, views
+from ..accounts import INVESTED
 from ..service import Budget, app_version
 from . import banking, charts, icons, keys, locking, look, motion, popup, settings, theme, tour, widgets
 from .banking import Banking
@@ -37,8 +38,14 @@ from .updating import Updating
 from .work import Runner
 
 # The order the sidebar lists them in.
-TABS = ("Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Investments", "Net worth", "Year in review",
+TABS = ("Overview", "Spending", "Budgets", "Recurring", "Savings", "Investments", "Year in review",
         "Transactions", "Rules", "Accounts", "Help")
+# A label over the sidebar's groups, above the tab that starts each. The first group needs none.
+GROUPS = {"Savings": "Long term", "Transactions": "Manage"}
+# Shown at the bottom of the sidebar, apart from the rest.
+FOOT_TABS = {"Help"}
+# Tabs that were merged into others: a window left on one opens on where it went.
+MOVED = {"Largest": "Spending", "Net worth": "Savings"}
 # Which step of docs/qt-migration.md brings each tab, until it's here.
 COMING: dict[str, int] = {}
 # These cover all of history, so the period and account filters don't apply.
@@ -171,7 +178,14 @@ class Window(QMainWindow):
         self.tab_group = QButtonGroup(self)
         self.tab_group.setExclusive(True)
         self.tab_buttons: dict[str, QPushButton] = {}
+        self.group_labels: dict[str, QLabel] = {}
+        foot: list[QPushButton] = []
         for tab in TABS:
+            if tab in GROUPS:
+                label = QLabel(GROUPS[tab])
+                label.setObjectName("navGroup")
+                self.group_labels[tab] = label
+                column.addWidget(label)
             button = QPushButton(tab)
             button.setProperty("kind", "nav")
             button.setCheckable(True)
@@ -185,9 +199,14 @@ class Window(QMainWindow):
             button.installEventFilter(self)  # the arrow keys move between tabs
             self.tab_group.addButton(button)
             self.tab_buttons[tab] = button
-            column.addWidget(button)
+            if tab in FOOT_TABS:
+                foot.append(button)
+            else:
+                column.addWidget(button)
 
         column.addStretch(1)
+        for button in foot:
+            column.addWidget(button)
         self.look_button = QPushButton("Appearance")
         self.look_button.setProperty("kind", "nav-link")
         self.look_button.setIconSize(QSize(ICON, ICON))
@@ -324,7 +343,11 @@ class Window(QMainWindow):
         stays = "Stored on this computer." if self.budget.sync.status()["connected"] else "Stays on this computer."
         version = f" Version {app_version()}." if app_version() else ""
         self.foot.setText(through + stays + version)
+        self._fit_sidebar()
         if self._ready:
+            if not self.offered(self.tab):
+                self.show_tab("Overview")
+                return
             self.render()
 
     def _fill_filters(self) -> None:
@@ -388,6 +411,26 @@ class Window(QMainWindow):
     def tab(self) -> str:
         return TABS[self.stack.currentIndex()]
 
+    def offered(self, tab: str) -> bool:
+        """Whether the sidebar shows this tab now. Until there's data, only the welcome and Help
+        are worth opening, and Investments waits for an investing account."""
+        s = getattr(self, "snapshot", None)
+        if s is None or tab in ("Overview", "Help"):
+            return True
+        if not s.txns:
+            return False
+        if tab == "Investments":
+            return any(a.type in INVESTED for a in s.accounts)
+        return True
+
+    def _fit_sidebar(self) -> None:
+        for tab, button in self.tab_buttons.items():
+            button.setVisible(self.offered(tab))
+        for tab, label in self.group_labels.items():
+            group = TABS[TABS.index(tab):]
+            group = group[:next((i for i, t in enumerate(group[1:], 1) if t in GROUPS or t in FOOT_TABS), len(group))]
+            label.setVisible(any(self.offered(t) for t in group))
+
     def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
         """Up and Down on a tab's button show the tab above or below, as in a list of tabs."""
         if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
@@ -395,12 +438,17 @@ class Window(QMainWindow):
             if tab is not None:
                 step = -1 if event.key() == Qt.Key_Up else 1
                 chosen = TABS[(TABS.index(tab) + step) % len(TABS)]
+                while not self.offered(chosen):
+                    chosen = TABS[(TABS.index(chosen) + step) % len(TABS)]
                 self.show_tab(chosen)
                 self.tab_buttons[chosen].setFocus(Qt.TabFocusReason)
                 return True
         return super().eventFilter(watched, event)
 
     def show_tab(self, tab: str) -> None:
+        tab = MOVED.get(tab, tab)
+        if not self.offered(tab):
+            tab = "Overview"  # not there yet: the welcome says how to get it
         self.stack.setCurrentWidget(self.pages[tab])
         self.title.setText(tab)
         self.tab_buttons[tab].setChecked(True)
@@ -683,7 +731,8 @@ def _place(saved) -> dict:
     """Where the window was left. Anything that can't be read starts as a new window would;
     the period and accounts are checked against the data once it's read."""
     saved = saved if isinstance(saved, dict) else {}
-    tab = saved.get("tab") if saved.get("tab") in TABS else TABS[0]
+    tab = MOVED.get(saved.get("tab"), saved.get("tab"))
+    tab = tab if tab in TABS else TABS[0]
     period = saved.get("range") if isinstance(saved.get("range"), str) and saved.get("range") else "12"
     accounts = saved.get("accounts")
     chosen = frozenset(a for a in accounts if isinstance(a, str)) if isinstance(accounts, list) and accounts else None

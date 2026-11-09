@@ -44,11 +44,6 @@ def _short_day(day: str) -> str:
     return f"{when:%b} {when.day}"
 
 
-def _about(amount: str) -> str:
-    """~ after the sign: -~$600.00, where ~-$600.00 reads as a smudge."""
-    return amount.replace("-", "-~", 1) if amount.startswith("-") else "~" + amount
-
-
 def coming_up(ctx: Context, f: views.Forecast) -> QWidget | None:
     """The next 30 days: what's due, and what it does to checking."""
     if not f.items:
@@ -71,10 +66,10 @@ def coming_up(ctx: Context, f: views.Forecast) -> QWidget | None:
                 else "amount varies" if u.variable else "")
         rows.append([widgets.Cell(fmt.day_name(u.day), tone="dim"),
                      widgets.Cell(u.merchant, bold=True, icon=widgets.mono_icon(u.merchant, ctx.color(u.category))),
-                     widgets.Cell(_about(fmt.cents(u.cents)) if u.variable or u.estimated else fmt.cents(u.cents), right=True,
+                     widgets.Cell(fmt.cents(u.cents), right=True,
                                   tone="pos" if u.cents > 0 else ""),
                      widgets.Cell(u.account, tone="dim"), widgets.Cell(note, tone="dim")])
-    parts.append(widgets.Table(["Due", "Name", "Amount", "Account", ""], rows, t, numeric={2},
+    parts.append(widgets.Table(["Due", "Name", "Amount", "Account", "Note"], rows, t, numeric={2},
                                on_row=lambda i: ctx.open_transactions(query=f.items[i].merchant)))
     note = (f"Starting from checking's balance on {fmt.day_name(f.start)}, with each bill, paycheck and card payment as it "
             "comes due. Bills on a card leave checking when the card is paid, so only its payment moves the line, and a loan's "
@@ -91,8 +86,8 @@ def build(ctx: Context) -> QWidget:
         widgets.tile("Subscriptions", fmt.money(r.subscriptions) + "/mo", f"{r.subscription_count} active"),
         widgets.tile("Regular income", fmt.money(r.income) + "/mo", fmt.plural(r.income_count, "source"), "pos"))
     toggle = widgets.check("Include stopped payments", stopped, ctx.toggle("recurring_all"))
-    bills = widgets.card(table(ctx, r.expenses), title="Bills and subscriptions",
+    bills = widgets.card(toggle, table(ctx, r.expenses), title="Bills and subscriptions",
                          note="~ means the amount varies. Found from the full history, so the period filter doesn't apply here.")
     income = widgets.card(table(ctx, r.incomes), title="Regular income")
-    return widgets.column(figures, coming_up(ctx, views.forecast(ctx.snapshot)), toggle, bills, income,
+    return widgets.column(figures, coming_up(ctx, views.forecast(ctx.snapshot)), bills, income,
                           spacing=theme.SPACE[4])

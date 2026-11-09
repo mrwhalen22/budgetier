@@ -55,8 +55,7 @@ def yours(ctx: Context) -> QWidget:
     for i, r in enumerate(found):
         if r["advanced"]:
             table.item(i, 0).setFont(code_font())
-        table.setCellWidget(i, 4, _actions(_button("Edit", lambda r=r: ctx.edit.edit_rule(r)),
-                                           _button("Remove", lambda r=r: ctx.edit.remove_rule(r), "small-danger")))
+        table.setCellWidget(i, 4, _actions(_button("Edit", lambda r=r: ctx.edit.edit_rule(r))))
     table.resizeColumnsToContents()
     return table
 
@@ -65,7 +64,7 @@ def build(ctx: Context) -> QWidget:
     open_ = views.uncategorized(ctx.snapshot)
     total = abs(sum(u.total for u in open_))
     figures = widgets.tiles(
-        widgets.tile("Needs a category", f"{len(open_)}",
+        widgets.tile("To categorize", f"{len(open_)}",
                      f"{'merchant' if len(open_) == 1 else 'merchants'}, {fmt.cents(total)} in total"),
         widgets.tile("Your rules", f"{len(ctx.snapshot.rules)}", "applied across all history"))
     add = _button("Add rule", ctx.edit.new_rule, "primary")

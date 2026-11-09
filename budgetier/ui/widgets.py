@@ -336,12 +336,13 @@ class HBar(QFrame):
     its transactions."""
     clicked = Signal()
 
-    def __init__(self, name: str, value_text: str, share: float, fill: float, color: str | None, tokens: dict[str, str]):
+    def __init__(self, name: str, value_text: str, share: float | None, fill: float, color: str | None,
+                 tokens: dict[str, str]):
         super().__init__()
         self.setProperty("kind", "hbar")
         self.setFocusPolicy(Qt.StrongFocus)
         self.setCursor(Qt.PointingHandCursor)
-        self.setAccessibleName(f"{name}, {value_text}, {round(share * 100)}%")
+        self.setAccessibleName(f"{name}, {value_text}" + (f", {round(share * 100)}%" if share is not None else ""))
         grid = QGridLayout(self)
         grid.setContentsMargins(theme.SPACE[2], theme.SPACE[2], theme.SPACE[2], theme.SPACE[2])
         grid.setHorizontalSpacing(theme.SPACE[3])
@@ -351,10 +352,11 @@ class HBar(QFrame):
         label.setSizePolicy(QSizePolicy.Ignored, QSizePolicy.Preferred)
         label.setToolTip(html.escape(name))
         grid.addWidget(row(Dot(color) if color else None, label, spacing=theme.SPACE[2], stretch_last=True), 0, 0)
-        pct = text(f"{round(share * 100)}%", "pct", wrap=False)
+        pct = text(f"{round(share * 100)}%", "pct", wrap=False) if share is not None else None
         amount = text(value_text, "strong", wrap=False)
         for part in (pct, amount):
-            part.setTextInteractionFlags(Qt.NoTextInteraction)
+            if part is not None:
+                part.setTextInteractionFlags(Qt.NoTextInteraction)
         grid.addWidget(row(pct, amount, spacing=theme.SPACE[2], stretch_last=True), 0, 1, Qt.AlignRight)
         grid.addWidget(_Track(fill, color or tokens["accent"], tokens["line"]), 1, 0, 1, 2)
         grid.setColumnStretch(0, 1)
@@ -372,13 +374,14 @@ class HBar(QFrame):
 
 
 def hbars(items: list[tuple[str, int, str | None, Callable[[], None]]], fmt: Callable[[int], str],
-          tokens: dict[str, str]) -> QWidget:
-    """(name, value, color or None, on select) for each bar, largest first."""
+          tokens: dict[str, str], shares: bool = True) -> QWidget:
+    """(name, value, color or None, on select) for each bar, largest first. shares=False leaves
+    out each one's percent of the total, where a share of the list means nothing on its own."""
     top = max([v for _, v, _, _ in items] + [1])
     total = sum(v for _, v, _, _ in items) or 1
     bars = []
     for name, value, color, chosen in items:
-        bar = HBar(name, fmt(value), value / total, max(value / top, .005), color, tokens)
+        bar = HBar(name, fmt(value), value / total if shares else None, max(value / top, .005), color, tokens)
         bar.clicked.connect(chosen)
         bars.append(bar)
     return column(*bars, spacing=0)

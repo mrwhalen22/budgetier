@@ -23,6 +23,7 @@ STEPS = [
     ("Budgets", "Set monthly budgets",
      "Give a category a target, in dollars or as a percent of income, and see what's left each month."),
     ("Recurring", "Spot regular bills", "Subscriptions and repeat payments are found automatically."),
+    ("Savings", "Watch what you keep", "Your savings rate, the goals you're saving toward, and your net worth."),
     ("Rules", "Teach it your merchants",
      "Give unknown purchases a name and category. It applies to all your history and future imports."),
     ("Accounts", "Manage your accounts",

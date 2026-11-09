@@ -156,6 +156,8 @@ QToolTip {{ color: {c['ink']}; background: {c['surface']}; border: 1px solid {c[
 #side {{ background: {c['nav']}; border-right: 1px solid {c['line']}; }}
 #brand {{ font-size: {text['lg']}px; font-weight: 600; color: {c['ink']}; }}
 #foot {{ font-size: {text['xs']}px; color: {c['muted']}; }}
+#navGroup {{ font-size: {text['xs']}px; font-weight: 600; color: {c['muted']};
+    padding: {SPACE[4]}px {SPACE[2]}px {SPACE[1]}px {SPACE[2]}px; }}
 QPushButton[kind="nav"] {{
     text-align: left; min-height: 20px; padding: {SPACE[2]}px; border: none; border-radius: {RADIUS['md']}px;
     font-size: {text['md']}px; font-weight: 500; color: {c['ink-2']}; background: transparent; }}
@@ -261,6 +263,7 @@ QLabel[kind="warn"] {{ font-size: {text['sm']}px; color: {c['warn-ink']}; backgr
 QLabel[kind="panel-text"] {{ font-size: {text['sm']}px; color: {c['ink-2']}; }}
 QFrame[kind="panel"] {{ background: {c['raised']}; border: 1px solid {c['line-soft']}; border-radius: {RADIUS['md']}px; }}
 QRadioButton {{ color: {c['ink']}; spacing: {SPACE[2]}px; }}
+QPushButton[kind="remove"] {{ color: {c['bad']}; }}
 QPushButton[kind="small-danger"] {{ min-height: {CONTROL_SM - 2}px; padding: 0 {SPACE[2]}px; font-size: {text['xs']}px;
     border-radius: {RADIUS['sm']}px; color: {c['bad']}; }}
 QPushButton[kind="primary"]:disabled, QPushButton[kind="danger"]:disabled {{ color: {c['muted']};

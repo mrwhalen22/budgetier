@@ -76,8 +76,7 @@ def line_row(ctx: Context, line: views.BudgetLine) -> QWidget:
     used = widgets.text(f"{fmt.money(line.spent)} of {fmt.money(line.goal)}", "s")
     used.setAlignment(Qt.AlignRight)
     grid.addWidget(widgets.column(left, used, spacing=2), 0, 1)
-    actions = widgets.row(_button("Edit", lambda: budget_form(ctx, line)),
-                          _button("Remove", lambda: remove_budget(ctx, line.category), "small-danger"), spacing=theme.SPACE[1])
+    actions = widgets.row(_button("Edit", lambda: budget_form(ctx, line)), spacing=theme.SPACE[1])
     grid.addWidget(actions, 0, 2)
     grid.addWidget(Meter(line.used, line.state, ctx.tokens), 1, 0, 1, 3)
     grid.setColumnStretch(0, 1)
@@ -105,11 +104,11 @@ def build(ctx: Context) -> QWidget:
             widgets.card(widgets.row(add), title="Set your first budget",
                          note="Choose a category and give it a monthly target: a dollar amount, or a percent of your "
                               "income. Budgetier shows what's left each month."),
-            goals_card(ctx), spacing=theme.SPACE[4])
+            spacing=theme.SPACE[4])
     b = views.budgets(s, ctx.options.get("budget_month"))
     if b.month is None:
         return widgets.column(widgets.card(widgets.row(add), title="Budgets", note="Budgets show once there are transactions."),
-                              goals_card(ctx), spacing=theme.SPACE[4])
+                              spacing=theme.SPACE[4])
     m = b.month
     month = Dropdown()
     month.setAccessibleName("Month")
@@ -136,7 +135,7 @@ def build(ctx: Context) -> QWidget:
     else:
         note = f"Percent targets use this month's income of {fmt.money(m.base)}." if b.uses_percent else ""
     lines = widgets.card(*(line_row(ctx, line) for line in b.lines), title=fmt.month_name(m.month), note=note)
-    return widgets.column(head, figures, lines, goals_card(ctx), history(ctx, b), spacing=theme.SPACE[4])
+    return widgets.column(head, figures, lines, history(ctx, b), spacing=theme.SPACE[4])
 
 
 # ---- savings goals
@@ -169,8 +168,7 @@ def goal_row(ctx: Context, goal: views.Goal) -> QWidget:
     saved = widgets.text(f"{fmt.money(goal.saved or 0)} of {fmt.money(goal.target)}", "s")
     saved.setAlignment(Qt.AlignRight)
     grid.addWidget(widgets.column(state, saved, spacing=2), 0, 1)
-    actions = widgets.row(_button("Edit", lambda: goal_form(ctx, goal)),
-                          _button("Remove", lambda: remove_goal(ctx, goal), "small-danger"), spacing=theme.SPACE[1])
+    actions = widgets.row(_button("Edit", lambda: goal_form(ctx, goal)), spacing=theme.SPACE[1])
     grid.addWidget(actions, 0, 2)
     grid.addWidget(Meter(goal.share, "near" if goal.state == "behind" else "", ctx.tokens), 1, 0, 1, 3)
     grid.setColumnStretch(0, 1)
@@ -242,6 +240,8 @@ def goal_form(ctx: Context, goal: views.Goal | None = None) -> Dialog:
         busy(dialog.main, "Saving...", work)
 
     dialog.set_buttons([("Cancel", dialog.dismiss, ""), ("Save", save, "primary")])
+    if goal:
+        dialog.set_remove("Remove goal", lambda: remove_goal(ctx, goal))
     dialog.open()
     name.setFocus()
     return dialog
@@ -324,6 +324,8 @@ def budget_form(ctx: Context, line: views.BudgetLine | None = None) -> Dialog | 
         busy(dialog.main, "Saving...", work)
 
     dialog.set_buttons([("Cancel", dialog.dismiss, ""), ("Save", save, "primary")])
+    if line:
+        dialog.set_remove("Remove budget", lambda: remove_budget(ctx, line.category))
     dialog.open()
     value.setFocus()
     return dialog

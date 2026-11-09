@@ -1,4 +1,4 @@
-"""The Qt window's read-only tabs: Overview, Spending, Recurring, Largest, Savings and Help."""
+"""The Qt window's read-only tabs: Overview, Spending, Recurring, Savings and Help."""
 import unittest
 from datetime import date
 from pathlib import Path
@@ -7,7 +7,7 @@ from budgetier import views
 from tests.fake import build
 from tests.qt import QtCase
 
-BUILT = ("Overview", "Spending", "Recurring", "Largest", "Savings", "Help")
+BUILT = ("Overview", "Spending", "Recurring", "Savings", "Help")
 CHOICES = (views.Choice("12"), views.Choice("all"), views.Choice("2025"), views.Choice("2026-03"),
            views.Choice("3", frozenset({"card-0002"})))
 
@@ -89,7 +89,7 @@ class Overview(Tabs):
     def test_the_numbers_are_views(self):
         o = views.overview(self.win.snapshot, self.win.choice)
         from budgetier.ui import fmt
-        for words in (fmt.money(o.spending), fmt.money(o.income), f"{round(o.rate * 100)}%", "Average of 11 complete months."):
+        for words in (fmt.money(o.spending), fmt.money(o.income), f"{round(o.rate * 100)}%", "average of 11 complete months"):
             self.assertTrue(self.page_has(words), words)
 
     def test_a_month_in_progress_says_so_and_compares(self):
@@ -123,7 +123,7 @@ class Overview(Tabs):
 class Spending(Tabs):
     def test_the_table_has_each_category_and_opens_one(self):
         self.win.show_tab("Spending")
-        [table] = self.tables()
+        table = self.tables()[0]
         names = [row[0] for row in self.cells(table)]
         self.assertEqual(names, [c for c, _ in views.spending(self.win.snapshot, self.win.choice).categories])
         table.cellClicked.emit(names.index("Groceries"), 3)
@@ -153,16 +153,20 @@ class Recurring(Tabs):
 
 
 class Largest(Tabs):
+    def biggest(self):
+        [table] = [t for t in self.tables() if t.horizontalHeaderItem(1).text() == "Date"]
+        return table
+
     def test_bills_are_left_out_until_asked_for(self):
         from PySide6.QtWidgets import QCheckBox
         self.win.choose(views.Choice("all"))
-        self.win.show_tab("Largest")
-        [table] = self.tables()
+        self.win.show_tab("Spending")
+        table = self.biggest()
         self.assertNotIn("Lakeside Apts Rent", [row[0] for row in self.cells(table)])
         self.assertTrue(self.page_has("leaving out regular bills"))
-        [box] = self.win.pages["Largest"].widget().findChildren(QCheckBox)
+        [box] = self.win.pages["Spending"].widget().findChildren(QCheckBox)
         box.click()
-        [table] = self.tables()
+        table = self.biggest()
         self.assertIn("Lakeside Apts Rent", [row[0] for row in self.cells(table)])
 
 
@@ -238,11 +242,11 @@ class BankText(Tabs):
                  "balance": None, "bank_category": "", "source": "x", "sync_id": ""} for d in (2, 3, 4, 5)]
         win = self.window(build(Path(self.dir) / "hostile", rows))
         win.choose(views.Choice("all"))
-        win.show_tab("Largest")
-        bars = win.pages["Largest"].widget().findChildren(HBar)
+        win.show_tab("Spending")
+        bars = win.pages["Spending"].widget().findChildren(HBar)
         self.assertTrue(bars)
         from budgetier.ui.widgets import Table
-        [table] = win.pages["Largest"].widget().findChildren(Table)
+        [table] = [t for t in win.pages["Spending"].widget().findChildren(Table) if t.horizontalHeaderItem(1).text() == "Date"]
         self.assertIn("&lt;img", table.item(0, 0).toolTip())
         from PySide6.QtCore import Qt
         from PySide6.QtWidgets import QLabel

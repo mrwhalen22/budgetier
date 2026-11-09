@@ -24,6 +24,9 @@ class TheSample(Tmp):
         self.assertGreater(o.income, o.spending)
         self.assertIn("Netflix", [r.merchant for r in s.recurring])
         self.assertIsNotNone(views.investments(s, views.Choice("12")).growth)
+        self.assertTrue(all(a.balance is not None for a in s.accounts))  # nothing says "not set"
+        self.assertEqual(views.net_worth(s, views.Choice("12")).missing, [])
+        self.assertFalse(views.forecast(s, date(2026, 11, 8)).short)
 
 
 class LookingAround(QtCase):

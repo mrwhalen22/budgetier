@@ -1,9 +1,7 @@
 """Overview: this month so far, the average month, and where the money went."""
 from __future__ import annotations
 
-from PySide6.QtCore import QRectF, Qt
-from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QFrame, QGridLayout, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QGridLayout, QPushButton, QVBoxLayout, QWidget
 
 from ... import views
 from .. import fmt, theme, widgets
@@ -22,7 +20,7 @@ def owed_tile(owed: views.Owed | None):
     if owed is None:
         return None
     sub = f"{fmt.plural(owed.missing, 'card')} not set" if owed.missing else "calculated from what you entered"
-    return widgets.tile("Owed on cards", fmt.money(owed.owed), sub, fmt.gain(owed.owed))
+    return widgets.tile("Owed on cards", fmt.owed(owed.owed), sub, fmt.gain(owed.owed))
 
 
 def welcome(ctx: Context) -> QWidget:
@@ -83,78 +81,6 @@ def this_month(ctx: Context, now: views.ThisMonth | None) -> QWidget | None:
     head.layout().insertStretch(1, 1)
     frame = widgets.card(head, widgets.Grid(stats, 150, most=6, top=True))
     frame.setObjectName("thisMonth")
-    return frame
-
-
-class Spark(QWidget):
-    """Spending in each recent month, as small bars. Months averages skip are grey."""
-
-    def __init__(self, spark: list[tuple[str, float, bool]], tokens: dict[str, str]):
-        super().__init__()
-        self.spark, self.tokens = spark, tokens
-        self.setFixedHeight(104)
-        self.setToolTip("Spending in recent months")
-
-    def paintEvent(self, _event):  # noqa: N802 - Qt's name
-        if len(self.spark) < 2:
-            return
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        gap, n = theme.SPACE[1], len(self.spark)
-        width = min(26, max(3, (self.width() - gap * (n - 1)) / n))
-        x = self.width() - n * width - (n - 1) * gap
-        for _, height, done in self.spark:
-            h = height * self.height()
-            painter.setBrush(QColor(self.tokens["accent" if done else "line"]))
-            painter.drawRoundedRect(QRectF(x, self.height() - h, width, h), 3, 3)
-            x += width + gap
-
-
-class Flow(QWidget):
-    """Of every dollar earned, how much went out and how much stayed."""
-
-    def __init__(self, spent: float, kept: bool, tokens: dict[str, str]):
-        super().__init__()
-        self.spent, self.kept, self.tokens = spent, kept, tokens
-        self.setFixedHeight(8)
-
-    def paintEvent(self, _event):  # noqa: N802 - Qt's name
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(Qt.NoPen)
-        w = self.width()
-        spent_width = w * self.spent if self.kept else w
-        painter.setBrush(QColor(self.tokens["accent"]))
-        painter.drawRoundedRect(QRectF(0, 0, max(spent_width - (3 if self.kept else 0), 2), 8), 4, 4)
-        if self.kept:
-            painter.setBrush(QColor(self.tokens["income"]))
-            painter.drawRoundedRect(QRectF(spent_width, 0, max(w - spent_width, 2), 8), 4, 4)
-
-
-def hero(ctx: Context, o: views.Overview) -> QFrame:
-    frame = QFrame()
-    frame.setProperty("kind", "hero")
-    grid = QGridLayout(frame)
-    grid.setContentsMargins(*(theme.SPACE[6],) * 4)
-    grid.setHorizontalSpacing(theme.SPACE[6])
-    grid.setVerticalSpacing(theme.SPACE[4])
-    note = period_note(o.period)
-    words = ((f"Includes {fmt.money(o.estimated)} estimated from card payments. " if o.estimated > 0 else "")
-             + (note[0].upper() + note[1:] + "." if note else ""))
-    grid.addWidget(widgets.column(widgets.text("Spending" if o.one else "Avg. monthly spending", "k"),
-                                  widgets.text(fmt.money(o.spending), "big"),
-                                  widgets.text(words, "s") if words else None, spacing=theme.SPACE[2]), 0, 0)
-    if not o.one:
-        grid.addWidget(Spark(o.spark, ctx.tokens), 0, 1, Qt.AlignBottom)
-    spent = round(o.spent_share * 100)
-    share = f"{spent}% spent" + (f"  ·  {100 - spent}% kept" if o.kept > 0 else "")
-    key = widgets.row(widgets.text("Of every dollar earned", "flow", wrap=False), widgets.text(share, "flow-share", wrap=False),
-                      stretch_last=True)
-    key.layout().insertStretch(1, 1)
-    grid.addWidget(widgets.column(Flow(o.spent_share, o.kept > 0, ctx.tokens), key, spacing=theme.SPACE[2]), 1, 0, 1, 2)
-    grid.setColumnStretch(0, 1)
-    grid.setColumnStretch(1, 1)
     return frame
 
 
@@ -241,11 +167,14 @@ def build(ctx: Context) -> QWidget:
     o = views.overview(s, ctx.choice)
     average = "" if o.one else "Avg. monthly "
     rate = "n/a" if o.rate is None else f"{round(o.rate * 100)}%"
+    note = period_note(o.period)
+    spent_note = (f"includes {fmt.money(o.estimated)} estimated from card payments" if o.estimated > 0 else note)
+    # Four figures, each said once: the trend is in the chart below, and bills have their own tab.
     figures = widgets.tiles(
+        widgets.tile(f"{average}spending" if average else "Spending", fmt.money(o.spending), spent_note),
         widgets.tile(f"{average}income" if average else "Income", fmt.money(o.income),
                      "" if o.one else "same months as spending", "pos"),
         widgets.tile("Savings rate", rate, fmt.money(o.kept) + (" kept" if o.one else " kept per month"), fmt.tone(o.kept)),
-        widgets.tile("Recurring bills", fmt.money(o.recurring) + "/mo", f"{o.recurring_count} active"),
         owed_tile(o.owed))
     chart = widgets.card(widgets.legend([("Income", t["income"]), ("Spending", t["spending"])]),
                          Chart(o.months, [Series("Income", o.chart_income, t["income"]),
@@ -271,8 +200,7 @@ def build(ctx: Context) -> QWidget:
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(theme.SPACE[4])
     parts = (reminder(ctx), running_short(ctx), heads_up(ctx), whats_new(ctx), widgets.notices(o.warnings, t),
-             this_month(ctx, o.this_month), hero(ctx, o),
-             figures, split)
+             this_month(ctx, o.this_month), figures, split)
     for part in parts:
         if part is not None:
             column.addWidget(part)

@@ -45,25 +45,31 @@ def build(ctx: Context) -> QWidget:
     since = f"since {views.day_name(v.tracked_from)}" if v.tracked_from else ""
     parts.append(widgets.tiles(
         widgets.tile("Invested now", fmt.money(v.total), f"{fmt.plural(len(v.accounts), 'account')}"),
-        widgets.tile("In retirement accounts", fmt.money(v.retirement), "") if v.retirement is not None else None,
+        # Only when it says something new: with every account for retirement, it's the same number again.
+        widgets.tile("In retirement accounts", fmt.money(v.retirement), "")
+        if v.retirement is not None and v.retirement != v.total else None,
         widgets.tile("Paid in this period", fmt.money(v.contributed), "net of withdrawals", fmt.tone(v.contributed)),
         widgets.tile("Growth this period", fmt.money(v.growth) if v.growth is not None else "n/a",
                      _percent(v.growth_rate) if v.growth is not None else "needs two balances a while apart",
                      fmt.tone(v.growth or 0))))
+    check = None
     if views.investing_rows(s, {a.id for a in v.accounts}) and ctx.window is not None:
         check = QPushButton("Check what counts as paid in")
         check.setProperty("kind", "small")
         check.clicked.connect(lambda _=False: investing.review(ctx.window, {a.id for a in v.accounts}))
-        parts.append(widgets.row(widgets.text("Growth leaves out what was paid in, so it's worth checking which rows are "
-                                              "which.", "sub"), check, spacing=theme.SPACE[3]))
+        check = widgets.row(check)
+    checking = " Growth leaves out what was paid in, so it's worth checking which rows are which." if check else ""
     if any(b is not None for b in v.balance):
         parts.append(widgets.card(
             widgets.legend([("Balance", t["accent"]), ("Paid in", t["muted"])]),
             Chart(v.months, [Series("Balance", v.balance, t["accent"]), Series("Paid in", v.paid_in, t["muted"])], t,
                   kind="lines"),
+            check,
             title="Balance and what was paid in",
             note="The gap between the lines is growth: markets, dividends and fees. Each bank sync keeps that day's "
-                 f"balance, so growth is seen {since or 'from your next sync'}."))
+                 f"balance, so growth is seen {since or 'from your next sync'}.{checking}"))
+    elif check:
+        parts.append(widgets.card(check, title="What was paid in", note=checking.strip()))
     if len(v.lines) > 1:
         colors = [t[f"c{i}"] for i in range(len(v.lines))]
         parts.append(widgets.card(

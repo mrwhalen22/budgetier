@@ -82,6 +82,7 @@ def build(home: Path, today: date | None = None) -> Budget:
     budget.ledger.rows = found
     for day, cents in plan:
         remember_balance(budget.ledger.accounts[PLAN], cents, day)
+    pin_balance(budget.ledger.accounts[CHECKING], 412_000, today)  # every account set up, as a finished one would be
     pin_balance(budget.ledger.accounts[CARD], 61250, today)
     pin_balance(budget.ledger.accounts[SAVINGS], 1_284_000, today)
     budget.ledger.save()

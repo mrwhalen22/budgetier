@@ -33,7 +33,7 @@ class Window(QtCase):
 
     def button(self, widget, text):
         from PySide6.QtWidgets import QPushButton
-        return next(b for b in widget.findChildren(QPushButton) if b.text() == text)
+        return next((b for b in widget.findChildren(QPushButton) if b.text() == text), None)
 
     def field(self, dialog, name):
         from PySide6.QtWidgets import QComboBox, QLineEdit
@@ -99,8 +99,12 @@ class Budgets(Window):
         self.assertFalse(self.field(dialog, "Category").isEnabled())
         self.assertEqual(self.field(dialog, "Dollars a month").text(), "300")
 
-    def test_removing_asks_first(self):
-        self.button(self.page("Budgets"), "Remove").click()
+    def test_removing_is_in_the_edit_window_and_asks_first(self):
+        self.assertIsNone(self.button(self.page("Budgets"), "Remove"))  # not beside every budget
+        self.button(self.page("Budgets"), "Edit").click()
+        edit = self.open_dialog()
+        self.assertIsNot(edit.buttons[0], edit.remove)  # Escape still cancels
+        edit.remove.click()
         ask = self.open_dialog()
         self.assertEqual(ask.windowTitle(), "Remove the Dining budget?")
         ask.buttons[-1].click()
