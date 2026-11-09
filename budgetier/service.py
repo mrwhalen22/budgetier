@@ -23,7 +23,7 @@ from . import analyze, pdf2csv, report_xlsx, rules
 from .accounts import TYPES, account_id, account_name, pin_balance, purchases_look_positive, sample_row
 from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
-from .storage import BudgetError, app_home, read_text, unique_path, write_files
+from .storage import BudgetError, app_home, copy_in, read_bytes, read_text, unique_path, write_files
 from .sync import BankSync
 from .updates import Updater
 
@@ -101,7 +101,7 @@ class Budget:
         for folder in (self.home, self.imported, self.output):
             folder.mkdir(parents=True, exist_ok=True)
         if not self.rules_path.exists():
-            self.rules_path.write_text(rules.TEMPLATE, encoding="utf-8")
+            write_files({self.rules_path: rules.TEMPLATE})
         self.ledger = Ledger(self.home)
         self.notices: list[dict] = []  # problems found while loading, shown with the checks
         self._pending: dict[str, dict] = {}
@@ -204,7 +204,7 @@ class Budget:
             for source, kept in ((csv_path, target), (original, unique_path(self.imported, original.name))):
                 if source != csv_path or kept == target:
                     copies.append(kept)
-                    shutil.copy2(source, kept)
+                    copy_in(source, kept)
         except OSError as e:
             raise BudgetError(f"{original.name} couldn't be read. If it was moved, choose it again.") from e
         return target.name
@@ -679,7 +679,8 @@ class Budget:
 
     @staticmethod
     def _read(path: Path) -> bytes | None:
-        return path.read_bytes() if path.exists() else None
+        """What a file says, decrypted: an encrypted file's bytes differ every time it's saved."""
+        return read_bytes(path) if path.exists() else None
 
     def undoable(self, work, *args):
         """Make a small change and keep what it replaced, so it can be undone."""

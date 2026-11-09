@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import sample, views
+from .. import sample, storage, views
 from ..service import Budget, app_version
 from . import banking, charts, icons, keys, locking, look, motion, popup, settings, theme, tour, widgets
 from .banking import Banking
@@ -117,8 +117,6 @@ class Window(QMainWindow):
         self._ready = True
         self.show_tab(place["tab"])
         self.stack.setFocus()  # not the first tab's button, which would show a focus ring at once
-        if locking.saved(self.mine.home):
-            self.lock()
         self.auto_sync = QTimer(self)
         self.auto_sync.setInterval(AUTO_SYNC_CHECK)
         self.auto_sync.timeout.connect(lambda: self.banking.auto())
@@ -527,7 +525,8 @@ class Window(QMainWindow):
     # ---- the passcode
 
     def lock(self) -> None:
-        """Hide everything behind the passcode, if one is set."""
+        """Hide everything behind the passcode, if the data is encrypted. The key stays in
+        memory while Budgetier is open: this keeps others out of the window meanwhile."""
         if self.locked or not locking.saved(self.mine.home):
             return
         self.locked = True
@@ -557,8 +556,8 @@ class Window(QMainWindow):
 
     def lock_changed(self) -> None:
         """After the passcode or its timing changes: start counting time away again."""
-        lock = locking.saved(self.mine.home)
-        self.away.start(lock.get("after", 0) if lock and not self.locked else 0)
+        encrypted = locking.saved(self.mine.home) is not None
+        self.away.start(locking.lock_after(self.mine.home) if encrypted and not self.locked else 0)
 
     def mark_seen(self) -> None:
         """What's new has been seen: the Overview stops showing it."""
@@ -670,6 +669,9 @@ class Window(QMainWindow):
     def set_look(self, look: theme.Look) -> None:
         self.look = look
         theme.save_look(self.mine.home, look)
+        opened = storage.open_vault()
+        if opened is not None and locking.saved(self.mine.home):  # so asking for the passcode looks the same
+            opened.set_option(look={"mode": look.mode, "palette": look.palette, "size": look.size})
         self.restyle()
 
 

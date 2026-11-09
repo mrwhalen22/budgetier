@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import shutil
 import sys
 import webbrowser
 from collections import defaultdict
@@ -13,7 +12,7 @@ from . import analyze, pdf2csv, report_xlsx, rules
 from .accounts import account_id, account_name, pin_balance, purchases_look_positive, sample_row
 from .ledger import Ledger
 from .parse import ParsedFile, ParseError, parse_file, parse_money
-from .storage import DataError, app_home, hold_lock, unique_path
+from .storage import DataError, app_home, copy_in, hold_lock, unique_path, use_vault, write_files
 
 
 def _ask(prompt: str) -> str:
@@ -167,7 +166,8 @@ def _set_balance(ledger: Ledger, key: str, amount: str, as_of: str | None) -> bo
 
 
 def _archive(path: Path, imported: Path) -> None:
-    shutil.move(str(path), unique_path(imported, path.name))
+    copy_in(path, unique_path(imported, path.name))  # encrypted, if the data folder is
+    path.unlink()
 
 
 def convert_pdfs(inbox: Path, imported: Path) -> int:
@@ -207,6 +207,8 @@ def main(argv=None) -> int:
         print("Budgetier is open. Close it, then run this again.")
         return 2
     try:
+        if not _unlock(home):
+            return 2
         return _run(args, home)
     except DataError as e:
         print(e)
@@ -215,13 +217,32 @@ def main(argv=None) -> int:
         lock.close()
 
 
+def _unlock(home: Path) -> bool:
+    """An encrypted data folder needs its passcode, typed without showing it."""
+    from getpass import getpass
+
+    from . import vault
+    if vault.read_header(home) is None:
+        return True
+    for _ in range(3):
+        try:
+            use_vault(vault.open_with(home, getpass("Passcode for your Budgetier data: ")))
+            return True
+        except vault.WrongKey:
+            print("That isn't it.")
+        except EOFError:
+            break
+    print("Budgetier's data is encrypted. Run this again with the passcode, or open the app.")
+    return False
+
+
 def _run(args, home: Path) -> int:
     inbox, imported, output = home / "inbox", home / "imported", home / "output"
     for folder in (inbox, imported, output):
         folder.mkdir(parents=True, exist_ok=True)
     rules_path = home / "rules.csv"
     if not rules_path.exists():
-        rules_path.write_text(rules.TEMPLATE, encoding="utf-8")
+        write_files({rules_path: rules.TEMPLATE})
 
     ledger = Ledger(home)
     skipped = convert_pdfs(inbox, imported)

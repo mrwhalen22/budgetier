@@ -16,6 +16,8 @@ from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from pathlib import Path
 
+from .storage import read_bytes
+
 ALIASES = {
     "date": ["transaction date", "trans. date", "trans date", "date", "posting date",
              "posted date", "post date", "clearing date", "booking date", "effective date"],
@@ -174,7 +176,7 @@ def last4(text: str) -> str:
 
 
 def _read_text(path: Path) -> str:
-    raw = path.read_bytes()
+    raw = read_bytes(path)  # a copy kept in an encrypted data folder is read like any other
     if raw[:2] in (b"\xff\xfe", b"\xfe\xff"):
         return raw.decode("utf-16", errors="replace")
     try:

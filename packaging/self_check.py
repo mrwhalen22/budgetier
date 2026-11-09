@@ -62,7 +62,7 @@ def main() -> int:
         print(f"Totals differ. Python: {totals}")
     syncing = report.get("certificates", 0) > 0 and "fail" not in report.get("secure_store", "fail").lower()
     good = (code == 0 and report.get("window") == "Window" and report.get("rows", 0) > 0 and not report["failed"]
-            and matched and syncing)
+            and matched and syncing and report.get("encryption") is True)
     print("Self check passed." if good else "Self check FAILED.")
     return 0 if good else 1
 
