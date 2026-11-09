@@ -71,7 +71,10 @@ class Look:
 
 def load_look(home: Path) -> Look:
     """A look that can't be read is worth nothing more than the default."""
-    saved = settings.load(home).get("look")
+    return read_look(settings.load(home).get("look"))
+
+
+def read_look(saved) -> Look:
     if not isinstance(saved, dict):
         saved = {}
     mode = saved.get("mode") if saved.get("mode") in MODES else Look.mode

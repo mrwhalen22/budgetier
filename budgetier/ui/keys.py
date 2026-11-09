@@ -15,7 +15,7 @@ ACTIONS = (
     ("Add files", "Ctrl+I", "add_files"),
     ("Sync banks", "Ctrl+R", "sync"),
     ("Appearance", "Ctrl+,", "appearance"),
-    ("Lock, with a passcode set", "Ctrl+L", "lock"),
+    ("Lock, when your data is encrypted", "Ctrl+L", "lock"),
     ("Help", "F1", "help"),
 )
 

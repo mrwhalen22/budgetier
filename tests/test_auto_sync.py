@@ -69,18 +69,24 @@ class InTheWindow(QtCase):
         self.assertEqual(win.toast.words, "Couldn't sync by itself: SimpleFIN couldn't be reached.")
 
     def test_not_while_locked_but_once_unlocked(self):
-        from budgetier.ui import locking, settings
-        settings.save(self.budget.home, lock=locking.made("2468", 0))
-        connected(self.budget, "open", hours_ago=3)
+        from budgetier import storage
+        from budgetier.ui import locking
+        self.addCleanup(storage.use_vault, None)
+        locking.encrypt(self.budget.home, "2468 2468", 0, {})
+        connected(self.budget, "daily", hours_ago=21)
         with mock.patch.object(type(self.budget.sync), "sync", return_value={"added": 0, "problems": [], "unlinked": 0}) as ran:
             win = self.window()
-            from PySide6.QtCore import QCoreApplication
-            QCoreApplication.processEvents()
-            ran.assert_not_called()
-            win.lock_screen.code.setText("2468")
-            win.lock_screen.attempt()
             self.assertTrue(win.runner.wait())
-        ran.assert_called_once()
+            self.assertEqual(ran.call_count, 1)  # as it opened
+            win.lock()
+            win.auto_sync.timeout.emit()
+            self.assertTrue(win.runner.wait())
+            self.assertEqual(ran.call_count, 1)  # not while locked
+            win.lock_screen.code.setText("2468 2468")
+            win.lock_screen.attempt()
+            win.auto_sync.timeout.emit()
+            self.assertTrue(win.runner.wait())
+        self.assertEqual(ran.call_count, 2)
 
     def test_chosen_on_the_accounts_tab(self):
         from budgetier.ui.popup import Dropdown

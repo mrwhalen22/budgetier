@@ -168,7 +168,7 @@ def build(ctx: Context) -> QWidget:
         if a.loans is not None else None)
     tools = widgets.row(_button("Export workbook", lambda: export(w), ""),
                         _button("Open data folder", lambda: open_folder(w), ""),
-                        _button("Passcode", lambda: locking.setup(w), ""))
+                        _button("Encryption" if locking.saved(w.mine.home) else "Encrypt data", lambda: locking.setup(w), ""))
     parts = [figures, tools, widgets.notices(a.warnings, ctx.tokens), sync_card(w)]
     if a.accounts:
         parts.append(widgets.Grid([widgets.card(accounts_table(ctx, a.accounts), title="Accounts"),

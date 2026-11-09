@@ -110,22 +110,37 @@ reading while **Updating...** shows beside the tab's title.
 | Ctrl+I | Add files |
 | Ctrl+R | Sync banks |
 | Ctrl+, | Appearance |
-| Ctrl+L | Lock, with a passcode set |
+| Ctrl+L | Lock, when your data is encrypted |
 | F1 | Help |
 
 On a Mac, use Command in place of Ctrl.
 
-## Passcode
+## Encryption
 
-**Passcode** on the Accounts tab asks for a passcode when Budgetier opens, and after the time
-away you choose: 5 or 15 minutes, an hour, or only when it opens. Ctrl+L locks it at once.
-Changing or turning it off needs the passcode. Only a salted hash of it is kept, in
-`settings.json`.
+**Encrypt data** on the Accounts tab encrypts everything Budgetier keeps about your money,
+so it can only be read with your passcode, even by someone with the disk in hand: the
+ledger, accounts, rules, budgets, goals, notes, bank sync's settings, the window's settings,
+the `.bak` backups and the copies of the files you imported. Budgetier then asks for the
+passcode when it opens, and after the time away you choose: 5 or 15 minutes, an hour, or
+only when it opens. Ctrl+L locks the window at once. The command line asks for it too.
 
-It keeps other people at this computer out of the app, but it doesn't encrypt the files in
-your data folder. Those are protected by your sign-in to the computer; to protect them from
-someone who has the disk, turn on BitLocker (Windows) or FileVault (Mac). If you forget the
-passcode, delete the `"lock"` entry from `settings.json` while Budgetier is closed.
+When you turn it on, Budgetier shows a **recovery key** once. It opens your data if you
+forget the passcode, and then you choose a new one. **Keep it somewhere safe, away from this
+computer. If you lose both the passcode and the recovery key, nobody can open your data,**
+not even with help: there's no way around the encryption, which is the point of it.
+
+**Encryption** on the Accounts tab, with your passcode, changes the passcode, makes a new
+recovery key (the old one stops working), or turns encryption off, which saves everything
+unencrypted again.
+
+How it works: one random key encrypts the files with AES-256-GCM, which also refuses a file
+that's been damaged or changed rather than misreading it. Your passcode, stretched slowly
+with scrypt so guesses are costly, locks that key away in `vault.json`, and so does the
+recovery key. Changing the passcode rewrites only `vault.json`. Encrypting or decrypting
+goes one file at a time, each all or nothing, so if it's stopped partway the folder still
+opens and finishes next time. Left readable: `vault.json`, the log, update settings, and
+workbooks you export, which are saved where you choose so other programs can open them.
+Backups of an encrypted folder are encrypted too, and open with the same passcode.
 
 ## Updates
 
@@ -173,6 +188,7 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `splits.json` | Transactions you split into parts |
 | `goals.json` | Your savings goals |
 | `notes.json` | Notes and tags on transactions |
+| `vault.json` | When your data is encrypted: the key to it, locked by your passcode and by your recovery key |
 | `settings.json` | Your look, motion, the retirement estimate's numbers, where the window was left, what you'd seen last time, and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 

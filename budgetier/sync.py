@@ -18,7 +18,7 @@ from . import credentials, simplefin
 from .accounts import TYPES, account_id, account_name, entered_balance, pin_balance
 from .parse import _guess_type, last4
 from .simplefin import Feed
-from .storage import BudgetError, unique_path, write_files
+from .storage import BudgetError, read_text, unique_path, write_files
 
 OVERLAP_DAYS = 5  # some banks date a row before the day it reaches the feed; repeats cost nothing
 RECENT = timedelta(minutes=5)  # a second press this soon can't have anything new, and a
@@ -70,7 +70,7 @@ class BankSync:
         if not self.path.exists():
             return {}
         try:
-            state = json.loads(self.path.read_text(encoding="utf-8"))
+            state = json.loads(read_text(self.path))
             if not isinstance(state, dict) or not isinstance(state.get("links", {}), dict):
                 raise ValueError("unexpected shape")
             return state
