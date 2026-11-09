@@ -338,9 +338,10 @@ def _kind(category: str, cents: int, account_type: str) -> str:
 
 
 def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: dict | None = None,
-             splits: dict | None = None) -> list[dict]:
-    """A transaction changed by hand beats everything, then your rules, then what's built in."""
-    keys = edit_keys(rows) if edits or splits else [""] * len(rows)
+             splits: dict | None = None, keyed: bool = False) -> list[dict]:
+    """A transaction changed by hand beats everything, then your rules, then what's built in.
+    keyed: give every row its key even with no edits or splits, for notes to find them by."""
+    keys = edit_keys(rows) if edits or splits or keyed else [""] * len(rows)
     default_rules = [(re.compile(p), c, m) for p, c, m in DEFAULT_RULES]
     saved_at = [(re.compile(p), SAVED, m) for p, m in _SAVED_AT]
 
@@ -400,6 +401,27 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: d
             if not cards or any((r["date"] - first_seen[c]).days < 31 for c in cards if c in first_seen):
                 r["kind"], r["category"] = "estimate", ESTIMATED
     return _split(out, accounts, splits) if splits else out
+
+
+TAG_LONGEST, NOTE_LONGEST = 30, 500
+
+
+def valid_note(note) -> bool:
+    """Words about one transaction, and tags to gather it with others: a trip, a project."""
+    return (isinstance(note, dict) and isinstance(note.get("note", ""), str) and len(note.get("note", "")) <= NOTE_LONGEST
+            and isinstance(note.get("tags", []), list)
+            and all(isinstance(t, str) and t.strip() and len(t) <= TAG_LONGEST for t in note.get("tags", []))
+            and bool(note.get("note", "").strip() or note.get("tags")))
+
+
+def read_tags(text: str) -> list[str]:
+    """Tags as typed: separated by commas, with or without a #, in the spelling first used."""
+    found: dict[str, str] = {}
+    for part in text.split(","):
+        tag = " ".join(part.strip().lstrip("#").split())[:TAG_LONGEST].strip()
+        if tag:
+            found.setdefault(tag.lower(), tag)
+    return list(found.values())
 
 
 def valid_split(split) -> bool:
