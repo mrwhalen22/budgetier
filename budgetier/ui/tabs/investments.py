@@ -8,7 +8,7 @@ from PySide6.QtWidgets import QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from ... import views
 from ...parse import parse_money
-from .. import fmt, settings, theme, widgets
+from .. import fmt, investing, settings, theme, widgets
 from ..charts import Chart, Series
 from ..context import Context
 from ..importing import field
@@ -50,6 +50,12 @@ def build(ctx: Context) -> QWidget:
         widgets.tile("Growth this period", fmt.money(v.growth) if v.growth is not None else "n/a",
                      _percent(v.growth_rate) if v.growth is not None else "needs two balances a while apart",
                      fmt.tone(v.growth or 0))))
+    if views.investing_rows(s, {a.id for a in v.accounts}) and ctx.window is not None:
+        check = QPushButton("Check what counts as paid in")
+        check.setProperty("kind", "small")
+        check.clicked.connect(lambda _=False: investing.review(ctx.window, {a.id for a in v.accounts}))
+        parts.append(widgets.row(widgets.text("Growth leaves out what was paid in, so it's worth checking which rows are "
+                                              "which.", "sub"), check, spacing=theme.SPACE[3]))
     if any(b is not None for b in v.balance):
         parts.append(widgets.card(
             widgets.legend([("Balance", t["accent"]), ("Paid in", t["muted"])]),

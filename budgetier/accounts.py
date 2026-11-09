@@ -6,11 +6,12 @@ from datetime import date
 
 from .parse import ParsedFile, RawRow
 
-TYPES = ("checking", "savings", "credit", "investment", "retirement")
+TYPES = ("checking", "savings", "credit", "loan", "investment", "retirement")
 LABELS = {"credit": "Card", "savings": "Savings", "checking": "Checking", "investment": "Investing",
-          "retirement": "Retirement"}
+          "retirement": "Retirement", "loan": "Loan"}
 INVESTED = ("investment", "retirement")  # what's in them grows with markets, not only with what's paid in
 KEPT = ("savings", *INVESTED)  # money moved to these is money kept
+OWED = ("credit", "loan")  # a balance entered for these is what's owed, and counts against you
 
 
 def account_id(bank: str, number: str) -> str:
@@ -25,7 +26,7 @@ def purchases_look_positive(parsed: ParsedFile, rows: list[RawRow]) -> bool:
     """Spending is most of any account, so mostly-positive amounts mean a card that
     reports purchases as positive. A savings or investing account can honestly be
     nearly all deposits, so it doesn't get this test."""
-    if parsed.sign_known or parsed.account_type in KEPT or len(rows) < 5:
+    if parsed.sign_known or parsed.account_type in (*KEPT, "loan") or len(rows) < 5:  # a loan is mostly payments
         return False
     return sum(1 for r in rows if r.cents > 0) / len(rows) > 0.7
 
@@ -38,11 +39,17 @@ def sample_row(rows: list[RawRow]) -> RawRow:
 
 
 def pin_balance(info: dict, cents: int, day: date, live: bool = False) -> None:
-    """The balance an account had on a day. Entered for a card, it's what's owed."""
+    """The balance an account had on a day. Entered for a card or loan, it's what's owed."""
     info["balance_anchor"] = {"date": day.isoformat(), "amount": cents / 100, **({"live": True} if live else {})}
     info.pop("balance_skipped", None)
     if info.get("type") in INVESTED:
         remember_balance(info, cents, day)
+
+
+def entered_balance(kind: str, cents: int) -> int:
+    """A bank's own balance, as one is entered: a card's flipped to what it owes, and a loan's
+    is what it owes whichever way the bank signs it."""
+    return abs(cents) if kind == "loan" else -cents if kind == "credit" else cents
 
 
 def remember_balance(info: dict, cents: int, day: date) -> None:

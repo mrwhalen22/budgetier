@@ -133,7 +133,7 @@ class Spending(Tabs):
 class Recurring(Tabs):
     def test_bills_list_and_a_row_opens_its_transactions(self):
         self.win.show_tab("Recurring")
-        bills, income = self.tables()
+        *_, bills, income = self.tables()  # after what's coming up
         merchants = [row[0] for row in self.cells(bills)]
         self.assertIn("Lakeside Apts Rent", merchants)
         self.assertEqual([row[0] for row in self.cells(income)], ["Acme Payroll", "Interest"])
