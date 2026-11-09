@@ -14,7 +14,7 @@ import shutil
 from datetime import date, datetime, timedelta
 
 from . import credentials, simplefin
-from .accounts import TYPES, account_id, account_name, pin_balance
+from .accounts import TYPES, account_id, account_name, entered_balance, pin_balance
 from .parse import _guess_type, last4
 from .simplefin import Feed
 from .storage import BudgetError, unique_path, write_files
@@ -220,8 +220,7 @@ class BankSync:
                 continue
             since = date.fromisoformat(link["since"]) if link["since"] else None
             added = ledger.merge_synced(link["account"], feed_account.rows, since)
-            owed = info["type"] == "credit"  # entered balances count what a card owes
-            pin_balance(info, -feed_account.balance if owed else feed_account.balance, feed_account.balance_date, live=True)
+            pin_balance(info, entered_balance(info["type"], feed_account.balance), feed_account.balance_date, live=True)
             results.append({"account": info["name"], "added": added})
         return results
 

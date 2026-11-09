@@ -8,7 +8,7 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDateEdit, QGridLayout, QLineEdit, QPushButton, QWidget
 
 from ... import views
-from ...accounts import INVESTED
+from ...accounts import INVESTED, OWED
 from .. import fmt, investing, theme, widgets
 from ..banking import sync_card
 from ..context import Context
@@ -16,7 +16,7 @@ from ..dialogs import Dialog, attempt, busy, confirm
 from ..importing import TYPES, field, type_box
 
 TYPE_NAMES = dict(TYPES)
-TYPE_COLOR = {"checking": "c0", "credit": "c1", "savings": "c2", "investment": "c4", "retirement": "c3"}
+TYPE_COLOR = {"checking": "c0", "credit": "c1", "savings": "c2", "investment": "c4", "retirement": "c3", "loan": "c5"}
 
 
 def _button(label: str, run, kind: str = "small") -> QPushButton:
@@ -52,7 +52,7 @@ def open_folder(window) -> None:
 
 
 def edit_account(window, account: views.Account) -> Dialog:
-    owed = account.type == "credit"
+    owed = account.type in OWED
     dialog = Dialog(window, f"Edit {account.name}")
     name = QLineEdit(account.name)
     name.setAccessibleName("Name")
@@ -118,7 +118,7 @@ def accounts_table(ctx: Context, found: list[views.Account]) -> QWidget:
         if a.balance is None:
             balance = widgets.Cell("not set", right=True, tone="dim")
         else:
-            tone = fmt.gain(a.balance) if a.type == "credit" else fmt.tone(a.balance)
+            tone = fmt.gain(a.balance) if a.type in OWED else fmt.tone(a.balance)
             balance = widgets.Cell(fmt.cents(a.balance), right=True, tone=tone)
         source = f"{'from your bank' if a.live else 'calculated'}, {fmt.day_name(a.balance_as_of)}" if a.calculated else ""
         rows.append([widgets.Cell(a.name, icon=widgets.mono_icon(a.bank, t[TYPE_COLOR[a.type]]), bold=True),
@@ -163,7 +163,9 @@ def build(ctx: Context) -> QWidget:
                      fmt.tone(a.cash)) if a.cash is not None else None,
         owed,
         widgets.tile("Net of cards", fmt.money(a.net), "cash and savings minus cards", fmt.tone(a.net))
-        if a.net is not None else None)
+        if a.net is not None else None,
+        widgets.tile("Owed on loans", fmt.money(a.loans), "see Net worth for everything together")
+        if a.loans is not None else None)
     tools = widgets.row(_button("Export workbook", lambda: export(w), ""),
                         _button("Open data folder", lambda: open_folder(w), ""))
     parts = [figures, tools, widgets.notices(a.warnings, ctx.tokens), sync_card(w)]

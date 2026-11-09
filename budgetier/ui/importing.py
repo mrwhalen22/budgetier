@@ -21,8 +21,8 @@ from . import fmt, theme, widgets
 from .dialogs import Dialog, attempt, busy
 from .popup import Dropdown
 
-TYPES = (("checking", "Checking"), ("savings", "Savings"), ("credit", "Credit card"), ("investment", "Investing"),
-         ("retirement", "Retirement"))
+TYPES = (("checking", "Checking"), ("savings", "Savings"), ("credit", "Credit card"), ("loan", "Loan"),
+         ("investment", "Investing"), ("retirement", "Retirement"))
 LIST_HEIGHT = 520  # the review scrolls past this
 
 

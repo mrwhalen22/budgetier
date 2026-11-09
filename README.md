@@ -170,7 +170,7 @@ Some exports contain no account number, including Fifth Third's. The review scre
 what it found and asks for anything missing, so you never need to rename a file.
 
 The first time an account appears, the review screen shows its guess at checking,
-savings, credit card, investing or retirement. If the file's amounts could be read either way, it also shows a
+savings, credit card, loan, investing or retirement. If the file's amounts could be read either way, it also shows a
 real row and asks whether that was money you spent. Your answers matter: a card that
 reports purchases as positive would otherwise look like income.
 
@@ -211,6 +211,23 @@ same amount paid in each month, until the age you retire at. Rates are after inf
 amounts are in today's dollars. It's an estimate from the numbers you enter, not advice.
 Its numbers are kept in `settings.json`.
 
+## Loans and net worth
+
+Mark a mortgage, car loan, student loan or line of credit as a **Loan**, and enter what you
+owe on it, like a card. Accounts linked through bank sync with names like these are marked
+when you link them, and a loan's balance always counts as owed, however the bank signs it.
+
+A payment from checking that matches one into the loan, worded like a payment to a lender
+or naming its bank, is a transfer: it pays the loan down rather than counting as spending,
+and only the loan's interest counts, as `Interest`. Without the loan imported, a mortgage
+payment is still Housing, as before.
+
+The **Net worth** tab adds up everything you have, less everything you owe, at the end of
+each month. An account counts from its first known balance, so one added partway through
+shows as a step, and the change it reports is only how balances moved. Accounts without a
+balance are left out, and it says which. It also shows what went to loans in the period:
+how much was paid, how much of that was interest, and how much paid off the balance.
+
 ## PDFs
 
 Synchrony Bank only exports PDFs. Choose the PDF in **Add files** and it's converted
@@ -250,6 +267,8 @@ Transactions tab will show both.
 | Savings & Investing | Robinhood, online savings banks | A transfer, reported as saved |
 | Contributions, Withdrawals | Paid into or taken out of an investing or retirement account | A transfer, reported as saved |
 | Investment Activity | Dividends, trades and fees inside one | Not counted: it's part of growth |
+| Loan payment | Paid into a loan | A transfer: it pays the loan down |
+| Interest | What a loan charges | Counts as spending |
 
 A card payment that matches a purchase history is a transfer, because the purchases
 already count. If a card isn't imported, or its history doesn't reach back that far,

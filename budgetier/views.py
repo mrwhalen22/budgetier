@@ -10,7 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from . import analyze
-from .accounts import INVESTED, KEPT
+from .accounts import INVESTED, KEPT, OWED
 
 SUBSCRIPTIONS = "Subscriptions"
 COLORED = 8  # categories with their own color; the rest share "Other"
@@ -63,7 +63,7 @@ class Account:
     count: int
     first: str | None
     last: str | None
-    balance: int | None  # cents; negative on a card means owed
+    balance: int | None  # cents; negative on a card or loan means owed
     balances: dict[str, int]  # month to month-end balance, in cents
     balance_as_of: str | None
     calculated: bool
@@ -808,17 +808,97 @@ class AccountsView:
     imports: list[dict]
     warnings: list[dict]
     notes: list[dict]  # the checks that aren't warnings
+    loans: int | None = None  # negative: what loans owe
 
 
 def accounts(s: Snapshot) -> AccountsView:
-    cash = [a for a in s.accounts if a.type not in ("credit", *INVESTED)]  # investing accounts aren't cash
+    cash = [a for a in s.accounts if a.type not in (*OWED, *INVESTED)]  # investing accounts aren't cash
     banked = [a for a in cash if a.balance is not None]
     cards = [a for a in s.accounts if a.type == "credit" and a.balance is not None]
     total = sum(a.balance for a in banked) if banked else None
     o = owed(s)
+    loans = [a for a in s.accounts if a.type == "loan" and a.balance is not None]
     return AccountsView(total, len(banked), len(cash), o,
                         total + sum(a.balance for a in cards) if banked and o else None, list(s.accounts), list(s.imports),
-                        [c for c in s.checks if c["level"] == "warning"], [c for c in s.checks if c["level"] != "warning"])
+                        [c for c in s.checks if c["level"] == "warning"], [c for c in s.checks if c["level"] != "warning"],
+                        sum(a.balance for a in loans) if loans else None)
+
+
+# ---- Net worth
+
+
+@dataclass(frozen=True)
+class Holding:
+    account: Account
+    balance: int | None  # at the end of the period
+    change: int | None  # over the period, from the balance before it or its first in it
+
+
+@dataclass(frozen=True)
+class NetWorth:
+    months: list[str]
+    assets: list[int | None]  # each month's end, of the accounts known by then
+    debts: list[int | None]  # negative
+    net: list[int | None]
+    have: list[Holding]  # what you have: bank, savings and investing accounts
+    owe: list[Holding]  # cards and loans
+    missing: list[Account]  # no balance yet, so left out
+    loan_paid: int  # paid toward loans in the period
+    loan_interest: int  # what they charged for it, negative
+
+    @property
+    def now(self) -> int | None:
+        return next((n for n in reversed(self.net) if n is not None), None)
+
+    @property
+    def change(self) -> int | None:
+        """How the balances moved over the period. An account first seen partway through
+        adds to net worth from then, but it was brought in, not gained."""
+        moved = [h.change for h in (*self.have, *self.owe) if h.change is not None]
+        return sum(moved) if moved else None
+
+
+def _carried(account: Account, months: list[str]) -> list[int | None]:
+    """Each month's end balance, carrying the last one known through a quiet month, and
+    nothing before the account's first balance: it isn't known to have been worth anything."""
+    earlier = [m for m in account.balances if m < months[0]] if months else []
+    last = account.balances[max(earlier)] if earlier else None
+    out = []
+    for m in months:
+        last = account.balances.get(m, last)
+        out.append(last)
+    return out
+
+
+def net_worth(s: Snapshot, choice: Choice) -> NetWorth:
+    months = range_months(s, choice)
+    chosen = [a for a in s.accounts if choice.has(a.id)]
+    known = [a for a in chosen if a.balances or a.balance is not None]
+    by_month = {a.id: _carried(a, months) for a in known}
+
+    def total(accounts: list[Account], i: int) -> int | None:
+        found = [by_month[a.id][i] for a in accounts if by_month[a.id][i] is not None]
+        return sum(found) if found else None
+
+    have = [a for a in known if a.type not in OWED]
+    owe = [a for a in known if a.type in OWED]
+    assets = [total(have, i) for i in range(len(months))]
+    debts = [total(owe, i) for i in range(len(months))]
+    net = [None if a is None and d is None else (a or 0) + (d or 0) for a, d in zip(assets, debts)]
+
+    def holding(a: Account) -> Holding:
+        values = [v for v in by_month[a.id] if v is not None]
+        return Holding(a, values[-1] if values else None, values[-1] - values[0] if len(values) > 1 else None)
+
+    shown = set(months)
+    loans = {a.id for a in chosen if a.type == "loan"}
+    in_loans = [t for t in s.txns if t.account in loans and t.month in shown]
+    return NetWorth(months, assets, debts, net,
+                    sorted((holding(a) for a in have), key=lambda h: -(h.balance or 0)),
+                    sorted((holding(a) for a in owe), key=lambda h: h.balance or 0),
+                    [a for a in chosen if a not in known],
+                    sum(t.cents for t in in_loans if t.kind == "transfer" and t.cents > 0),
+                    sum(t.cents for t in in_loans if t.category == analyze.INTEREST))
 
 
 # ---- Transactions
