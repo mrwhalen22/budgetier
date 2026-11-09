@@ -47,6 +47,7 @@ SIDE_WIDTH = 232
 ICON = 18
 PLACE = "window"  # where the window was left, in settings.json
 SEEN = "seen"  # what was here when you last looked, for what's new since
+DISMISSED = "dismissed"  # alerts you've waved away
 UPDATING_AFTER = 150  # ms: a reload quicker than this never says it's happening
 
 
@@ -106,6 +107,8 @@ class Window(QMainWindow):
         self._looked = False  # whether the Overview was shown, so what's new there has been seen
         if not isinstance(saved, dict):
             self._keep_seen()
+        gone = settings.load(budget.home).get(DISMISSED)
+        self.dismissed = [k for k in gone if isinstance(k, str)] if isinstance(gone, list) else []
         self.restyle()
         self._ready = True
         self.show_tab(place["tab"])
@@ -511,6 +514,16 @@ class Window(QMainWindow):
         """What's new has been seen: the Overview stops showing it."""
         self.seen = views.seen(self.snapshot)
         self._keep_seen()
+        self.render()
+
+    def dismiss(self, keys: list[str]) -> None:
+        """Alerts waved away stay away. Only the newest are kept: old news never comes back."""
+        self.dismissed = [*[k for k in self.dismissed if k not in keys], *keys][-views.DISMISSED_KEPT:]
+        if not self.sample_home:
+            try:
+                settings.save(self.mine.home, **{DISMISSED: self.dismissed})
+            except OSError:
+                pass  # they show again next time, which is no harm
         self.render()
 
     def _keep_seen(self) -> None:

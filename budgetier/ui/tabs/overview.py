@@ -200,6 +200,26 @@ def reminder(ctx: Context) -> QWidget | None:
     return widgets.banner("info", found.title, found.detail, ctx.tokens, go)
 
 
+def heads_up(ctx: Context) -> QWidget | None:
+    """Budgets running out this month, and charges far from the usual."""
+    window = ctx.window
+    found = views.alerts(ctx.snapshot, set(getattr(window, "dismissed", [])))
+    if not found:
+        return None
+    rows = []
+    for a in found:
+        see = QPushButton("See")
+        see.setProperty("kind", "small")
+        see.clicked.connect(lambda _=False, a=a: ctx.open_transactions(category=a.category, query=a.query))
+        rows.append(widgets.banner(a.level, a.title, a.detail, ctx.tokens, see))
+    done = QPushButton("Dismiss all")
+    done.setProperty("kind", "small")
+    done.clicked.connect(lambda _=False: window.dismiss([a.key for a in found]))
+    frame = widgets.card(*rows, widgets.row(done) if window is not None else None, title="Heads up")
+    frame.setObjectName("headsUp")
+    return frame
+
+
 def running_short(ctx: Context) -> QWidget | None:
     """When the bills ahead would take checking below zero, before payday does."""
     f = views.forecast(ctx.snapshot)
@@ -250,7 +270,7 @@ def build(ctx: Context) -> QWidget:
     column = QVBoxLayout(page)
     column.setContentsMargins(0, 0, 0, 0)
     column.setSpacing(theme.SPACE[4])
-    parts = (reminder(ctx), running_short(ctx), whats_new(ctx), widgets.notices(o.warnings, t),
+    parts = (reminder(ctx), running_short(ctx), heads_up(ctx), whats_new(ctx), widgets.notices(o.warnings, t),
              this_month(ctx, o.this_month), hero(ctx, o),
              figures, split)
     for part in parts:

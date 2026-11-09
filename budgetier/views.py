@@ -1466,3 +1466,84 @@ def tax_rows(s: Snapshot, year: str) -> list[Tx]:
     held = {a.id for a in s.accounts if a.type == "retirement"}
     return [t for t in s.txns if t.month[:4] == year and t.category in wanted
             and (t.category != analyze.CONTRIBUTED or t.account in held)]
+
+
+# ---- Alerts
+
+
+NEAR_BUDGET = 0.8  # of a month's target, spent
+RECENT_DAYS = 7  # how far back from the newest day a charge is news
+UNUSUAL_TIMES = 3  # a charge this many times what a merchant usually takes
+UNUSUAL_LEAST = 10000  # cents: smaller than this is never worth a word
+NEW_MERCHANT_LEAST = 25000  # cents, for a merchant never seen before
+DISMISSED_KEPT = 200
+
+
+@dataclass(frozen=True)
+class Alert:
+    key: str  # stays the same while it's the same news, so dismissing it sticks
+    level: str  # warning or info
+    title: str
+    detail: str
+    category: str = ""  # what to list on Transactions
+    query: str = ""
+
+
+def _money(cents: int) -> str:
+    return f"${abs(cents) / 100:,.0f}"
+
+
+def _budget_alerts(s: Snapshot) -> list[Alert]:
+    """Categories past most of this month's budget, while the month is in progress."""
+    if not s.budget_months or not s.budget_targets:
+        return []
+    m = s.budget_months[-1]
+    if not m.partial:
+        return []
+    found = []
+    days_left = calendar.monthrange(int(m.month[:4]), int(m.month[5:]))[1] - int(s.end[8:])
+    for t in s.budget_targets:
+        line = _line(t, m)
+        if line.goal <= 0 or line.used < NEAR_BUDGET:
+            continue
+        over = line.used > 1
+        state = "over" if over else "near"
+        left = f"{days_left} day{'s' if days_left != 1 else ''} left" if days_left > 0 else "the month's last day"
+        found.append(Alert(
+            f"budget:{line.category}:{m.month}:{state}", "warning" if over else "info",
+            f"{line.category} is {_money(-line.left)} over budget" if over
+            else f"{line.category} has used {round(line.used * 100)}% of its budget",
+            f"{_money(line.spent)} of {_money(line.goal)} spent, with {left} in {month_name(m.month)}.",
+            category=line.category))
+    return found
+
+
+def _unusual(s: Snapshot) -> list[Alert]:
+    """A charge in the last week far bigger than that merchant usually takes, or a big one from
+    a merchant never seen before."""
+    since = (date.fromisoformat(s.end) - timedelta(days=RECENT_DAYS)).isoformat()
+    usual: dict[str, list[int]] = {}
+    found = []
+    for t in sorted(s.txns, key=lambda t: t.date):  # what a merchant usually takes is from before each charge
+        if t.kind != "expense":
+            continue
+        earlier = usual.setdefault(t.merchant, [])
+        amount = -t.cents
+        if t.date > since and amount >= UNUSUAL_LEAST:
+            typical = sorted(earlier)[len(earlier) // 2] if earlier else None
+            if typical is not None and len(earlier) >= 3 and amount >= typical * UNUSUAL_TIMES:
+                found.append(Alert(f"charge:{t.date}:{t.account}:{t.cents}:{t.merchant}", "warning",
+                                   f"{t.merchant} charged {_money(amount)}",
+                                   f"On {day_name(t.date)}. It's usually about {_money(typical)}.", query=t.merchant))
+            elif not earlier and amount >= NEW_MERCHANT_LEAST:
+                found.append(Alert(f"charge:{t.date}:{t.account}:{t.cents}:{t.merchant}", "info",
+                                   f"A first charge from {t.merchant}: {_money(amount)}",
+                                   f"On {day_name(t.date)}. Worth a look if you don't recognize it.", query=t.merchant))
+        earlier.append(amount)
+    return found
+
+
+def alerts(s: Snapshot, dismissed: set[str] | None = None) -> list[Alert]:
+    """What's worth a word on the Overview: budgets running out, and unusual charges."""
+    dismissed = dismissed or set()
+    return [a for a in [*_budget_alerts(s), *_unusual(s)] if a.key not in dismissed]
