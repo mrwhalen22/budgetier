@@ -58,6 +58,11 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   guessed from recent ones. With a checking balance set, it shows what they'd do to
   checking and its lowest point, and the Overview warns when bills would take checking
   below zero before payday.
+- **Year in review** shows a year at a glance: income, spending and what you kept, beside
+  the months of the year before that both years have, what went up and down the most, and
+  the top merchants. **For tax time** totals donations and gifts, taxes paid, medical,
+  education, loan interest and retirement contributions, and exports those rows as a CSV.
+  It's to help gather your records, not tax advice.
 - **Accounts** is where you edit an account, set a balance, remove one imported file or
   a whole account, export the Excel workbook, and open the data folder.
 - **Help** shows which banks work, tips for accurate numbers, the keyboard shortcuts, and a

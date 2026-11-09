@@ -18,6 +18,8 @@ TABS = {
                    '<path d="M5 12v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6"/>',
     "Net worth": '<path d="M12 3.5v17"/><path d="M5 7.5h14"/><path d="M5 7.5 2.5 14a3 3 0 0 0 5 0z"/>'
                  '<path d="M19 7.5 16.5 14a3 3 0 0 0 5 0z"/><path d="M8.5 20.5h7"/>',
+    "Year in review": '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17"/><path d="M8 3v4"/>'
+                      '<path d="M16 3v4"/><path d="M8 14h3"/><path d="M8 17h6"/>',
     "Transactions": '<path d="M8 6h12"/><path d="M8 12h12"/><path d="M8 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/>'
                     '<path d="M4 18h.01"/>',
     "Rules": '<path d="M4 7h10"/><path d="M18 7h2"/><circle cx="16" cy="7" r="2"/><path d="M4 17h2"/><path d="M10 17h10"/>'
