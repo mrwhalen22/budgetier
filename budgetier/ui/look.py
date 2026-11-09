@@ -1,5 +1,7 @@
-"""Appearance: light, dark or the system's, the Pine, Ocean or Plum theme, and motion."""
+"""Appearance: light, dark or the system's, the Pine, Ocean or Plum theme, text size, and motion."""
 from __future__ import annotations
+
+from dataclasses import replace
 
 from PySide6.QtCore import QSize
 from PySide6.QtWidgets import QButtonGroup, QPushButton
@@ -20,7 +22,7 @@ def appearance(window) -> Dialog:
         button.setProperty("kind", "segment")
         button.setCheckable(True)
         button.setChecked(window.look.mode == value)
-        button.clicked.connect(lambda _=False, value=value: window.set_look(theme.Look(value, window.look.palette)))
+        button.clicked.connect(lambda _=False, value=value: window.set_look(replace(window.look, mode=value)))
         modes.addButton(button)
         mode_buttons.append(button)
     for value, label in theme.PALETTES:
@@ -31,17 +33,28 @@ def appearance(window) -> Dialog:
         accent = theme.tokens(window.mode, value)["accent"]
         button.setIcon(icons.pixmap(SWATCH, accent, 14, button.devicePixelRatioF(), filled=True))
         button.setIconSize(QSize(14, 14))
-        button.clicked.connect(lambda _=False, value=value: window.set_look(theme.Look(window.look.mode, value)))
+        button.clicked.connect(lambda _=False, value=value: window.set_look(replace(window.look, palette=value)))
         palettes.addButton(button)
         palette_buttons.append(button)
     dialog.body.addWidget(widgets.text("Mode", "field"))
     dialog.body.addWidget(widgets.row(*mode_buttons, spacing=theme.SPACE[1]))
+    sizes, size_buttons = QButtonGroup(dialog), []
+    for value, label, _ in theme.SIZES:
+        button = QPushButton(label)
+        button.setProperty("kind", "segment")
+        button.setCheckable(True)
+        button.setChecked(window.look.size == value)
+        button.clicked.connect(lambda _=False, value=value: window.set_look(replace(window.look, size=value)))
+        sizes.addButton(button)
+        size_buttons.append(button)
     dialog.body.addWidget(widgets.text("Theme", "field"))
     dialog.body.addWidget(widgets.row(*palette_buttons, spacing=theme.SPACE[1]))
+    dialog.body.addWidget(widgets.text("Text size", "field"))
+    dialog.body.addWidget(widgets.row(*size_buttons, spacing=theme.SPACE[1]))
     dialog.motion = widgets.check("Reduce motion", not motion.on(), lambda on: window.set_motion(not on))
     dialog.body.addWidget(dialog.motion)
     dialog.set_buttons([("Done", dialog.dismiss, "primary")])
-    dialog.mode_buttons, dialog.palette_buttons = mode_buttons, palette_buttons
+    dialog.mode_buttons, dialog.palette_buttons, dialog.size_buttons = mode_buttons, palette_buttons, size_buttons
     dialog.open()
     dialog.main.setFocus()  # a ring on the first choice would read as a second one chosen
     return dialog

@@ -37,16 +37,110 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   list with **Save and next**, or select any row on the Transactions tab to give it a name
   and category. Rules apply to all your history and to future imports. To change one
   transaction and nothing else, select its row and choose **Just this transaction**.
+  To give one transaction several categories, like a Costco trip that was part groceries
+  and part household, choose **Split** and give each part an amount; they need to add up
+  to the whole. **Add note** keeps a few words with one transaction, like "reimbursed by
+  work", and tags gather transactions across categories: tag everything a trip cost
+  "Japan trip" and the Spending tab shows what it came to. Search `#Japan trip` on the
+  Transactions tab to list them.
 - **Budgets** sets a monthly target for a category, as a dollar amount or a percent of
   income, and shows what's left. A percent target follows each month's income. While a
   month is still in progress it uses the average of the last 3 complete months instead,
-  because your pay may not have landed yet.
+  because your pay may not have landed yet. Tick **Carry what's left into next month** for
+  costs that come and go, like gifts or car repairs: what's left at a month's end adds to the
+  next month's target, and going over takes from it, starting from last month.
+- **Savings goals**, also on the Budgets tab, track saving toward something: an emergency
+  fund, a trip, next year's car insurance. Keep a goal in a savings or investing account, so
+  its balance is the progress, or in an amount you update yourself. Give it a date and it
+  shows what a month gets it there, and whether you're on track from where it started.
+- **Recurring** lists bills, subscriptions and regular income, and what's coming up over
+  the next 30 days: each bill and paycheck on its usual day, and card and loan payments
+  guessed from recent ones. With a checking balance set, it shows what they'd do to
+  checking and its lowest point, and the Overview warns when bills would take checking
+  below zero before payday.
+- **Year in review** shows a year at a glance: income, spending and what you kept, beside
+  the months of the year before that both years have, what went up and down the most, and
+  the top merchants. **For tax time** totals donations and gifts, taxes paid, medical,
+  education, loan interest and retirement contributions, and exports those rows as a CSV.
+  It's to help gather your records, not tax advice.
 - **Accounts** is where you edit an account, set a balance, remove one imported file or
   a whole account, export the Excel workbook, and open the data folder.
-- **Help** shows which banks work, tips for accurate numbers, and a short tour.
+- **Help** shows which banks work, tips for accurate numbers, the keyboard shortcuts, and a
+  short tour.
 
 Removing a file rebuilds that account from its other files, so transactions another
 file also covers stay.
+
+Before bringing in your own accounts, **Try it with sample data** on the welcome screen shows
+a year and a half of made-up accounts to look around. It's kept in a folder of its own and
+thrown away when you choose **Leave sample data** or close Budgetier; adding files and bank
+sync wait until you've left it.
+
+**Export CSV** on the Transactions tab saves every transaction it lists, with your search,
+filters and period applied, for a spreadsheet or another app.
+
+On the Overview, Spending and Savings charts, select a month, or press Enter on it, to show
+just that month.
+
+After new transactions arrive, the Overview lists what's new since you last looked: how
+many came in and what they add up to, payments newly found to recur, and bills whose price
+changed. **Got it** clears it, as does closing Budgetier after seeing the Overview.
+
+The Overview also gives a heads-up when a budget has used 80% of this month's target with
+days to go, or gone over, and when a charge in the last week is three times what that merchant
+usually takes, or a first charge from somewhere new is $250 or more. **Dismiss all** keeps those
+away; a budget that then goes over is news again.
+
+When the numbers are a while out of date, the Overview says so with a button to fix it:
+after a week without a bank sync, or when your newest transaction is over a month old.
+
+A change to a category, a rule, a budget or an account's details can be undone: choose
+**Undo** in the note that appears, or press Ctrl+Z. Removing a file or an account asks
+first instead, since it rebuilds the account.
+
+Budgetier opens where you left it: the same size and place, tab, period and accounts. After
+a change it works out the new numbers in the background, so on a long history you can keep
+reading while **Updating...** shows beside the tab's title.
+
+| Keys | Does |
+| --- | --- |
+| Ctrl+1 to Ctrl+9 | Show the first nine tabs, in the sidebar's order |
+| Ctrl+F | Find a transaction |
+| Ctrl+Z | Undo the last change |
+| Ctrl+I | Add files |
+| Ctrl+R | Sync banks |
+| Ctrl+, | Appearance |
+| Ctrl+L | Lock, when your data is encrypted |
+| F1 | Help |
+
+On a Mac, use Command in place of Ctrl.
+
+## Encryption
+
+**Encrypt data** on the Accounts tab encrypts everything Budgetier keeps about your money,
+so it can only be read with your passcode, even by someone with the disk in hand: the
+ledger, accounts, rules, budgets, goals, notes, bank sync's settings, the window's settings,
+the `.bak` backups and the copies of the files you imported. Budgetier then asks for the
+passcode when it opens, and after the time away you choose: 5 or 15 minutes, an hour, or
+only when it opens. Ctrl+L locks the window at once. The command line asks for it too.
+
+When you turn it on, Budgetier shows a **recovery key** once. It opens your data if you
+forget the passcode, and then you choose a new one. **Keep it somewhere safe, away from this
+computer. If you lose both the passcode and the recovery key, nobody can open your data,**
+not even with help: there's no way around the encryption, which is the point of it.
+
+**Encryption** on the Accounts tab, with your passcode, changes the passcode, makes a new
+recovery key (the old one stops working), or turns encryption off, which saves everything
+unencrypted again.
+
+How it works: one random key encrypts the files with AES-256-GCM, which also refuses a file
+that's been damaged or changed rather than misreading it. Your passcode, stretched slowly
+with scrypt so guesses are costly, locks that key away in `vault.json`, and so does the
+recovery key. Changing the passcode rewrites only `vault.json`. Encrypting or decrypting
+goes one file at a time, each all or nothing, so if it's stopped partway the folder still
+opens and finishes next time. Left readable: `vault.json`, the log, update settings, and
+workbooks you export, which are saved where you choose so other programs can open them.
+Backups of an encrypted folder are encrypted too, and open with the same passcode.
 
 ## Updates
 
@@ -65,7 +159,8 @@ check, or to check by hand, use the buttons at the bottom of the Help tab.
 ## Appearance
 
 Choose **Appearance** at the bottom of the sidebar to pick a theme (Pine, Ocean or Plum) and
-light, dark or matching your system. **Reduce motion** turns off the short fades, slides and
+light, dark or matching your system. **Text size** makes all the text smaller or larger, up to
+about a third bigger. **Reduce motion** turns off the short fades, slides and
 growing bars. The choice is kept in your data folder.
 
 ## Where things live
@@ -90,7 +185,11 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 | `accounts.json` | Account names, types and entered balances |
 | `rules.csv` | Your category rules |
 | `imported/` | A copy of each imported file, needed to remove files safely |
-| `settings.json` | Your look, motion, the retirement estimate's numbers, and whether you've seen the tour |
+| `splits.json` | Transactions you split into parts |
+| `goals.json` | Your savings goals |
+| `notes.json` | Notes and tags on transactions |
+| `vault.json` | When your data is encrypted: the key to it, locked by your passcode and by your recovery key |
+| `settings.json` | Your look, motion, the retirement estimate's numbers, where the window was left, what you'd seen last time, and whether you've seen the tour |
 | `logs/app.log` | Details if something goes wrong |
 
 ## Bank sync
@@ -98,9 +197,17 @@ in `.bak`, so if a file is ever damaged it tells you which one to put back. Insi
 Instead of downloading files, you can update accounts through
 [SimpleFIN](https://www.simplefin.org/), a paid service. Open the Accounts tab, choose
 **Connect SimpleFIN**, and paste a setup token from your SimpleFIN account. Then match each
-bank account to an account in Budgetier, or add it as a new one. Budgetier syncs only when
-you press **Sync now**, and each sync brings in everything since the last one, however long
-ago that was.
+bank account to an account in Budgetier, or add it as a new one. Budgetier syncs when you
+press **Sync now**, and each sync brings in everything since the last one, however long ago
+that was. Under **Sync** on the Accounts tab you can also have it sync by itself: when
+Budgetier opens (unless it synced within the hour), or once a day while it's open. A sync
+by itself waits for the passcode, and a problem shows as a note rather than stopping you.
+
+An account in another currency asks what one unit is worth in dollars when you choose it.
+Its amounts and balance are turned into dollars at that rate as they come in, and each row
+keeps its own amount at the end of its description, like `CAFE PARIS (EUR -12.50)`. A new
+rate, set under **Exchange rates** on the Accounts tab, applies to what comes in after it.
+Accounts in something with no exchange rate, such as reward points, are skipped.
 
 - **Privacy:** with sync on, SimpleFIN and the services behind it handle your transactions.
   Budgetier gets read-only access, sends SimpleFIN nothing but the request, and keeps the
@@ -126,7 +233,7 @@ Some exports contain no account number, including Fifth Third's. The review scre
 what it found and asks for anything missing, so you never need to rename a file.
 
 The first time an account appears, the review screen shows its guess at checking,
-savings, credit card, investing or retirement. If the file's amounts could be read either way, it also shows a
+savings, credit card, loan, investing or retirement. If the file's amounts could be read either way, it also shows a
 real row and asks whether that was money you spent. Your answers matter: a card that
 reports purchases as positive would otherwise look like income.
 
@@ -157,12 +264,32 @@ beyond what was paid in. Growth shows once there are two balances a while apart.
 
 Inside these accounts nothing counts as income or spending. Money paid in or taken out is
 `Contributions` or `Withdrawals`; dividends, trades and fees are `Investment Activity`,
-which is part of growth. Change a row's category if one is wrong.
+which is part of growth. Banks word these rows many ways, so after you mark an account,
+**Check what counts as paid in** lists its rows by name under each category. A change saves a
+rule in the bank's wording, so new rows like it follow; wording too short to be safe changes
+only those rows.
 
 The retirement estimate grows today's retirement balance at the rate you choose, with the
 same amount paid in each month, until the age you retire at. Rates are after inflation, so
 amounts are in today's dollars. It's an estimate from the numbers you enter, not advice.
 Its numbers are kept in `settings.json`.
+
+## Loans and net worth
+
+Mark a mortgage, car loan, student loan or line of credit as a **Loan**, and enter what you
+owe on it, like a card. Accounts linked through bank sync with names like these are marked
+when you link them, and a loan's balance always counts as owed, however the bank signs it.
+
+A payment from checking that matches one into the loan, worded like a payment to a lender
+or naming its bank, is a transfer: it pays the loan down rather than counting as spending,
+and only the loan's interest counts, as `Interest`. Without the loan imported, a mortgage
+payment is still Housing, as before.
+
+The **Net worth** tab adds up everything you have, less everything you owe, at the end of
+each month. An account counts from its first known balance, so one added partway through
+shows as a step, and the change it reports is only how balances moved. Accounts without a
+balance are left out, and it says which. It also shows what went to loans in the period:
+how much was paid, how much of that was interest, and how much paid off the balance.
 
 ## PDFs
 
@@ -203,6 +330,8 @@ Transactions tab will show both.
 | Savings & Investing | Robinhood, online savings banks | A transfer, reported as saved |
 | Contributions, Withdrawals | Paid into or taken out of an investing or retirement account | A transfer, reported as saved |
 | Investment Activity | Dividends, trades and fees inside one | Not counted: it's part of growth |
+| Loan payment | Paid into a loan | A transfer: it pays the loan down |
+| Interest | What a loan charges | Counts as spending |
 
 A card payment that matches a purchase history is a transfer, because the purchases
 already count. If a card isn't imported, or its history doesn't reach back that far,

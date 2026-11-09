@@ -34,14 +34,17 @@ class QtCase(Tmp):
         self.app = application()
         self.budget = build(Path(self.dir) / "home")
 
-    def window(self, budget=None, toured=True, **options):
-        """toured: whether the tour has been seen, so it doesn't start by itself mid-test."""
+    def window(self, budget=None, toured=True, background=False, **options):
+        """toured: whether the tour has been seen, so it doesn't start by itself mid-test.
+        background: read the data again off the window's thread after a change, as the app
+        does. Off, a test can check the window straight after changing something."""
         from budgetier.ui import settings
         from budgetier.ui.app import Window
         budget = budget or self.budget
         if toured:
             settings.save(budget.home, toured=True)
         window = Window(budget, **options)
+        window.background = background
         self.addCleanup(self.gone, window)
         window.show()
         self.app.processEvents()
