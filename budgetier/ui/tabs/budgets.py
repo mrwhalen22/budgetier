@@ -23,7 +23,12 @@ def number(value: float) -> str:
 
 
 def goal_text(line: views.BudgetLine) -> str:
-    return f"{number(line.value)}% of income" if line.mode == "percent" else f"{fmt.money(line.value)} a month"
+    text = f"{number(line.value)}% of income" if line.mode == "percent" else f"{fmt.money(line.value)} a month"
+    if line.rollover and line.carried:
+        text += f", {fmt.money(abs(line.carried))} {'carried in' if line.carried > 0 else 'over last month'}"
+    elif line.rollover:
+        text += ", rolls over"
+    return text
 
 
 def _button(label: str, run, kind: str = "small") -> QPushButton:
@@ -270,6 +275,9 @@ def budget_form(ctx: Context, line: views.BudgetLine | None = None) -> Dialog | 
         mode.addItem(label, value)
     mode.setCurrentIndex(mode.findData(line.mode if line else "amount"))
     value = QLineEdit("" if line is None else number(line.value / 100) if line.mode == "amount" else number(line.value))
+    rollover = widgets.check("Carry what's left into next month", bool(line and line.rollover), lambda _on: None)
+    rollover.setToolTip("Money left at the end of a month adds to the next month's target, and going over takes from it. "
+                        "It starts from last month.")
     value_label = widgets.text("Dollars a month", "field")
     value_box = widgets.column(value_label, value, spacing=theme.SPACE[1])
     grid = QGridLayout()
@@ -277,7 +285,9 @@ def budget_form(ctx: Context, line: views.BudgetLine | None = None) -> Dialog | 
     grid.addWidget(field("Category", category), 0, 0, 1, 2)
     grid.addWidget(field("Target type", mode), 1, 0)
     grid.addWidget(value_box, 1, 1)
+    grid.addWidget(rollover, 2, 0, 1, 2)
     dialog.body.addLayout(grid)
+    dialog.rollover = rollover
     panel = QFrame()
     panel.setProperty("kind", "panel")
     words = widgets.text("", "panel-text")
@@ -306,7 +316,7 @@ def budget_form(ctx: Context, line: views.BudgetLine | None = None) -> Dialog | 
     def save():
         def work():
             ok, result = attempt(window.budget.undoable, window.budget.save_budget, category.currentData(),
-                                 mode.currentData(), value.text())
+                                 mode.currentData(), value.text(), rollover.isChecked())
             if not ok:
                 return dialog.show_error(str(result))
             dialog.dismiss()

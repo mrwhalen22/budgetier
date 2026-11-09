@@ -49,7 +49,13 @@ def literal(pattern: str) -> str | None:
 
 def _valid_target(target) -> bool:
     return (isinstance(target, dict) and target.get("mode") in ("amount", "percent")
-            and type(target.get("value")) in (int, float) and target["value"] > 0)
+            and type(target.get("value")) in (int, float) and target["value"] > 0
+            and isinstance(target.get("rollover", False), bool)
+            and (target.get("since") is None or (isinstance(target["since"], str) and len(target["since"]) == 7)))
+
+
+def _last_month(today: date) -> str:
+    return f"{today.year - 1}-12" if today.month == 1 else f"{today.year}-{today.month - 1:02d}"
 
 
 def _new_id(taken) -> str:
@@ -554,7 +560,9 @@ class Budget:
     def _write_budgets(self, budgets: dict[str, dict]) -> None:
         write_files({self.budgets_path: json.dumps(budgets, indent=2, sort_keys=True)})
 
-    def save_budget(self, category: str, mode: str, value: str) -> None:
+    def save_budget(self, category: str, mode: str, value: str, rollover: bool = False, today: date | None = None) -> None:
+        """rollover carries what's left each month into the next, and what's overspent out of it,
+        from last month on: carrying from the start of history would pile up years of it."""
         category = category.strip()
         if not category:
             raise BudgetError("Choose a category.")
@@ -573,7 +581,12 @@ class Budget:
                 raise BudgetError("Enter a percentage above 0, up to 100.")
         else:
             raise BudgetError("Choose a dollar amount or a percent of income.")
-        self._write_budgets({**self.budgets(), category: {"mode": mode, "value": target}})
+        saved = {"mode": mode, "value": target}
+        if rollover:
+            old = self.budgets().get(category, {})
+            saved.update(rollover=True, since=old.get("since") if old.get("rollover") and old.get("since")
+                         else _last_month(today or date.today()))
+        self._write_budgets({**self.budgets(), category: saved})
 
     def delete_budget(self, category: str) -> None:
         budgets = self.budgets()

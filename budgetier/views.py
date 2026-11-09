@@ -100,7 +100,8 @@ class BudgetMonth:
     income: int
     base: int  # the income percent targets are taken from
     spent: dict[str, int]
-    targets: dict[str, int]
+    targets: dict[str, int]  # with anything carried over in
+    carried: dict[str, int] = field(default_factory=dict)  # into this month, for budgets that roll over
 
 
 @dataclass(frozen=True)
@@ -199,11 +200,33 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
                   **{n: _count(i.get(n)) for n in ("rows", "added", "duplicates")}} for i in imports[-30:]][::-1],
         budget_targets=[{**t, "value": _cents(t["value"]) if t["mode"] == "amount" else t["value"]}
                         for t in budget_report["targets"]],
-        budget_months=[BudgetMonth(m["month"], m["partial"], _cents(m["income"]), _cents(m["base"]),
-                                   {c: _cents(v) for c, v in m["spent"].items()},
-                                   {c: _cents(v) for c, v in m["targets"].items()}) for m in budget_report["months"]],
+        budget_months=_carry([BudgetMonth(m["month"], m["partial"], _cents(m["income"]), _cents(m["base"]),
+                                          {c: _cents(v) for c, v in m["spent"].items()},
+                                          {c: _cents(v) for c, v in m["targets"].items()}) for m in budget_report["months"]],
+                             budget_report["targets"]),
         rules=list(rules), all_categories=list(all_categories),
         goals=[{**g, "id": goal_id} for goal_id, g in (goals or {}).items()])
+
+
+def _carry(months: list[BudgetMonth], targets: list[dict]) -> list[BudgetMonth]:
+    """A budget that rolls over adds what was left last month to this month's target, and takes
+    away what went over, from the month it started rolling over."""
+    rolling = [t for t in targets if t.get("rollover")]
+    if not rolling:
+        return months
+    running = {t["category"]: 0 for t in rolling}
+    out = []
+    for m in months:
+        targets_now, carried = dict(m.targets), {}
+        for t in rolling:
+            c = t["category"]
+            if m.month < (t.get("since") or ""):
+                continue
+            carried[c] = running[c]
+            targets_now[c] = targets_now.get(c, 0) + running[c]
+            running[c] = targets_now[c] - m.spent.get(c, 0)
+        out.append(BudgetMonth(m.month, m.partial, m.income, m.base, m.spent, targets_now, carried))
+    return out
 
 
 def from_budget(budget) -> Snapshot:
@@ -1000,6 +1023,8 @@ class BudgetLine:
     left: int  # negative when over
     used: float  # share of the goal spent
     state: str  # "over", "near" or ""
+    carried: int = 0  # into this month's goal, when it rolls over: negative when last month went over
+    rollover: bool = False
 
 
 @dataclass(frozen=True)
@@ -1020,7 +1045,8 @@ def _line(target: dict, m: BudgetMonth) -> BudgetLine:
     goal, spent = m.targets.get(target["category"], 0), m.spent.get(target["category"], 0)
     used = spent / goal if goal > 0 else (2 if spent > 0 else 0)
     return BudgetLine(target["category"], target["mode"], target["value"], goal, spent, goal - spent, used,
-                      "over" if used > 1 else "near" if used >= .9 else "")
+                      "over" if used > 1 else "near" if used >= .9 else "", m.carried.get(target["category"], 0),
+                      bool(target.get("rollover")))
 
 
 def budgets(s: Snapshot, month: str | None = None) -> BudgetsView:

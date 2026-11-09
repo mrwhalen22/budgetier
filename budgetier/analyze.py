@@ -711,7 +711,8 @@ def budget_report(rows: list[dict], accounts: dict, budgets: dict[str, dict]) ->
     """Spending against each target, by month. A percent target follows that month's
     income, except in the month in progress, where pay may not have landed yet: that
     one uses recent income, or it would read as over budget until payday."""
-    targets = [{"category": c, "mode": b["mode"], "value": b["value"] / 100 if b["mode"] == "amount" else b["value"]}
+    targets = [{"category": c, "mode": b["mode"], "value": b["value"] / 100 if b["mode"] == "amount" else b["value"],
+                "rollover": bool(b.get("rollover")), "since": b.get("since")}
                for c, b in sorted(budgets.items())]
     if not rows:
         return {"targets": targets, "months": []}
