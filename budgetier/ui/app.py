@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from .. import sample, views
 from ..service import Budget, app_version
-from . import banking, charts, icons, keys, look, motion, popup, settings, theme, tour, widgets
+from . import banking, charts, icons, keys, locking, look, motion, popup, settings, theme, tour, widgets
 from .banking import Banking
 from .context import Context
 from .dialogs import Toast, attempt
@@ -95,6 +95,9 @@ class Window(QMainWindow):
         self.updating = Updating(self)
         self.tour: tour.Tour | None = None
         self.shortcuts = keys.install(self, TABS)
+        self.lock_screen = locking.LockScreen(self)
+        self.away = locking.Away(self)
+        self.locked = False
         self._updating_note = QTimer(self, singleShot=True, interval=UPDATING_AFTER)
         self._updating_note.timeout.connect(lambda: self.busy_note.setVisible(self._loading))
 
@@ -113,6 +116,8 @@ class Window(QMainWindow):
         self._ready = True
         self.show_tab(place["tab"])
         self.stack.setFocus()  # not the first tab's button, which would show a focus ring at once
+        if locking.saved(self.mine.home):
+            self.lock()
         updates = self.updating.status()
         if updates["supported"] and updates["automatic"]:
             self.updating.check_quietly()
@@ -509,6 +514,37 @@ class Window(QMainWindow):
     def resizeEvent(self, event):  # noqa: N802 - Qt's name
         super().resizeEvent(event)
         self.toast.follow()
+        if self.lock_screen.isVisible():
+            self.lock_screen.setGeometry(self.rect())
+
+    # ---- the passcode
+
+    def lock(self) -> None:
+        """Hide everything behind the passcode, if one is set."""
+        if self.locked or not locking.saved(self.mine.home):
+            return
+        self.locked = True
+        self.away.start(0)
+        locking.close_dialogs(self)
+        self.toast.hide()
+        self.centralWidget().hide()
+        for shortcut in self.shortcuts:
+            shortcut.setEnabled(False)
+        self.lock_screen.cover()
+
+    def unlock(self) -> None:
+        self.locked = False
+        self.lock_screen.hide()
+        self.centralWidget().show()
+        for shortcut in self.shortcuts:
+            shortcut.setEnabled(True)
+        self.stack.setFocus()
+        self.lock_changed()
+
+    def lock_changed(self) -> None:
+        """After the passcode or its timing changes: start counting time away again."""
+        lock = locking.saved(self.mine.home)
+        self.away.start(lock.get("after", 0) if lock and not self.locked else 0)
 
     def mark_seen(self) -> None:
         """What's new has been seen: the Overview stops showing it."""

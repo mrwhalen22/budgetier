@@ -9,7 +9,7 @@ from PySide6.QtWidgets import QDateEdit, QGridLayout, QLineEdit, QPushButton, QW
 
 from ... import views
 from ...accounts import INVESTED, OWED
-from .. import fmt, investing, theme, widgets
+from .. import fmt, investing, locking, theme, widgets
 from ..banking import sync_card
 from ..context import Context
 from ..dialogs import Dialog, attempt, busy, confirm
@@ -167,7 +167,8 @@ def build(ctx: Context) -> QWidget:
         widgets.tile("Owed on loans", fmt.money(a.loans), "see Net worth for everything together")
         if a.loans is not None else None)
     tools = widgets.row(_button("Export workbook", lambda: export(w), ""),
-                        _button("Open data folder", lambda: open_folder(w), ""))
+                        _button("Open data folder", lambda: open_folder(w), ""),
+                        _button("Passcode", lambda: locking.setup(w), ""))
     parts = [figures, tools, widgets.notices(a.warnings, ctx.tokens), sync_card(w)]
     if a.accounts:
         parts.append(widgets.Grid([widgets.card(accounts_table(ctx, a.accounts), title="Accounts"),
