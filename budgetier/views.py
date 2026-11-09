@@ -5,12 +5,13 @@ for what it needs, given the period and accounts chosen at the top of the window
 """
 from __future__ import annotations
 
+import calendar
 from collections import Counter
 from dataclasses import dataclass, field
-from datetime import date
+from datetime import date, datetime, timedelta
 
 from . import analyze
-from .accounts import INVESTED, KEPT
+from .accounts import INVESTED, KEPT, OWED
 
 SUBSCRIPTIONS = "Subscriptions"
 COLORED = 8  # categories with their own color; the rest share "Other"
@@ -48,6 +49,11 @@ class Tx:
     kind: str
     cents: int
     edited: bool = False
+    key: str = ""  # how edits and splits find it, when there are any
+    whole: int = 0  # for a part of a split transaction: the whole of it; otherwise its own amount
+    split: bool = False
+    note: str = ""
+    tags: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -60,7 +66,7 @@ class Account:
     count: int
     first: str | None
     last: str | None
-    balance: int | None  # cents; negative on a card means owed
+    balance: int | None  # cents; negative on a card or loan means owed
     balances: dict[str, int]  # month to month-end balance, in cents
     balance_as_of: str | None
     calculated: bool
@@ -86,6 +92,7 @@ class Recurring:
     variable: bool
     price_change: int
     account: str  # the account's name
+    account_id: str = ""
 
 
 @dataclass(frozen=True)
@@ -95,7 +102,8 @@ class BudgetMonth:
     income: int
     base: int  # the income percent targets are taken from
     spent: dict[str, int]
-    targets: dict[str, int]
+    targets: dict[str, int]  # with anything carried over in
+    carried: dict[str, int] = field(default_factory=dict)  # into this month, for budgets that roll over
 
 
 @dataclass(frozen=True)
@@ -114,6 +122,7 @@ class Snapshot:
     rules: list[dict]
     all_categories: list[str]
     months: list[str] = field(default_factory=list)  # every month from the first transaction to the end
+    goals: list[dict] = field(default_factory=list)  # savings goals as saved, each with its id
 
     def __post_init__(self):
         if not self.months:
@@ -152,7 +161,8 @@ def _cents(dollars) -> int:
 
 
 def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[dict], imports: list[dict],
-          budget_report: dict, rules: list[dict], all_categories: list[str], today: date | None = None) -> Snapshot:
+          budget_report: dict, rules: list[dict], all_categories: list[str], today: date | None = None,
+          goals: dict | None = None) -> Snapshot:
     """From the classified rows, recurring payments, checks, imports, budgets and rules."""
     ids = sorted(accounts, key=lambda a: accounts[a]["name"])
     balances = analyze.account_balances(rows, accounts)
@@ -178,22 +188,47 @@ def build(rows: list[dict], accounts: dict, recurring: list[dict], checks: list[
     end = max((r["date"] for r in rows), default=today or date.today())
     return Snapshot(
         txns=[Tx(i, r["date"].isoformat(), analyze.month_of(r["date"]), r["account"], r["description"], r["merchant"],
-                 r["category"], r["kind"], r["cents"], bool(r.get("edited"))) for i, r in enumerate(rows)],
+                 r["category"], r["kind"], r["cents"], bool(r.get("edited")), r.get("key", ""), r.get("whole", r["cents"]),
+                 bool(r.get("split")), r.get("note", ""), tuple(r.get("tags", ()))) for i, r in enumerate(rows)],
         accounts=summaries, categories=[c for c, _ in spend.most_common()], end=end.isoformat(),
         partial_month=analyze.partial_month(end), coverage_from=analyze.coverage_start(rows, accounts),
         recurring=[Recurring(e["merchant"], e["category"], e["kind"], e["cadence"], e["count"], _cents(e["amount"]),
                              _cents(e["per_month"]), _cents(e["low"]), _cents(e["high"]), e["first"], e["last"], e["next"],
-                             e["active"], e["variable"], _cents(e["price_change"]), accounts[e["account"]]["name"])
+                             e["active"], e["variable"], _cents(e["price_change"]), accounts[e["account"]]["name"],
+                             e["account"])
                    for e in recurring],
         checks=list(checks),
         imports=[{**i, "key": i.get("stored") or i["file"], "account": accounts[i["account"]]["name"],
                   **{n: _count(i.get(n)) for n in ("rows", "added", "duplicates")}} for i in imports[-30:]][::-1],
         budget_targets=[{**t, "value": _cents(t["value"]) if t["mode"] == "amount" else t["value"]}
                         for t in budget_report["targets"]],
-        budget_months=[BudgetMonth(m["month"], m["partial"], _cents(m["income"]), _cents(m["base"]),
-                                   {c: _cents(v) for c, v in m["spent"].items()},
-                                   {c: _cents(v) for c, v in m["targets"].items()}) for m in budget_report["months"]],
-        rules=list(rules), all_categories=list(all_categories))
+        budget_months=_carry([BudgetMonth(m["month"], m["partial"], _cents(m["income"]), _cents(m["base"]),
+                                          {c: _cents(v) for c, v in m["spent"].items()},
+                                          {c: _cents(v) for c, v in m["targets"].items()}) for m in budget_report["months"]],
+                             budget_report["targets"]),
+        rules=list(rules), all_categories=list(all_categories),
+        goals=[{**g, "id": goal_id} for goal_id, g in (goals or {}).items()])
+
+
+def _carry(months: list[BudgetMonth], targets: list[dict]) -> list[BudgetMonth]:
+    """A budget that rolls over adds what was left last month to this month's target, and takes
+    away what went over, from the month it started rolling over."""
+    rolling = [t for t in targets if t.get("rollover")]
+    if not rolling:
+        return months
+    running = {t["category"]: 0 for t in rolling}
+    out = []
+    for m in months:
+        targets_now, carried = dict(m.targets), {}
+        for t in rolling:
+            c = t["category"]
+            if m.month < (t.get("since") or ""):
+                continue
+            carried[c] = running[c]
+            targets_now[c] = targets_now.get(c, 0) + running[c]
+            running[c] = targets_now[c] - m.spent.get(c, 0)
+        out.append(BudgetMonth(m.month, m.partial, m.income, m.base, m.spent, targets_now, carried))
+    return out
 
 
 def from_budget(budget) -> Snapshot:
@@ -204,7 +239,7 @@ def from_budget(budget) -> Snapshot:
     names = sorted({*analyze.category_names(), *(r["category"] for r in rules), "Transfer", analyze.SAVED,
                     *analyze.INVESTING_CATEGORIES})
     return build(rows, budget.ledger.accounts, recurring, checks, budget.ledger.imports,
-                 analyze.budget_report(rows, budget.ledger.accounts, budgets), rules, names)
+                 analyze.budget_report(rows, budget.ledger.accounts, budgets), rules, names, goals=budget.goals())
 
 
 # ---- the period and accounts chosen at the top
@@ -539,6 +574,81 @@ def savings(s: Snapshot, choice: Choice) -> Savings:
         balance_lines=[(a.name, [a.balances.get(m) for m in months]) for a in shown])
 
 
+# ---- what's new since you last looked
+
+
+@dataclass(frozen=True)
+class News:
+    since: str  # the newest day there was last time
+    count: int  # transactions after it
+    spent: int
+    received: int
+    subscriptions: list[Recurring]  # payments found to recur that weren't before
+    prices: list[Recurring]  # bills whose price changed since
+
+
+def seen(s: Snapshot) -> dict:
+    """What's here now, to compare with next time. Kept small: a day and some names."""
+    return {"through": s.end if s.txns else None, "recurring": sorted({r.merchant for r in active_bills(s)})}
+
+
+def news(s: Snapshot, last: dict | None) -> News | None:
+    """What came in after the newest day seen last time. Old history imported since isn't
+    news, so it's left out by being dated before that day."""
+    if not isinstance(last, dict) or not isinstance(last.get("through"), str) or not s.txns:
+        return None
+    since = last["through"]
+    fresh = [t for t in s.txns if t.date > since]
+    known = set(last.get("recurring") or [])
+    bills = active_bills(s)
+    found = News(since, len(fresh), -sum(t.cents for t in fresh if t.kind in analyze.SPENDING_KINDS),
+                 sum(t.cents for t in fresh if t.kind == "income"),
+                 [r for r in bills if r.merchant not in known],
+                 [r for r in bills if r.price_change and r.last > since])
+    return found if found.count or found.subscriptions or found.prices else None
+
+
+# ---- reminders to bring things up to date
+
+SYNC_AFTER_DAYS = 7  # a week without a sync is worth a reminder
+FILES_AFTER_DAYS = 30  # files come monthly, as statements do
+
+
+@dataclass(frozen=True)
+class Reminder:
+    title: str
+    detail: str
+    action: str  # "sync" or "add": what its button does
+
+
+def _ago(days: int) -> str:
+    return "today" if days == 0 else "yesterday" if days == 1 else f"{days} days ago"
+
+
+def reminder(s: Snapshot, sync: dict, now: datetime | None = None) -> Reminder | None:
+    """Whether the numbers are out of date enough to say so: a bank connection that hasn't
+    synced in a week, or files that stop more than a month back."""
+    now = now or datetime.now()
+    if sync.get("connected") and sync.get("linked"):
+        last = sync.get("lastSync")
+        if not last:
+            return Reminder("Not synced yet", "Sync to bring in your linked accounts' recent transactions.", "sync")
+        try:
+            days = (now.date() - datetime.fromisoformat(last).date()).days  # calendar days, as people count them
+        except (TypeError, ValueError):
+            return None
+        if days < SYNC_AFTER_DAYS:
+            return None
+        return Reminder(f"Last synced {_ago(days)}", "Sync to bring these numbers up to date.", "sync")
+    if sync.get("connected") or not s.txns:
+        return None
+    days = (now.date() - date.fromisoformat(s.end)).days
+    if days < FILES_AFTER_DAYS:
+        return None
+    return Reminder(f"Your newest transaction is from {day_name(s.end)}, {_ago(days)}",
+                    "Download recent history from your banks and add it to bring these numbers up to date.", "add")
+
+
 # ---- Investments
 
 
@@ -615,6 +725,32 @@ def investments(s: Snapshot, choice: Choice) -> Investments:
         months=months, balance=balance, paid_in=paid_in,
         lines=[(a.name, [a.balances.get(m) for m in months]) for a in held if a.balances][:BALANCE_LINES],
         monthly_contribution=max(0, round(sum(paid[m] for m in recent) / len(recent))) if recent else 0)
+
+
+@dataclass(frozen=True)
+class Grouped:
+    """Rows in investing accounts with the same name and category, to check together."""
+    merchant: str
+    category: str
+    count: int
+    total: int
+    descriptions: list[str]  # the bank's own wording, most recent first
+    txns: list[Tx] = field(default_factory=list)
+
+
+def investing_rows(s: Snapshot, ids: set[str] | None = None) -> list[Grouped]:
+    """What's in investing and retirement accounts, by name, under each of their three
+    categories in turn, biggest first."""
+    held = {a.id for a in s.accounts if a.type in INVESTED and (ids is None or a.id in ids)}
+    groups: dict[tuple[str, str], list[Tx]] = {}
+    for t in s.txns:
+        if t.account in held:
+            groups.setdefault((t.merchant, t.category), []).append(t)
+    order = {c: i for i, c in enumerate(analyze.INVESTING_CATEGORIES)}
+    found = [Grouped(merchant, category, len(txns), sum(t.cents for t in txns),
+                     list(dict.fromkeys(t.description for t in reversed(txns))), txns)
+             for (merchant, category), txns in groups.items()]
+    return sorted(found, key=lambda g: (order.get(g.category, len(order)), -abs(g.total), g.merchant))
 
 
 @dataclass(frozen=True)
@@ -703,17 +839,97 @@ class AccountsView:
     imports: list[dict]
     warnings: list[dict]
     notes: list[dict]  # the checks that aren't warnings
+    loans: int | None = None  # negative: what loans owe
 
 
 def accounts(s: Snapshot) -> AccountsView:
-    cash = [a for a in s.accounts if a.type not in ("credit", *INVESTED)]  # investing accounts aren't cash
+    cash = [a for a in s.accounts if a.type not in (*OWED, *INVESTED)]  # investing accounts aren't cash
     banked = [a for a in cash if a.balance is not None]
     cards = [a for a in s.accounts if a.type == "credit" and a.balance is not None]
     total = sum(a.balance for a in banked) if banked else None
     o = owed(s)
+    loans = [a for a in s.accounts if a.type == "loan" and a.balance is not None]
     return AccountsView(total, len(banked), len(cash), o,
                         total + sum(a.balance for a in cards) if banked and o else None, list(s.accounts), list(s.imports),
-                        [c for c in s.checks if c["level"] == "warning"], [c for c in s.checks if c["level"] != "warning"])
+                        [c for c in s.checks if c["level"] == "warning"], [c for c in s.checks if c["level"] != "warning"],
+                        sum(a.balance for a in loans) if loans else None)
+
+
+# ---- Net worth
+
+
+@dataclass(frozen=True)
+class Holding:
+    account: Account
+    balance: int | None  # at the end of the period
+    change: int | None  # over the period, from the balance before it or its first in it
+
+
+@dataclass(frozen=True)
+class NetWorth:
+    months: list[str]
+    assets: list[int | None]  # each month's end, of the accounts known by then
+    debts: list[int | None]  # negative
+    net: list[int | None]
+    have: list[Holding]  # what you have: bank, savings and investing accounts
+    owe: list[Holding]  # cards and loans
+    missing: list[Account]  # no balance yet, so left out
+    loan_paid: int  # paid toward loans in the period
+    loan_interest: int  # what they charged for it, negative
+
+    @property
+    def now(self) -> int | None:
+        return next((n for n in reversed(self.net) if n is not None), None)
+
+    @property
+    def change(self) -> int | None:
+        """How the balances moved over the period. An account first seen partway through
+        adds to net worth from then, but it was brought in, not gained."""
+        moved = [h.change for h in (*self.have, *self.owe) if h.change is not None]
+        return sum(moved) if moved else None
+
+
+def _carried(account: Account, months: list[str]) -> list[int | None]:
+    """Each month's end balance, carrying the last one known through a quiet month, and
+    nothing before the account's first balance: it isn't known to have been worth anything."""
+    earlier = [m for m in account.balances if m < months[0]] if months else []
+    last = account.balances[max(earlier)] if earlier else None
+    out = []
+    for m in months:
+        last = account.balances.get(m, last)
+        out.append(last)
+    return out
+
+
+def net_worth(s: Snapshot, choice: Choice) -> NetWorth:
+    months = range_months(s, choice)
+    chosen = [a for a in s.accounts if choice.has(a.id)]
+    known = [a for a in chosen if a.balances or a.balance is not None]
+    by_month = {a.id: _carried(a, months) for a in known}
+
+    def total(accounts: list[Account], i: int) -> int | None:
+        found = [by_month[a.id][i] for a in accounts if by_month[a.id][i] is not None]
+        return sum(found) if found else None
+
+    have = [a for a in known if a.type not in OWED]
+    owe = [a for a in known if a.type in OWED]
+    assets = [total(have, i) for i in range(len(months))]
+    debts = [total(owe, i) for i in range(len(months))]
+    net = [None if a is None and d is None else (a or 0) + (d or 0) for a, d in zip(assets, debts)]
+
+    def holding(a: Account) -> Holding:
+        values = [v for v in by_month[a.id] if v is not None]
+        return Holding(a, values[-1] if values else None, values[-1] - values[0] if len(values) > 1 else None)
+
+    shown = set(months)
+    loans = {a.id for a in chosen if a.type == "loan"}
+    in_loans = [t for t in s.txns if t.account in loans and t.month in shown]
+    return NetWorth(months, assets, debts, net,
+                    sorted((holding(a) for a in have), key=lambda h: -(h.balance or 0)),
+                    sorted((holding(a) for a in owe), key=lambda h: h.balance or 0),
+                    [a for a in chosen if a not in known],
+                    sum(t.cents for t in in_loans if t.kind == "transfer" and t.cents > 0),
+                    sum(t.cents for t in in_loans if t.category == analyze.INTEREST))
 
 
 # ---- Transactions
@@ -732,10 +948,13 @@ class Found:
 
 def transactions(s: Snapshot, choice: Choice, query: str = "", category: str = "", kind: str = "",
                  sort: str = "date", descending: bool = True) -> Found:
-    """Newest first unless asked otherwise. Ties keep the ledger's order either way."""
-    q = query.lower()
+    """Newest first unless asked otherwise. Ties keep the ledger's order either way. A search
+    looks in notes too, and #japan finds what's tagged Japan, but not what merely mentions it."""
+    q = query.lower().strip()
+    tag = q[1:].strip() if q.startswith("#") else None
     found = [t for t in selected(s, choice) if (not category or t.category == category) and (not kind or t.kind == kind)
-             and (not q or q in f"{t.description} {t.merchant}".lower())]
+             and (not q or (any(x.lower() == tag for x in t.tags) if tag is not None
+                            else q in f"{t.description} {t.merchant} {t.note}".lower()))]
     names = {a.id: a.name for a in s.accounts}
     key = SORTS[sort]
     found.sort(key=lambda t: key(t, names), reverse=descending)
@@ -745,6 +964,8 @@ def transactions(s: Snapshot, choice: Choice, query: str = "", category: str = "
 def edit_target(s: Snapshot, t: Tx) -> dict:
     """What Budget.save_edit needs to find this one transaction: n tells apart identical
     rows, counted the way analyze.edit_keys counts them."""
+    if t.key:
+        return {"key": t.key, "date": t.date, "account": t.account, "cents": t.whole, "description": t.description}
     words = " ".join(t.description.upper().split())
     n = sum(1 for x in s.txns[:t.i] if x.date == t.date and x.account == t.account and x.cents == t.cents
             and " ".join(x.description.upper().split()) == words)
@@ -807,6 +1028,8 @@ class BudgetLine:
     left: int  # negative when over
     used: float  # share of the goal spent
     state: str  # "over", "near" or ""
+    carried: int = 0  # into this month's goal, when it rolls over: negative when last month went over
+    rollover: bool = False
 
 
 @dataclass(frozen=True)
@@ -827,7 +1050,8 @@ def _line(target: dict, m: BudgetMonth) -> BudgetLine:
     goal, spent = m.targets.get(target["category"], 0), m.spent.get(target["category"], 0)
     used = spent / goal if goal > 0 else (2 if spent > 0 else 0)
     return BudgetLine(target["category"], target["mode"], target["value"], goal, spent, goal - spent, used,
-                      "over" if used > 1 else "near" if used >= .9 else "")
+                      "over" if used > 1 else "near" if used >= .9 else "", m.carried.get(target["category"], 0),
+                      bool(target.get("rollover")))
 
 
 def budgets(s: Snapshot, month: str | None = None) -> BudgetsView:
@@ -866,3 +1090,460 @@ def budget_preview(s: Snapshot, category: str, mode: str, value: str) -> BudgetP
     amount = round(income * number / 100) if mode == "percent" and number > 0 else None
     share = number * 100 / income if mode == "amount" and number > 0 and income > 0 else None
     return BudgetPreview(average, income, amount, share)
+
+
+# ---- Savings goals
+
+
+@dataclass(frozen=True)
+class Goal:
+    id: str
+    name: str
+    target: int
+    saved: int | None  # None while the accounts it's held in have no balance
+    by: str | None  # YYYY-MM-DD
+    accounts: tuple[str, ...]  # ids; none means an amount kept up to date by hand
+    held_in: str  # where it's kept, in words
+    share: float  # of the target, 0 to 1
+    left: int  # still to save
+    monthly: int | None  # a month from now on, to reach it by its date
+    expected: int | None  # where it would be by now, saving steadily from when it was set
+    state: str  # reached, on track, behind, no date or no balance
+    since: str  # when it was set
+
+
+def _months_until(today: date, when: date) -> int:
+    return max((when.year - today.year) * 12 + when.month - today.month, 1)
+
+
+def _held(accounts: list[Account], month: str) -> int | None:
+    """What these accounts held at a month's end: the last balance known by then, or the
+    first known after it for an account that's newer than the goal."""
+    found = []
+    for a in accounts:
+        before = [m for m in a.balances if m <= month]
+        if before:
+            found.append(a.balances[max(before)])
+        elif a.balances:
+            found.append(a.balances[min(a.balances)])
+    return sum(found) if found else None
+
+
+def goals(s: Snapshot, today: date | None = None) -> list[Goal]:
+    today = today or date.today()
+    by_id = s.by_id
+    out = []
+    for g in s.goals:
+        held = [by_id[a] for a in g.get("accounts", []) if a in by_id]
+        since = g.get("since") or today.isoformat()
+        if g.get("accounts"):
+            known = [a for a in held if a.balance is not None]
+            saved = sum(a.balance for a in known) if known else None
+            start = _held(known, since[:7])
+            where = ", ".join(a.name for a in held) or "an account that's been removed"
+        else:
+            saved, start, where = g.get("saved", 0), g.get("start", g.get("saved", 0)), "an amount you keep up to date"
+        target, by = g["target"], g.get("by")
+        left = max(target - (saved or 0), 0)
+        monthly = expected = None
+        if by and left:
+            monthly = -(-left // _months_until(today, date.fromisoformat(by)))  # rounded up, so it's enough
+        if by and start is not None:
+            begun, end = date.fromisoformat(since), date.fromisoformat(by)
+            elapsed = min(max((today - begun).days, 0), (end - begun).days)
+            expected = round(start + (target - start) * elapsed / max((end - begun).days, 1))
+        if saved is None:
+            state = "no balance"
+        elif saved >= target:
+            state = "reached"
+        elif not by:
+            state = "no date"
+        else:
+            state = "on track" if expected is None or saved >= expected - target // 100 else "behind"
+        out.append(Goal(g["id"], g["name"], target, saved, by, tuple(g.get("accounts", [])), where,
+                        min(max((saved or 0) / target, 0), 1), left, monthly, expected, state, since))
+    return sorted(out, key=lambda x: (x.state == "reached", x.by or "9999", x.name.lower()))
+
+
+def goal_accounts(s: Snapshot) -> list[Account]:
+    """Where a goal can be kept: anything that holds money, not a card or loan."""
+    return [a for a in s.accounts if a.type not in OWED]
+
+
+# ---- What's coming up
+
+
+AHEAD_DAYS = 30
+CARD_PAYMENTS_FROM = 3  # recent payments a card's next one is guessed from
+
+
+@dataclass(frozen=True)
+class Upcoming:
+    day: str  # YYYY-MM-DD
+    merchant: str
+    category: str
+    cents: int  # money out is negative
+    account: str  # the account's name
+    from_checking: bool  # so it moves the forecast
+    variable: bool  # the amount changes from time to time
+    estimated: bool = False  # a card payment, guessed from recent ones
+
+
+@dataclass(frozen=True)
+class Forecast:
+    items: list[Upcoming]  # from the day after the balance through the days ahead, in date order
+    today: str
+    start: str | None  # the checking balance's date, which the forecast starts from
+    balance: int | None  # checking, then
+    days: list[str]
+    path: list[int]  # checking at each day's end
+    low: int | None
+    low_day: str | None
+    bills: int  # due from today on, negative
+    income: int  # due from today on
+
+    @property
+    def short(self) -> bool:
+        return self.low is not None and self.low < 0
+
+
+def _add_months(day: date, months: int, keep: int) -> date:
+    """The same day of the month, months on: the 31st becomes the 30th in a 30-day month."""
+    year, month = divmod(day.month - 1 + months, 12)
+    year, month = day.year + year, month + 1
+    return date(year, month, min(keep, calendar.monthrange(year, month)[1]))
+
+
+MONTHS_APART = {"Monthly": 1, "Quarterly": 3, "Annual": 12}
+
+
+def _repeats(last: date, cadence: str, until: date):
+    """Each day a payment is due after the last one, through until. A monthly bill keeps its
+    day of the month, where 30 days on would drift a day or two each time."""
+    months = MONTHS_APART.get(cadence)
+    step = {"Weekly": 7, "Biweekly": 14}.get(cadence, 30)
+    n = 1
+    while True:
+        day = _add_months(last, months * n, last.day) if months else last + timedelta(days=step * n)
+        if day > until:
+            return
+        yield day
+        n += 1
+
+
+def _debt_payments(s: Snapshot, checking: set[str], after: date, until: date) -> list[Upcoming]:
+    """Paying a card or a loan isn't spending, so Recurring leaves it out, but it leaves checking
+    all the same. The next is guessed from each one's recent payments: their average, a month on."""
+    by_name: dict[tuple[str, str], list[Tx]] = {}
+    for t in s.txns:
+        if t.account not in checking or t.cents >= 0 or t.kind not in ("transfer", "estimate"):
+            continue
+        if analyze.is_card_payment(t.description):
+            by_name.setdefault((t.merchant, "Card payment"), []).append(t)
+        elif analyze.is_loan_payment(t.description):
+            by_name.setdefault((t.merchant, analyze.LOAN_PAYMENT), []).append(t)
+    found = []
+    for (name, what), paid in by_name.items():
+        recent = paid[-CARD_PAYMENTS_FROM:]
+        last = date.fromisoformat(recent[-1].date)
+        if (after - last).days > 45:
+            continue  # no longer paid from here
+        amount = round(sum(t.cents for t in recent) / len(recent))
+        for day in _repeats(last, "Monthly", until):
+            if day > after:
+                found.append(Upcoming(day.isoformat(), name, what, amount, s.by_id[recent[-1].account].name, True,
+                                      len({t.cents for t in recent}) > 1, estimated=True))
+    return found
+
+
+def forecast(s: Snapshot, today: date | None = None, ahead: int = AHEAD_DAYS) -> Forecast:
+    """Bills, income and card payments due over the days ahead, and what they'd do to checking.
+
+    It starts from checking's latest balance, so anything due between then and today that
+    hasn't come in yet counts too."""
+    today = today or date.today()
+    until = today + timedelta(days=ahead)
+    accounts = [a for a in s.accounts if a.type == "checking"]
+    known = [a for a in accounts if a.balance is not None]
+    ids = {a.id for a in accounts}
+    start = max((date.fromisoformat(a.balance_as_of) for a in known if a.balance_as_of), default=None)
+    after = min(start or today, today)
+    items, by_id = [], s.by_id
+    for r in s.recurring:
+        if not r.active or r.kind not in ("expense", "income"):
+            continue
+        if r.account_id in by_id and by_id[r.account_id].type == "loan":
+            continue  # a loan's interest is part of its payment, which is counted already
+        sign = -1 if r.kind == "expense" else 1
+        for day in _repeats(date.fromisoformat(r.last), r.cadence, until):
+            if day > after:
+                items.append(Upcoming(day.isoformat(), r.merchant, r.category, sign * r.amount, r.account, r.account_id in ids,
+                                      r.variable))
+    items += _debt_payments(s, ids, after, until)
+    items.sort(key=lambda u: (u.day, u.cents))
+    upcoming = [u for u in items if u.day >= today.isoformat()]
+    days, path, low, low_day = [], [], None, None
+    if known and start:
+        balance, day, i = sum(a.balance for a in known), start, 0
+        running = balance
+        while day <= until:
+            while i < len(items) and items[i].day <= day.isoformat():
+                running += items[i].cents if items[i].from_checking else 0
+                i += 1
+            if day >= today:
+                days.append(day.isoformat())
+                path.append(running)
+                if low is None or running < low:
+                    low, low_day = running, day.isoformat()
+            day += timedelta(days=1)
+    return Forecast(items, today.isoformat(), start.isoformat() if start and known else None,
+                    sum(a.balance for a in known) if known else None, days, path, low, low_day,
+                    sum(u.cents for u in upcoming if u.cents < 0), sum(u.cents for u in upcoming if u.cents > 0))
+
+
+# ---- Tags
+
+
+@dataclass(frozen=True)
+class Tagged:
+    tag: str
+    spent: int  # spending less refunds, so positive
+    received: int  # income
+    count: int
+    first: str
+    last: str
+    categories: list[tuple[str, int]]  # where the spending went, most first
+
+
+def tags(s: Snapshot, choice: Choice) -> list[Tagged]:
+    """What each tag gathers, in the period: a trip or a project across all its categories."""
+    by: dict[str, list[Tx]] = {}
+    names: dict[str, str] = {}
+    for t in selected(s, choice):
+        for tag in t.tags:
+            names.setdefault(tag.lower(), tag)
+            by.setdefault(tag.lower(), []).append(t)
+    out = []
+    for key, found in by.items():
+        spending = [t for t in found if t.kind in analyze.SPENDING_KINDS]
+        where: Counter = Counter()
+        for t in spending:
+            where[t.category] -= t.cents
+        out.append(Tagged(names[key], -sum(t.cents for t in spending), sum(t.cents for t in found if t.kind == "income"),
+                          len(found), min(t.date for t in found), max(t.date for t in found), where.most_common()))
+    return sorted(out, key=lambda x: (-x.spent, x.tag.lower()))
+
+
+def all_tags(s: Snapshot) -> list[str]:
+    """Every tag used, for suggesting as you type."""
+    found: dict[str, str] = {}
+    for t in s.txns:
+        for tag in t.tags:
+            found.setdefault(tag.lower(), tag)  # the spelling first used
+    return sorted(found.values(), key=str.lower)
+
+
+# ---- Year in review
+
+
+TAX_LINES = (  # label, what's counted, a word on it
+    ("Donations and gifts", "Gifts & Donations", "Gifts to people are in here too, so pick out the donations."),
+    ("Taxes paid", "Taxes", "Payments to the IRS and state, beyond what came out of your pay."),
+    ("Medical", "Health", "Doctors, pharmacies and the like."),
+    ("Education", "Education", "Tuition and student loan payments filed as Education."),
+    ("Loan interest", analyze.INTEREST, "Interest charged inside a loan account, like a mortgage."),
+    ("Paid into retirement", analyze.CONTRIBUTED, "Contributions into retirement accounts."),
+)
+
+
+@dataclass(frozen=True)
+class TaxLine:
+    label: str
+    category: str
+    total: int  # positive
+    count: int
+    note: str
+
+
+@dataclass(frozen=True)
+class Change:
+    category: str
+    now: int
+    before: int
+
+    @property
+    def gap(self) -> int:
+        return self.now - self.before
+
+
+@dataclass(frozen=True)
+class YearReview:
+    year: str
+    years: list[str]  # newest first
+    months: list[Month]  # the year's months that have data
+    complete: bool  # all twelve months are in
+    income: int
+    spending: int
+    before: tuple[int, int] | None  # last year's income and spending, over the months both years have
+    compared: int  # how many months that is
+    matched: tuple[int, int] | None  # this year's income and spending over those same months
+    categories: list[Change]  # by this year's spending
+    up: list[Change]  # the biggest rises on last year
+    down: list[Change]
+    merchants: list[tuple[str, int, int]]  # name, spent, how many
+    largest: list[Tx]
+    busiest: Month | None  # the month with the most spending
+    quietest: Month | None
+    tax: list[TaxLine]
+
+    @property
+    def kept(self) -> int:
+        return self.income - self.spending
+
+    @property
+    def rate(self) -> float | None:
+        return self.kept / self.income if self.income > 0 else None
+
+
+def review_years(s: Snapshot) -> list[str]:
+    return sorted({m[:4] for m in s.months}, reverse=True)
+
+
+def year_review(s: Snapshot, year: str | None = None) -> YearReview:
+    """A year at a glance, beside the same months of the year before, and what to look at
+    when doing taxes. Over all accounts: the filters at the top don't apply."""
+    years = review_years(s)
+    year = year if year in years else (years[0] if years else str(date.today().year))
+    shown = [m for m in s.months if m.startswith(year)]
+    txns = [t for t in s.txns if t.month[:4] == year]
+    rows = [m for m in monthly(txns, shown) if m.income or m.spending]
+    prior_months = [f"{int(year) - 1}{m.month[4:]}" for m in rows]
+    earlier = [t for t in s.txns if t.month in set(prior_months)]
+    # Only months both years have, or a year that began partway would look like a jump.
+    pairs = [(m, b) for m, b in zip(rows, monthly(earlier, prior_months)) if b.income or b.spending]
+    income, spending = sum(m.income for m in rows), sum(m.spending for m in rows)
+    all_now, now_by, before_by = Counter(), Counter(), Counter()
+    for m in rows:
+        all_now.update(m.categories)
+    for m, b in pairs:
+        now_by.update(m.categories)
+        before_by.update(b.categories)
+    categories = sorted((Change(c, v, before_by[c]) for c, v in all_now.items() if v), key=lambda c: -c.now)
+    compared = [Change(c, now_by[c], before_by[c]) for c in {*now_by, *before_by} if now_by[c] or before_by[c]]
+    spent = [t for t in txns if t.kind in ("expense", "estimate")]
+    merchants: dict[str, list[int]] = {}
+    for t in spent:
+        merchants.setdefault(t.merchant, []).append(-t.cents)
+    held = {a.id for a in s.accounts if a.type == "retirement"}
+    tax = []
+    for label, category, note in TAX_LINES:
+        if category == analyze.CONTRIBUTED:
+            found = [t for t in txns if t.category == category and t.account in held and t.cents > 0]
+            total = sum(t.cents for t in found)
+        else:
+            found = [t for t in txns if t.category == category and t.kind in analyze.SPENDING_KINDS]
+            total = -sum(t.cents for t in found)
+        if found:
+            tax.append(TaxLine(label, category, total, len(found), note))
+    return YearReview(
+        year, years, rows, len(rows) == 12 and not (s.partial_month or "").startswith(year),
+        income, spending,
+        (sum(b.income for _, b in pairs), sum(b.spending for _, b in pairs)) if pairs else None, len(pairs),
+        (sum(m.income for m, _ in pairs), sum(m.spending for m, _ in pairs)) if pairs else None,
+        categories,
+        sorted((c for c in compared if c.gap >= 100), key=lambda c: -c.gap)[:3],  # a dollar or more
+        sorted((c for c in compared if c.gap <= -100), key=lambda c: c.gap)[:3],
+        sorted(((n, sum(v), len(v)) for n, v in merchants.items()), key=lambda x: -x[1])[:TOP_MERCHANTS],
+        sorted(spent, key=lambda t: t.cents)[:5],
+        max(rows, key=lambda m: m.spending) if rows else None,
+        min(rows, key=lambda m: m.spending) if len(rows) > 1 else None,
+        tax)
+
+
+def tax_rows(s: Snapshot, year: str) -> list[Tx]:
+    """Every transaction behind the tax-time lines, for a spreadsheet."""
+    wanted = {category for _, category, _ in TAX_LINES}
+    held = {a.id for a in s.accounts if a.type == "retirement"}
+    return [t for t in s.txns if t.month[:4] == year and t.category in wanted
+            and (t.category != analyze.CONTRIBUTED or t.account in held)]
+
+
+# ---- Alerts
+
+
+NEAR_BUDGET = 0.8  # of a month's target, spent
+RECENT_DAYS = 7  # how far back from the newest day a charge is news
+UNUSUAL_TIMES = 3  # a charge this many times what a merchant usually takes
+UNUSUAL_LEAST = 10000  # cents: smaller than this is never worth a word
+NEW_MERCHANT_LEAST = 25000  # cents, for a merchant never seen before
+DISMISSED_KEPT = 200
+
+
+@dataclass(frozen=True)
+class Alert:
+    key: str  # stays the same while it's the same news, so dismissing it sticks
+    level: str  # warning or info
+    title: str
+    detail: str
+    category: str = ""  # what to list on Transactions
+    query: str = ""
+
+
+def _money(cents: int) -> str:
+    return f"${abs(cents) / 100:,.0f}"
+
+
+def _budget_alerts(s: Snapshot) -> list[Alert]:
+    """Categories past most of this month's budget, while the month is in progress."""
+    if not s.budget_months or not s.budget_targets:
+        return []
+    m = s.budget_months[-1]
+    if not m.partial:
+        return []
+    found = []
+    days_left = calendar.monthrange(int(m.month[:4]), int(m.month[5:]))[1] - int(s.end[8:])
+    for t in s.budget_targets:
+        line = _line(t, m)
+        if line.goal <= 0 or line.used < NEAR_BUDGET:
+            continue
+        over = line.used > 1
+        state = "over" if over else "near"
+        left = f"{days_left} day{'s' if days_left != 1 else ''} left" if days_left > 0 else "the month's last day"
+        found.append(Alert(
+            f"budget:{line.category}:{m.month}:{state}", "warning" if over else "info",
+            f"{line.category} is {_money(-line.left)} over budget" if over
+            else f"{line.category} has used {round(line.used * 100)}% of its budget",
+            f"{_money(line.spent)} of {_money(line.goal)} spent, with {left} in {month_name(m.month)}.",
+            category=line.category))
+    return found
+
+
+def _unusual(s: Snapshot) -> list[Alert]:
+    """A charge in the last week far bigger than that merchant usually takes, or a big one from
+    a merchant never seen before."""
+    since = (date.fromisoformat(s.end) - timedelta(days=RECENT_DAYS)).isoformat()
+    usual: dict[str, list[int]] = {}
+    found = []
+    for t in sorted(s.txns, key=lambda t: t.date):  # what a merchant usually takes is from before each charge
+        if t.kind != "expense":
+            continue
+        earlier = usual.setdefault(t.merchant, [])
+        amount = -t.cents
+        if t.date > since and amount >= UNUSUAL_LEAST:
+            typical = sorted(earlier)[len(earlier) // 2] if earlier else None
+            if typical is not None and len(earlier) >= 3 and amount >= typical * UNUSUAL_TIMES:
+                found.append(Alert(f"charge:{t.date}:{t.account}:{t.cents}:{t.merchant}", "warning",
+                                   f"{t.merchant} charged {_money(amount)}",
+                                   f"On {day_name(t.date)}. It's usually about {_money(typical)}.", query=t.merchant))
+            elif not earlier and amount >= NEW_MERCHANT_LEAST:
+                found.append(Alert(f"charge:{t.date}:{t.account}:{t.cents}:{t.merchant}", "info",
+                                   f"A first charge from {t.merchant}: {_money(amount)}",
+                                   f"On {day_name(t.date)}. Worth a look if you don't recognize it.", query=t.merchant))
+        earlier.append(amount)
+    return found
+
+
+def alerts(s: Snapshot, dismissed: set[str] | None = None) -> list[Alert]:
+    """What's worth a word on the Overview: budgets running out, and unusual charges."""
+    dismissed = dismissed or set()
+    return [a for a in [*_budget_alerts(s), *_unusual(s)] if a.key not in dismissed]

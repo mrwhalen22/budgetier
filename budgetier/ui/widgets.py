@@ -147,7 +147,7 @@ def _icon_label(body: str, color: str, size: int = 16) -> QLabel:
     return label
 
 
-def banner(level: str, title: str, detail: str, tokens: dict[str, str]) -> QFrame:
+def banner(level: str, title: str, detail: str, tokens: dict[str, str], action: QWidget | None = None) -> QFrame:
     frame = QFrame()
     frame.setProperty("kind", "banner")
     frame.setProperty("level", "warn" if level == "warning" else "info")
@@ -158,6 +158,8 @@ def banner(level: str, title: str, detail: str, tokens: dict[str, str]) -> QFram
     layout.addWidget(_icon_label(ALERT if level == "warning" else INFO, ink), 0, Qt.AlignTop)
     words = column(text(title, "b"), text(detail, "banner-text"), spacing=0)
     layout.addWidget(words, 1)
+    if action is not None:
+        layout.addWidget(action, 0, Qt.AlignVCenter)
     return frame
 
 

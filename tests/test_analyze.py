@@ -472,7 +472,8 @@ class Budgets(Tmp):
 
     def test_no_transactions_keeps_the_targets(self):
         report = self.report([], {"Groceries": {"mode": "amount", "value": 12345}})
-        self.assertEqual(report, {"targets": [{"category": "Groceries", "mode": "amount", "value": 123.45}], "months": []})
+        self.assertEqual(report, {"targets": [{"category": "Groceries", "mode": "amount", "value": 123.45,
+                                                  "rollover": False, "since": None}], "months": []})
 
 
 class Warnings(unittest.TestCase):

@@ -9,7 +9,7 @@ import math
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt
+from PySide6.QtCore import QPoint, QPointF, QRect, QRectF, QSize, Qt, QTimer
 from PySide6.QtGui import QBrush, QColor, QFont, QFontMetrics, QLinearGradient, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import QWidget
 
@@ -18,6 +18,7 @@ from .popup import SHADOW, paint_panel
 
 LEFT, RIGHT, TOP, BOTTOM = 44, 2, 8, 22
 LABEL_EVERY = 62  # pixels each month label needs
+PICK = "Select a month to see just that month."  # under charts that can
 STACK_GAP = 3  # a slice at least this tall gets a hairline between it and the next
 grow_next = True  # whether charts made now grow in; the window turns it off for a redraw after a change
 
@@ -73,10 +74,10 @@ class Tip(QWidget):
         self.setAttribute(Qt.WA_ShowWithoutActivating)
         self.title, self.rows = "", []
         self.font_title = QFont(chart.font())
-        self.font_title.setPixelSize(theme.TEXT["sm"])
+        self.font_title.setPixelSize(theme.px("sm"))
         self.font_title.setWeight(QFont.DemiBold)
         self.font_row = _tabular(QFont(chart.font()))
-        self.font_row.setPixelSize(theme.TEXT["sm"])
+        self.font_row.setPixelSize(theme.px("sm"))
         self.font_total = _tabular(QFont(self.font_row))
         self.font_total.setWeight(QFont.DemiBold)
 
@@ -151,14 +152,17 @@ class Tip(QWidget):
 class Chart(QWidget):
     def __init__(self, months: list[str], series: list[Series], tokens: dict[str, str], kind: str = "bars",
                  stacked: bool = False, height: int = 260, partial_month: str | None = None,
-                 labels: list[str] | None = None, titles: list[str] | None = None):
+                 labels: list[str] | None = None, titles: list[str] | None = None,
+                 on_pick: Callable[[str], None] | None = None):
         """labels and titles, for a chart that isn't of months: what the axis says under each
-        point, and what its note is headed."""
+        point, and what its note is headed. on_pick: what choosing a month does, by clicking it
+        or with Enter, such as showing just that month."""
         super().__init__()
         self.months, self.series, self.tokens = months, series, tokens
-        self.labels, self.titles = labels, titles
+        self.labels, self.titles, self.on_pick = labels, titles, on_pick
         self.kind, self.stacked, self.partial_month = kind, stacked, partial_month
         self.base = height
+        self.left, self.bottom = theme.px(LEFT), theme.px(BOTTOM)  # room for the axis labels, as big as the text
         self.at = -1  # the month being read
         self.grown = 0.0 if motion.on() and grow_next else 1.0  # how far the bars have grown in
         self.shade = 0.0  # how strongly the month being read is shaded
@@ -166,7 +170,8 @@ class Chart(QWidget):
         self.setMinimumHeight(height)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.StrongFocus)
-        self.setAccessibleName("Chart. Use the left and right arrow keys to read each month.")
+        self.setAccessibleName("Chart. Use the left and right arrow keys to read each month"
+                               + (", and Enter to see just that one." if on_pick else "."))
         self.setAccessibleDescription(". ".join(self.spoken(i) for i in range(len(months))))
 
     def sizeHint(self):  # noqa: N802 - Qt's name
@@ -228,19 +233,19 @@ class Chart(QWidget):
         width, height = max(self.width(), 280), self.height()
         lo, hi = self.bounds()
         bottom, top, tick = scale(lo, hi)
-        band = (width - LEFT - RIGHT) / max(len(self.months), 1)
+        band = (width - self.left - RIGHT) / max(len(self.months), 1)
 
         def y(v: float) -> float:
-            return TOP + (height - TOP - BOTTOM) * (top - v) / (top - bottom)
+            return TOP + (height - TOP - self.bottom) * (top - v) / (top - bottom)
 
         def x(i: int) -> float:
-            return LEFT + band * i
+            return self.left + band * i
 
         return width, height, top, tick, bottom, band, x, y
 
     def index_at(self, px: float) -> int:
         _, _, _, _, _, band, _, _ = self.frame()
-        i = int((px - LEFT) // band) if band else -1
+        i = int((px - self.left) // band) if band else -1
         return i if 0 <= i < len(self.months) else -1
 
     def peak(self, i: int) -> float:
@@ -262,7 +267,7 @@ class Chart(QWidget):
             return
         width, height, top, tick, bottom, band, x, y = self.frame()
         small = QFont(self.font())
-        small.setPixelSize(11)
+        small.setPixelSize(theme.px(11))
         painter.setFont(small)
 
         if 0 <= self.at < len(self.months) and self.shade > 0:
@@ -270,21 +275,23 @@ class Chart(QWidget):
             shade.setAlphaF(shade.alphaF() * self.shade)
             painter.setPen(Qt.NoPen)
             painter.setBrush(shade)
-            painter.drawRoundedRect(QRectF(x(self.at) + 2, TOP, band - 4, height - TOP - BOTTOM), 6, 6)
+            painter.drawRoundedRect(QRectF(x(self.at) + 2, TOP, band - 4, height - TOP - self.bottom), 6, 6)
         v = bottom
         while v <= top + tick / 2:
             painter.setPen(QPen(_qcolor(t["line"] if v == 0 else t["line-soft"]), 1))
-            painter.drawLine(QPointF(LEFT, y(v)), QPointF(width - RIGHT, y(v)))
+            painter.drawLine(QPointF(self.left, y(v)), QPointF(width - RIGHT, y(v)))
             painter.setPen(QColor(t["muted"]))
-            painter.drawText(QRectF(0, y(v) - 8, LEFT - 8, 16), Qt.AlignRight | Qt.AlignVCenter, fmt.short(v))
+            painter.drawText(QRectF(0, y(v) - self.bottom / 2, self.left - 8, self.bottom), Qt.AlignRight | Qt.AlignVCenter,
+                             fmt.short(v))
             v += tick
-        every = math.ceil(len(self.months) / max(1, math.floor((width - LEFT - RIGHT) / LABEL_EVERY)))
+        every = math.ceil(len(self.months) / max(1, math.floor((width - self.left - RIGHT) / theme.px(LABEL_EVERY))))
         for i, m in enumerate(self.months):
             if i % every == 0:
                 year = len(self.months) <= 6 or m.endswith("-01")
                 middle = x(i) + band / 2
                 painter.setPen(QColor(t["ink"] if i == self.at else t["muted"]))
-                painter.drawText(QRectF(middle - 60, height - BOTTOM + 4, 120, BOTTOM - 4), Qt.AlignHCenter | Qt.AlignTop,
+                painter.drawText(QRectF(middle - 60, height - self.bottom + 4, 120, self.bottom - 4),
+                                 Qt.AlignHCenter | Qt.AlignTop,
                                  self.labels[i] if self.labels else fmt.month_name(m, year))
 
         def grown(v: float) -> float:
@@ -400,7 +407,7 @@ class Chart(QWidget):
             self.note = Tip(self)
         self.note.set(*self.tip(i))
         _, _, _, _, _, band, x, y = self.frame()
-        anchor = self.mapToGlobal(QPointF(x(i) + band / 2, min(y(self.peak(i)), self.height() - BOTTOM)).toPoint())
+        anchor = self.mapToGlobal(QPointF(x(i) + band / 2, min(y(self.peak(i)), self.height() - self.bottom)).toPoint())
         window = self.window()
         bounds = QRect(window.mapToGlobal(QPoint(0, 0)), window.size())
         self.note.show_at(anchor, bounds)
@@ -409,12 +416,30 @@ class Chart(QWidget):
         i = self.index_at(event.position().x())
         if i != self.at:
             self._read(i)
+        if self.on_pick:
+            self.setCursor(Qt.PointingHandCursor if i >= 0 else Qt.ArrowCursor)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802 - Qt's name
+        i = self.index_at(event.position().x())
+        if event.button() == Qt.LeftButton and i >= 0:
+            self.pick(i)
+        super().mouseReleaseEvent(event)
+
+    def pick(self, i: int) -> None:
+        """Choose a month. It happens once this click is over, since choosing redraws the tab
+        this chart is on."""
+        if self.on_pick and 0 <= i < len(self.months):
+            month, chosen = self.months[i], self.on_pick
+            QTimer.singleShot(0, lambda: chosen(month))
 
     def leaveEvent(self, event):  # noqa: N802 - Qt's name
         self._read(-1)
         super().leaveEvent(event)
 
     def keyPressEvent(self, event):  # noqa: N802 - Qt's name
+        if event.key() in (Qt.Key_Return, Qt.Key_Enter, Qt.Key_Space) and self.on_pick and self.at >= 0:
+            self.pick(self.at)
+            return
         move = {Qt.Key_Right: 1, Qt.Key_Left: -1}.get(event.key())
         if not move or not self.months:
             return super().keyPressEvent(event)
