@@ -49,6 +49,7 @@ PLACE = "window"  # where the window was left, in settings.json
 SEEN = "seen"  # what was here when you last looked, for what's new since
 DISMISSED = "dismissed"  # alerts you've waved away
 UPDATING_AFTER = 150  # ms: a reload quicker than this never says it's happening
+AUTO_SYNC_CHECK = 30 * 60_000  # ms between checks on whether a daily sync is due
 
 
 def _placeholder(tab: str) -> QWidget:
@@ -118,6 +119,12 @@ class Window(QMainWindow):
         self.stack.setFocus()  # not the first tab's button, which would show a focus ring at once
         if locking.saved(self.mine.home):
             self.lock()
+        self.auto_sync = QTimer(self)
+        self.auto_sync.setInterval(AUTO_SYNC_CHECK)
+        self.auto_sync.timeout.connect(lambda: self.banking.auto())
+        self.auto_sync.start()
+        self._opened = False  # synced by itself as it opened, or tried to
+        QTimer.singleShot(0, self._opening_sync)
         updates = self.updating.status()
         if updates["supported"] and updates["automatic"]:
             self.updating.check_quietly()
@@ -532,6 +539,12 @@ class Window(QMainWindow):
             shortcut.setEnabled(False)
         self.lock_screen.cover()
 
+    def _opening_sync(self) -> None:
+        """Once, when Budgetier opens: after the passcode, if there is one."""
+        if not self._opened and not self.locked:
+            self._opened = True
+            self.banking.auto(opening=True)
+
     def unlock(self) -> None:
         self.locked = False
         self.lock_screen.hide()
@@ -540,6 +553,7 @@ class Window(QMainWindow):
             shortcut.setEnabled(True)
         self.stack.setFocus()
         self.lock_changed()
+        self._opening_sync()
 
     def lock_changed(self) -> None:
         """After the passcode or its timing changes: start counting time away again."""
