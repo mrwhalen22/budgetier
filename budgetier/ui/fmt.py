@@ -5,7 +5,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from ..views import day_name, month_name
 
-__all__ = ["money", "cents", "short", "tone", "gain", "month_name", "day_name", "plural"]
+__all__ = ["money", "cents", "short", "tone", "gain", "owed", "month_name", "day_name", "plural"]
 
 
 def _round(value: float, decimals: int) -> Decimal:
@@ -25,9 +25,14 @@ def cents(amount: float) -> str:
 
 
 def short(amount: float) -> str:
-    """For chart axes and tight cells: $950, $1.2k."""
+    """For chart axes and tight cells: $950, $1.2k, $1.5M."""
     a = abs(amount) / 100
-    text = f"{_round(a / 1000, 1)}".removesuffix(".0") + "k" if a >= 1000 else f"{_round(a, 0)}"
+    if a >= 999_950:
+        text = f"{_round(a / 1_000_000, 1)}".removesuffix(".0") + "M"
+    elif a >= 1000:
+        text = f"{_round(a / 1000, 1)}".removesuffix(".0") + "k"
+    else:
+        text = f"{_round(a, 0)}"
     return ("-$" if amount < 0 else "$") + text
 
 
@@ -39,6 +44,12 @@ def tone(amount: float) -> str:
 def gain(amount: float) -> str:
     """Green for money in. Ordinary spending isn't a problem, so it isn't red."""
     return "pos" if amount > 0 else ""
+
+
+def owed(amount: float) -> str:
+    """What's owed, under a label that already says so: $613, not -$613. A card in credit
+    shows as -$50 owed."""
+    return money(-amount)
 
 
 def plural(count: int, one: str, many: str | None = None) -> str:

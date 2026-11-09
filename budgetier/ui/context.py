@@ -22,6 +22,7 @@ class Context:
     updates: dict = field(default_factory=dict)
     edit: object = None  # the window's Editing: categorize a transaction, start the queue, change rules
     window: object = None  # for changes that open dialogs: adding files, accounts, bank sync
+    sync: dict = field(default_factory=dict)  # the bank connection's status: connected, linked, lastSync
 
     def color(self, category: str) -> str:
         """The top categories over all history keep one color each, under any filter."""

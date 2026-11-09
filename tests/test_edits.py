@@ -42,7 +42,7 @@ class Editing(QtCase):
         self.dialog.main.click()
 
     def toast(self) -> str:
-        return self.win.toast.text() if self.win.toast.isVisible() else ""
+        return self.win.toast.words if self.win.toast.isVisible() else ""
 
     def panel(self) -> str:
         from PySide6.QtWidgets import QLabel
@@ -186,8 +186,9 @@ class OneTransaction(Editing):
 
     def test_a_largest_row_opens_too(self):
         from budgetier.ui.widgets import Table
-        self.win.show_tab("Largest")
-        [table] = self.win.pages["Largest"].widget().findChildren(Table)
+        self.win.show_tab("Spending")
+        [table] = [t for t in self.win.pages["Spending"].widget().findChildren(Table)
+                   if t.horizontalHeaderItem(1).text() == "Date"]
         table.cellClicked.emit(0, 0)
         self.assertTrue(self.dialog.isVisible())
         self.assertEqual(self.dialog.desc.text(), "BEST BUY 00123")

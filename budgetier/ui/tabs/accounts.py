@@ -8,14 +8,15 @@ from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QDateEdit, QGridLayout, QLineEdit, QPushButton, QWidget
 
 from ... import views
-from .. import fmt, theme, widgets
+from ...accounts import INVESTED, OWED
+from .. import fmt, investing, locking, theme, widgets
 from ..banking import sync_card
 from ..context import Context
 from ..dialogs import Dialog, attempt, busy, confirm
-from ..importing import field, type_box
+from ..importing import TYPES, field, type_box
 
-TYPE_NAMES = {"checking": "Checking", "savings": "Savings", "credit": "Credit card"}
-TYPE_COLOR = {"checking": "c0", "credit": "c1", "savings": "c2"}
+TYPE_NAMES = dict(TYPES)
+TYPE_COLOR = {"checking": "c0", "credit": "c1", "savings": "c2", "investment": "c4", "retirement": "c3", "loan": "c5"}
 
 
 def _button(label: str, run, kind: str = "small") -> QPushButton:
@@ -51,7 +52,7 @@ def open_folder(window) -> None:
 
 
 def edit_account(window, account: views.Account) -> Dialog:
-    owed = account.type == "credit"
+    owed = account.type in OWED
     dialog = Dialog(window, f"Edit {account.name}")
     name = QLineEdit(account.name)
     name.setAccessibleName("Name")
@@ -77,15 +78,19 @@ def edit_account(window, account: views.Account) -> Dialog:
     def save():
         def work():
             day = as_of.date().toPython().isoformat() if as_of else date.today().isoformat()
-            ok, result = attempt(window.budget.update_account, account.id, name.text(), kind.currentData(),
-                                 balance.text() if balance else "", day)
+            ok, result = attempt(window.budget.undoable, window.budget.update_account, account.id, name.text(),
+                                 kind.currentData(), balance.text() if balance else "", day)
             if not ok:
                 return dialog.show_error(str(result))
             dialog.dismiss()
-            window.changed("Account saved.")
+            window.changed("Account saved.", undo=True)
+            if kind.currentData() in INVESTED and account.type not in INVESTED:
+                window.reload_now()  # its rows are read as investing ones before they're shown to check
+                investing.review(window, {account.id})
         busy(dialog.main, "Saving...", work)
 
     dialog.set_buttons([("Cancel", dialog.dismiss, ""), ("Save", save, "primary")])
+    dialog.set_remove("Remove account", lambda: remove_account(window, account))
     dialog.open()
     return dialog
 
@@ -114,7 +119,7 @@ def accounts_table(ctx: Context, found: list[views.Account]) -> QWidget:
         if a.balance is None:
             balance = widgets.Cell("not set", right=True, tone="dim")
         else:
-            tone = fmt.gain(a.balance) if a.type == "credit" else fmt.tone(a.balance)
+            tone = fmt.gain(a.balance) if a.type in OWED else fmt.tone(a.balance)
             balance = widgets.Cell(fmt.cents(a.balance), right=True, tone=tone)
         source = f"{'from your bank' if a.live else 'calculated'}, {fmt.day_name(a.balance_as_of)}" if a.calculated else ""
         rows.append([widgets.Cell(a.name, icon=widgets.mono_icon(a.bank, t[TYPE_COLOR[a.type]]), bold=True),
@@ -125,8 +130,7 @@ def accounts_table(ctx: Context, found: list[views.Account]) -> QWidget:
     table = widgets.Table(["Account", "Type", "History", "Rows", "Latest balance", "", ""], rows, t,
                           on_row=lambda r: edit_account(w, found[r]), numeric={3, 4})
     for r, a in enumerate(found):
-        table.setCellWidget(r, 6, _actions(_button("Edit", lambda a=a: edit_account(w, a)),
-                                           _button("Remove", lambda a=a: remove_account(w, a), "small-danger")))
+        table.setCellWidget(r, 6, _actions(_button("Edit", lambda a=a: edit_account(w, a))))
     table.resizeColumnsToContents()
     return table
 
@@ -153,20 +157,28 @@ def build(ctx: Context) -> QWidget:
     owed = None
     if a.owed:
         sub = f"{fmt.plural(a.owed.missing, 'card')} not set" if a.owed.missing else "calculated from what you entered"
-        owed = widgets.tile("Owed on cards", fmt.money(a.owed.owed), sub, fmt.gain(a.owed.owed))
+        owed = widgets.tile("Owed on cards", fmt.owed(a.owed.owed), sub, fmt.gain(a.owed.owed))
     figures = widgets.tiles(
         widgets.tile("Cash and savings", fmt.money(a.cash), f"{a.cash_accounts} of {a.banked_accounts} accounts",
                      fmt.tone(a.cash)) if a.cash is not None else None,
         owed,
         widgets.tile("Net of cards", fmt.money(a.net), "cash and savings minus cards", fmt.tone(a.net))
-        if a.net is not None else None)
-    tools = widgets.row(_button("Export workbook", lambda: export(w), ""),
-                        _button("Open data folder", lambda: open_folder(w), ""))
-    parts = [figures, tools, widgets.notices(a.warnings, ctx.tokens), sync_card(w)]
+        if a.net is not None else None,
+        widgets.tile("Owed on loans", fmt.owed(a.loans), "see Net worth for everything together")
+        if a.loans is not None else None)
+    tools = widgets.card(
+        widgets.row(_button("Export workbook", lambda: export(w), ""),
+                    _button("Open data folder", lambda: open_folder(w), ""),
+                    _button("Encryption" if locking.saved(w.mine.home) else "Encrypt data", lambda: locking.setup(w), "")),
+        title="Your data",
+        note="Everything stays in one folder on this computer. Export it to Excel, open the folder, or encrypt it with a "
+             "passcode.")
+    parts = [figures, widgets.notices(a.warnings, ctx.tokens), sync_card(w)]
     if a.accounts:
         parts.append(widgets.Grid([widgets.card(accounts_table(ctx, a.accounts), title="Accounts"),
                                    widgets.card(imports_table(ctx, a.imports), title="Recent imports")], 520, most=2, top=True))
     if a.notes:
         parts.append(widgets.card(*(widgets.banner(c["level"], c["title"], c["detail"], ctx.tokens) for c in a.notes),
                                   title="Worth checking", note="Things that could make the numbers wrong."))
+    parts.append(tools)  # the things done now and then, below the accounts themselves
     return widgets.column(*parts, spacing=theme.SPACE[4])

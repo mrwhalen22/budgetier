@@ -1,9 +1,11 @@
 """The window: a sidebar of tabs beside the tab that's showing."""
 from __future__ import annotations
 
+import shutil
+import tempfile
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QSize, Qt, QTimer
+from PySide6.QtCore import QByteArray, QEvent, QSize, Qt, QTimer
 from PySide6.QtGui import QStandardItemModel
 from PySide6.QtWidgets import (
     QApplication,
@@ -12,6 +14,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QPushButton,
     QScrollArea,
@@ -21,12 +24,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import views
+from .. import sample, storage, views
+from ..accounts import INVESTED
 from ..service import Budget, app_version
-from . import banking, charts, icons, look, motion, popup, settings, theme, tour, widgets
+from . import banking, charts, icons, keys, locking, look, motion, popup, settings, theme, tour, widgets
 from .banking import Banking
 from .context import Context
-from .dialogs import Toast
+from .dialogs import Toast, attempt
 from .editing import Editing
 from .importing import Importing
 from .tabs import BUILDERS, transactions
@@ -34,13 +38,25 @@ from .updating import Updating
 from .work import Runner
 
 # The order the sidebar lists them in.
-TABS = ("Overview", "Spending", "Budgets", "Recurring", "Largest", "Savings", "Transactions", "Rules", "Accounts", "Help")
+TABS = ("Overview", "Spending", "Budgets", "Recurring", "Savings", "Investments", "Year in review",
+        "Transactions", "Rules", "Accounts", "Help")
+# A label over the sidebar's groups, above the tab that starts each. The first group needs none.
+GROUPS = {"Savings": "Long term", "Transactions": "Manage"}
+# Shown at the bottom of the sidebar, apart from the rest.
+FOOT_TABS = {"Help"}
+# Tabs that were merged into others: a window left on one opens on where it went.
+MOVED = {"Largest": "Spending", "Net worth": "Savings"}
 # Which step of docs/qt-migration.md brings each tab, until it's here.
 COMING: dict[str, int] = {}
 # These cover all of history, so the period and account filters don't apply.
-FULL_HISTORY = {"Budgets", "Recurring", "Accounts", "Rules", "Help"}
+FULL_HISTORY = {"Budgets", "Recurring", "Year in review", "Accounts", "Rules", "Help"}
 SIDE_WIDTH = 232
 ICON = 18
+PLACE = "window"  # where the window was left, in settings.json
+SEEN = "seen"  # what was here when you last looked, for what's new since
+DISMISSED = "dismissed"  # alerts you've waved away
+UPDATING_AFTER = 150  # ms: a reload quicker than this never says it's happening
+AUTO_SYNC_CHECK = 30 * 60_000  # ms between checks on whether a daily sync is due
 
 
 def _placeholder(tab: str) -> QWidget:
@@ -48,20 +64,29 @@ def _placeholder(tab: str) -> QWidget:
 
 
 class Window(QMainWindow):
+    background = True  # read the data again off the window's thread; tests turn it off to check at once
+
     def __init__(self, budget: Budget, look: theme.Look | None = None):
         super().__init__()
         self.budget = budget
+        self.mine = budget  # your own data; budget is the sample's while you look around it
+        self.sample_home: Path | None = None
         self.look = look or theme.load_look(budget.home)
-        self.choice = views.Choice()
+        place = _place(settings.load(budget.home).get(PLACE))
+        self.choice = place["choice"]
         self.options: dict = {}
         self._ready = False  # draw nothing until the window is built
         self._drawn = ""  # the tab drawn last
         self._viewed = None  # the tab and filters drawn last
+        self._loading = False  # reading the data again, off the window's thread
+        self._again = False  # and something changed it meanwhile, so read it once more
         motion.load(budget.home)
         QApplication.setEffectEnabled(Qt.UI_FadeTooltip, motion.on())
         self.setWindowTitle("Budgetier")
         self.resize(1340, 900)
         self.setMinimumSize(900, 620)
+        if place["geometry"]:
+            self.restoreGeometry(place["geometry"])  # Qt moves it onto a screen that's still there
 
         central = QWidget()
         row = QHBoxLayout(central)
@@ -77,15 +102,34 @@ class Window(QMainWindow):
         self.banking = Banking(self)
         self.updating = Updating(self)
         self.tour: tour.Tour | None = None
+        self.shortcuts = keys.install(self, TABS)
+        self.lock_screen = locking.LockScreen(self)
+        self.away = locking.Away(self)
+        self.locked = False
+        self._updating_note = QTimer(self, singleShot=True, interval=UPDATING_AFTER)
+        self._updating_note.timeout.connect(lambda: self.busy_note.setVisible(self._loading))
 
         hints = QApplication.instance().styleHints()
         hints.colorSchemeChanged.connect(lambda _scheme: self.restyle())
         self.mode = theme.mode_for(self.look, False)
         self.reload()
+        saved = settings.load(budget.home).get(SEEN)
+        self.seen = saved if isinstance(saved, dict) else views.seen(self.snapshot)  # the first time: nothing is news
+        self._looked = False  # whether the Overview was shown, so what's new there has been seen
+        if not isinstance(saved, dict):
+            self._keep_seen()
+        gone = settings.load(budget.home).get(DISMISSED)
+        self.dismissed = [k for k in gone if isinstance(k, str)] if isinstance(gone, list) else []
         self.restyle()
         self._ready = True
-        self.show_tab(TABS[0])
+        self.show_tab(place["tab"])
         self.stack.setFocus()  # not the first tab's button, which would show a focus ring at once
+        self.auto_sync = QTimer(self)
+        self.auto_sync.setInterval(AUTO_SYNC_CHECK)
+        self.auto_sync.timeout.connect(lambda: self.banking.auto())
+        self.auto_sync.start()
+        self._opened = False  # synced by itself as it opened, or tried to
+        QTimer.singleShot(0, self._opening_sync)
         updates = self.updating.status()
         if updates["supported"] and updates["automatic"]:
             self.updating.check_quietly()
@@ -128,10 +172,20 @@ class Window(QMainWindow):
         actions.addWidget(self.update_button)
         column.addLayout(actions)
 
+        numbered = keys.tab_keys(TABS)
+        self.add_button.setToolTip(keys.shown("Ctrl+I"))
+        self.bank_button.setToolTip(keys.shown("Ctrl+R"))
         self.tab_group = QButtonGroup(self)
         self.tab_group.setExclusive(True)
         self.tab_buttons: dict[str, QPushButton] = {}
+        self.group_labels: dict[str, QLabel] = {}
+        foot: list[QPushButton] = []
         for tab in TABS:
+            if tab in GROUPS:
+                label = QLabel(GROUPS[tab])
+                label.setObjectName("navGroup")
+                self.group_labels[tab] = label
+                column.addWidget(label)
             button = QPushButton(tab)
             button.setProperty("kind", "nav")
             button.setCheckable(True)
@@ -140,12 +194,19 @@ class Window(QMainWindow):
             button.setCursor(Qt.PointingHandCursor)
             button.setFocusPolicy(Qt.TabFocus)  # a click shouldn't leave a focus ring
             button.clicked.connect(lambda _checked=False, tab=tab: self.show_tab(tab))
+            if tab in numbered:
+                button.setToolTip(keys.shown(numbered[tab]))
             button.installEventFilter(self)  # the arrow keys move between tabs
             self.tab_group.addButton(button)
             self.tab_buttons[tab] = button
-            column.addWidget(button)
+            if tab in FOOT_TABS:
+                foot.append(button)
+            else:
+                column.addWidget(button)
 
         column.addStretch(1)
+        for button in foot:
+            column.addWidget(button)
         self.look_button = QPushButton("Appearance")
         self.look_button.setProperty("kind", "nav-link")
         self.look_button.setIconSize(QSize(ICON, ICON))
@@ -187,11 +248,28 @@ class Window(QMainWindow):
         self.title.setObjectName("title")
         self.subtitle = widgets.text("")
         self.subtitle.setObjectName("subtitle")
-        words.addWidget(self.title)
+        self.busy_note = widgets.text("Updating...", "dim", wrap=False)
+        self.busy_note.setAccessibleName("Updating")
+        self.busy_note.hide()
+        title_row = QHBoxLayout()
+        title_row.setSpacing(theme.SPACE[3])
+        title_row.addWidget(self.title)
+        title_row.addWidget(self.busy_note, 0, Qt.AlignBottom)
+        title_row.addStretch(1)
+        words.addLayout(title_row)
         words.addWidget(self.subtitle)
         header.addLayout(words, 1)
         self.filters = self._filters()
         header.addWidget(self.filters, 0, Qt.AlignVCenter)
+        self.sample_bar = widgets.banner(
+            "info", "You're looking at sample data",
+            "None of it is real, and changes to it are thrown away. Your own data is untouched.", theme.current(),
+            self._leave_button())
+        self.sample_bar.hide()
+        bar = QHBoxLayout()
+        bar.setContentsMargins(0, 0, SCROLL_ROOM, 0)  # lined up with the header, clear of the scroll bar's gutter
+        bar.addWidget(self.sample_bar)
+        column.addLayout(bar)
         column.addLayout(header)
 
         self.stack = QStackedWidget()
@@ -210,12 +288,49 @@ class Window(QMainWindow):
     # ---- the data and the filters
 
     def reload(self) -> None:
-        """Read the data folder again, after anything changes it."""
-        self.snapshot = views.from_budget(self.budget)
+        """Read the data folder again, after anything changes it.
+
+        Once the window is up this happens off its thread, since a long history takes a
+        moment: you can keep reading the numbers as they were, and they're redrawn when
+        the new ones are ready. Changes made meanwhile are read together in one more go.
+        The first read happens here, before the window shows, so a damaged file stops
+        the app opening as it always has."""
+        if not (self._ready and self.background):
+            self._show(views.from_budget(self.budget))
+            return
+        if self._loading:
+            self._again = True
+            return
+        self._loading, self._again = True, False
+        self._updating_note.start()
+        self.runner.quietly(views.from_budget, (self.budget,), self._loaded)
+
+    def _loaded(self, ok: bool, snapshot) -> None:
+        self._loading = False
+        if self._again:  # what was read is already out of date
+            self.reload()
+            return
+        self._updating_note.stop()
+        self.busy_note.hide()
+        # Something changing the data as it was read can trip the read up: then read it here,
+        # where a real problem shows as it always has.
+        self._show(snapshot if ok else views.from_budget(self.budget))
+
+    def reload_now(self) -> None:
+        """Read the data again here and now, for a step that needs the new numbers at once."""
+        self._again = self._again or self._loading  # one still being read is out of date
+        self._show(views.from_budget(self.budget))
+
+    @property
+    def loading(self) -> bool:
+        return self._loading
+
+    def _show(self, snapshot: views.Snapshot) -> None:
+        self.snapshot = snapshot
         ids = {a.id for a in self.snapshot.accounts}
         if self.choice.accounts is not None:
             kept = self.choice.accounts & ids
-            self.choice = views.Choice(self.choice.range, kept if kept != ids else None)
+            self.choice = views.Choice(self.choice.range, kept if kept and kept != ids else None)  # none left: all
         values = [value for _, value, _ in views.range_options(self.snapshot)]
         if self.choice.range not in values:
             self.choice = views.Choice("12", self.choice.accounts)
@@ -228,7 +343,11 @@ class Window(QMainWindow):
         stays = "Stored on this computer." if self.budget.sync.status()["connected"] else "Stays on this computer."
         version = f" Version {app_version()}." if app_version() else ""
         self.foot.setText(through + stays + version)
+        self._fit_sidebar()
         if self._ready:
+            if not self.offered(self.tab):
+                self.show_tab("Overview")
+                return
             self.render()
 
     def _fill_filters(self) -> None:
@@ -292,6 +411,26 @@ class Window(QMainWindow):
     def tab(self) -> str:
         return TABS[self.stack.currentIndex()]
 
+    def offered(self, tab: str) -> bool:
+        """Whether the sidebar shows this tab now. Until there's data, only the welcome and Help
+        are worth opening, and Investments waits for an investing account."""
+        s = getattr(self, "snapshot", None)
+        if s is None or tab in ("Overview", "Help"):
+            return True
+        if not s.txns:
+            return False
+        if tab == "Investments":
+            return any(a.type in INVESTED for a in s.accounts)
+        return True
+
+    def _fit_sidebar(self) -> None:
+        for tab, button in self.tab_buttons.items():
+            button.setVisible(self.offered(tab))
+        for tab, label in self.group_labels.items():
+            group = TABS[TABS.index(tab):]
+            group = group[:next((i for i, t in enumerate(group[1:], 1) if t in GROUPS or t in FOOT_TABS), len(group))]
+            label.setVisible(any(self.offered(t) for t in group))
+
     def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
         """Up and Down on a tab's button show the tab above or below, as in a list of tabs."""
         if event.type() == QEvent.KeyPress and event.key() in (Qt.Key_Up, Qt.Key_Down):
@@ -299,12 +438,17 @@ class Window(QMainWindow):
             if tab is not None:
                 step = -1 if event.key() == Qt.Key_Up else 1
                 chosen = TABS[(TABS.index(tab) + step) % len(TABS)]
+                while not self.offered(chosen):
+                    chosen = TABS[(TABS.index(chosen) + step) % len(TABS)]
                 self.show_tab(chosen)
                 self.tab_buttons[chosen].setFocus(Qt.TabFocusReason)
                 return True
         return super().eventFilter(watched, event)
 
     def show_tab(self, tab: str) -> None:
+        tab = MOVED.get(tab, tab)
+        if not self.offered(tab):
+            tab = "Overview"  # not there yet: the welcome says how to get it
         self.stack.setCurrentWidget(self.pages[tab])
         self.title.setText(tab)
         self.tab_buttons[tab].setChecked(True)
@@ -336,22 +480,41 @@ class Window(QMainWindow):
                                               "Excel workbook (*.xlsx)")
         return path
 
-    def changed(self, note: str = "") -> None:
-        """After a change to the data: read it again, redraw where you were, and say what happened."""
+    def ask_csv_path(self, name: str) -> str:
+        """Where to save a CSV. Tests replace this, since a real file dialog needs a person."""
+        path, _ = QFileDialog.getSaveFileName(self, "Export CSV", str(Path.home() / name), "CSV file (*.csv)")
+        return path
+
+    def changed(self, note: str = "", undo: bool = False) -> None:
+        """After a change to the data: read it again, redraw where you were, and say what happened.
+        undo: the change can be undone, from the note or with Ctrl+Z."""
         self.reload()
-        self.toast.say(note)
+        self.toast.say(note, ("Undo", self.undo) if undo and self.budget.can_undo() else None)
+
+    def undo(self) -> None:
+        """Put back what the last small change replaced: a category, a rule, a budget, an account's details."""
+        if not self.budget.can_undo():
+            self.toast.say("There's nothing to undo.")
+            return
+        ok, result = attempt(self.budget.undo)
+        if ok:
+            self.changed("Undone.")
+        else:
+            self.reload()  # what can't be undone is no longer offered
+            self.toast.say(str(result))
 
     def context(self) -> Context:
-        status = self.budget.updates.status()
+        status, sync = self.budget.updates.status(), self.budget.sync.status()
         return Context(self.snapshot, self.choice, theme.tokens(self.mode, self.look.palette), self.open_transactions,
                        self.choose_range, self.render, self.options, app_version(),
-                       self.budget.sync.status()["connected"], status, self.editing, self)
+                       sync["connected"], status, self.editing, self, sync)
 
     def render(self) -> None:
         """Draw the tab that's showing, from the data and filters as they are now."""
         if not self._ready:
             return
         tab = self.tab
+        self._looked = self._looked or tab == "Overview"
         full = tab in FULL_HISTORY
         self.filters.setVisible(not full and bool(self.snapshot.txns))
         subtitle = "All history" if full else views.range_label(self.snapshot, self.choice)
@@ -375,10 +538,19 @@ class Window(QMainWindow):
             old.deleteLater()
         if not again:
             motion.reveal(page)
+            self._drop(self._drawn)
         self._drawn = tab
         if at:
             QTimer.singleShot(0, lambda: scroll.verticalScrollBar().setValue(at))
         self.setWindowTitle(f"{tab} · Budgetier")
+
+    def _drop(self, tab: str | None) -> None:
+        """Let go of a tab that's no longer showing. It's drawn again whenever it's shown, and
+        every widget kept alive makes a change of look slower, since Qt restyles them all."""
+        if tab in self.pages and self.pages[tab] is not self.stack.currentWidget():
+            old = self.pages[tab].takeWidget()
+            if old is not None:
+                old.deleteLater()
 
     def restyle(self) -> None:
         """Apply the chosen look, and follow the system when the look says to."""
@@ -395,20 +567,178 @@ class Window(QMainWindow):
     def resizeEvent(self, event):  # noqa: N802 - Qt's name
         super().resizeEvent(event)
         self.toast.follow()
+        if self.lock_screen.isVisible():
+            self.lock_screen.setGeometry(self.rect())
+
+    # ---- the passcode
+
+    def lock(self) -> None:
+        """Hide everything behind the passcode, if the data is encrypted. The key stays in
+        memory while Budgetier is open: this keeps others out of the window meanwhile."""
+        if self.locked or not locking.saved(self.mine.home):
+            return
+        self.locked = True
+        self.away.start(0)
+        locking.close_dialogs(self)
+        self.toast.hide()
+        self.centralWidget().hide()
+        for shortcut in self.shortcuts:
+            shortcut.setEnabled(False)
+        self.lock_screen.cover()
+
+    def _opening_sync(self) -> None:
+        """Once, when Budgetier opens: after the passcode, if there is one."""
+        if not self._opened and not self.locked:
+            self._opened = True
+            self.banking.auto(opening=True)
+
+    def unlock(self) -> None:
+        self.locked = False
+        self.lock_screen.hide()
+        self.centralWidget().show()
+        for shortcut in self.shortcuts:
+            shortcut.setEnabled(True)
+        self.stack.setFocus()
+        self.lock_changed()
+        self._opening_sync()
+
+    def lock_changed(self) -> None:
+        """After the passcode or its timing changes: start counting time away again."""
+        encrypted = locking.saved(self.mine.home) is not None
+        self.away.start(locking.lock_after(self.mine.home) if encrypted and not self.locked else 0)
+
+    def mark_seen(self) -> None:
+        """What's new has been seen: the Overview stops showing it."""
+        self.seen = views.seen(self.snapshot)
+        self._keep_seen()
+        self.render()
+
+    def dismiss(self, keys: list[str]) -> None:
+        """Alerts waved away stay away. Only the newest are kept: old news never comes back."""
+        self.dismissed = [*[k for k in self.dismissed if k not in keys], *keys][-views.DISMISSED_KEPT:]
+        if not self.sample_home:
+            try:
+                settings.save(self.mine.home, **{DISMISSED: self.dismissed})
+            except OSError:
+                pass  # they show again next time, which is no harm
+        self.render()
+
+    def _keep_seen(self) -> None:
+        if self.sample_home:
+            return  # what you saw in the sample isn't what's new in yours
+        try:
+            settings.save(self.mine.home, **{SEEN: self.seen})
+        except OSError:
+            pass  # it shows again next time, which is no harm
+
+    def closeEvent(self, event):  # noqa: N802 - Qt's name
+        """Remember where you were, to open there next time, and that you saw what was new."""
+        if self.sample_home:
+            self.leave_sample()
+        if self._looked:
+            self.seen = views.seen(self.snapshot)
+            self._keep_seen()
+        accounts = None if self.choice.accounts is None else sorted(self.choice.accounts)
+        try:
+            settings.save(self.mine.home, **{PLACE: {"geometry": bytes(self.saveGeometry().toBase64()).decode("ascii"),
+                                                       "tab": self.tab, "range": self.choice.range, "accounts": accounts}})
+        except OSError:
+            pass  # not being able to remember this is no reason to stop closing
+        super().closeEvent(event)
+
+    # ---- sample data
+
+    def _leave_button(self) -> QPushButton:
+        button = QPushButton("Leave sample data")
+        button.clicked.connect(lambda _=False: self.leave_sample())
+        return button
+
+    def try_sample(self) -> None:
+        """Look around made-up data, kept in a folder of its own and thrown away afterwards."""
+        if self.sample_home:
+            return
+        folder = Path(tempfile.mkdtemp(prefix="budgetier-sample-"))
+        try:
+            budget = sample.build(folder / "home")
+        except Exception:
+            shutil.rmtree(folder, ignore_errors=True)
+            raise
+        self.sample_home, self.budget = folder, budget
+        self.choice = views.Choice()
+        self.sample_bar.show()
+        self.reload_now()
+        self.show_tab(TABS[0])
+        self.toast.say("Here's some sample data to look around.")
+
+    def leave_sample(self) -> None:
+        folder = self.sample_home
+        if folder is None:
+            return
+        self.sample_home, self.budget = None, self.mine
+        self.choice = views.Choice()
+        self.sample_bar.hide()
+        self.reload_now()
+        self.show_tab(TABS[0])
+        shutil.rmtree(folder, ignore_errors=True)
+
+    def blocked_by_sample(self) -> bool:
+        """Files and bank connections are for your own data: say so while the sample is up."""
+        if self.sample_home:
+            self.toast.say("Leave the sample data first, so this goes into your own.")
+            return True
+        return False
+
+    # ---- what the keyboard shortcuts do
+
+    def find(self) -> None:
+        self.show_tab("Transactions")
+        found = self.pages["Transactions"].widget().findChildren(QLineEdit, "search")
+        if found:
+            found[0].setFocus(Qt.ShortcutFocusReason)
+            found[0].selectAll()
+
+    def add_files(self) -> None:
+        self.importing.add_files()
+
+    def sync(self) -> None:
+        self.banking.act()
+
+    def appearance(self) -> None:
+        look.appearance(self)
+
+    def help(self) -> None:
+        self.show_tab("Help")
 
     def set_motion(self, on: bool) -> None:
         motion.set_on(on)
-        settings.save(self.budget.home, reduce_motion=not on)
+        settings.save(self.mine.home, reduce_motion=not on)
         QApplication.setEffectEnabled(Qt.UI_FadeTooltip, on)
 
     def set_look(self, look: theme.Look) -> None:
         self.look = look
-        theme.save_look(self.budget.home, look)
+        theme.save_look(self.mine.home, look)
+        opened = storage.open_vault()
+        if opened is not None and locking.saved(self.mine.home):  # so asking for the passcode looks the same
+            opened.set_option(look={"mode": look.mode, "palette": look.palette, "size": look.size})
         self.restyle()
 
 
 SCROLL_ROOM = 14  # a scroll bar and a little air, kept clear at the right of each tab
 SCROLL_BAR = 10  # as wide as the style sheet draws it
+
+
+def _place(saved) -> dict:
+    """Where the window was left. Anything that can't be read starts as a new window would;
+    the period and accounts are checked against the data once it's read."""
+    saved = saved if isinstance(saved, dict) else {}
+    tab = MOVED.get(saved.get("tab"), saved.get("tab"))
+    tab = tab if tab in TABS else TABS[0]
+    period = saved.get("range") if isinstance(saved.get("range"), str) and saved.get("range") else "12"
+    accounts = saved.get("accounts")
+    chosen = frozenset(a for a in accounts if isinstance(a, str)) if isinstance(accounts, list) and accounts else None
+    geometry = saved.get("geometry")
+    geometry = QByteArray.fromBase64(geometry.encode("ascii")) if isinstance(geometry, str) and geometry.isascii() else None
+    return {"tab": tab, "choice": views.Choice(period, chosen), "geometry": geometry if geometry else None}
 
 
 def application() -> QApplication:

@@ -7,6 +7,7 @@ differently from an export. Each feed row keeps its id, so syncing twice adds no
 """
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 import re
@@ -14,15 +15,44 @@ import shutil
 from datetime import date, datetime, timedelta
 
 from . import credentials, simplefin
-from .accounts import TYPES, account_id, account_name
+from .accounts import TYPES, account_id, account_name, entered_balance, pin_balance
 from .parse import _guess_type, last4
 from .simplefin import Feed
-from .storage import BudgetError, unique_path, write_files
+from .storage import BudgetError, read_text, unique_path, write_files
 
 OVERLAP_DAYS = 5  # some banks date a row before the day it reaches the feed; repeats cost nothing
 RECENT = timedelta(minutes=5)  # a second press this soon can't have anything new, and a
 # review this recent is reused: opening the same screen twice shouldn't cost a request
 DAILY_LIMIT = 20  # the server allows about 24 a day and disables access beyond that
+# Syncing by itself: when Budgetier opens, unless it synced within the hour; or once a day.
+AUTO = (("off", "Only when I press Sync now"), ("open", "When Budgetier opens"), ("daily", "Once a day, while it's open"))
+AUTO_AFTER = {"open": timedelta(hours=1), "daily": timedelta(hours=20)}
+HOME_CURRENCY = "USD"
+
+
+def known_currency(code: str) -> bool:
+    """A three-letter code like EUR. SimpleFIN can also send a link for a made-up currency,
+    such as reward points, which has no rate to convert at."""
+    return bool(re.fullmatch(r"[A-Z]{3}", code or ""))
+
+
+def read_rate(text) -> float | None:
+    """Dollars for one unit of another currency, as typed: 1.08, or $1.08."""
+    try:
+        rate = float(str(text).replace("$", "").replace(",", "").strip())
+    except ValueError:
+        return None
+    return rate if 0 < rate < 1_000_000 else None
+
+
+def converted(feed_account, rate: float) -> tuple[list, int]:
+    """Another currency's rows and balance in dollars, at the rate when they came in. Each
+    row keeps what it was in its own currency at the end of its description, so the
+    original amount is never lost; a row comes in once, so a later rate doesn't change it."""
+    code = feed_account.currency
+    rows = [dataclasses.replace(r, cents=round(r.cents * rate), description=f"{r.description} ({code} {r.cents / 100:,.2f})")
+            for r in feed_account.rows]
+    return rows, round(feed_account.balance * rate)
 
 
 class BankSync:
@@ -40,7 +70,7 @@ class BankSync:
         if not self.path.exists():
             return {}
         try:
-            state = json.loads(self.path.read_text(encoding="utf-8"))
+            state = json.loads(read_text(self.path))
             if not isinstance(state, dict) or not isinstance(state.get("links", {}), dict):
                 raise ValueError("unexpected shape")
             return state
@@ -64,7 +94,48 @@ class BankSync:
         names = [accounts[link["account"]]["name"] for link in self.links.values() if link["account"] in accounts]
         return {"connected": bool(self.state.get("connected")), "lastSync": self.state.get("last_sync"),
                 "linked": sorted(names), "problems": self.state.get("problems", []),
-                "unlinked": self.state.get("unlinked", 0)}
+                "unlinked": self.state.get("unlinked", 0), "auto": self.auto,
+                "rates": {code: rate for code, rate in self.rates.items()
+                          if any(link.get("currency") == code for link in self.links.values())}}
+
+    @property
+    def rates(self) -> dict[str, float]:
+        """Dollars for one unit of each other currency, as entered."""
+        found = self.state.get("rates", {})
+        return {c: r for c, r in found.items() if known_currency(c) and type(r) in (int, float) and r > 0} \
+            if isinstance(found, dict) else {}
+
+    def set_rate(self, code: str, text: str) -> None:
+        rate = read_rate(text)
+        if rate is None:
+            raise BudgetError(f"Enter what 1 {code} is worth in dollars, like 1.08.")
+        self.state["rates"] = {**self.rates, code: rate}
+        self._save()
+
+    # ---- syncing by itself
+
+    @property
+    def auto(self) -> str:
+        mode = self.state.get("auto", "off")
+        return mode if mode in AUTO_AFTER else "off"
+
+    def set_auto(self, mode: str) -> None:
+        if mode not in (*AUTO_AFTER, "off"):
+            raise BudgetError("Choose when to sync.")
+        self.state["auto"] = mode
+        self._save()
+
+    def auto_due(self, now: datetime | None = None, opening: bool = False) -> bool:
+        """Whether to sync by itself now: it's set to, there are accounts to update, and the last
+        sync is old enough. When Budgetier opens counts only as it opens."""
+        mode = self.auto
+        if mode == "off" or (mode == "open" and not opening) or not self.state.get("connected") or not self.links:
+            return False
+        last = self.state.get("last_sync")
+        try:
+            return last is None or (now or datetime.now()) - datetime.fromisoformat(last) >= AUTO_AFTER[mode]
+        except ValueError:
+            return True
 
     # ---- limits
 
@@ -144,6 +215,7 @@ class BankSync:
         return {"key": feed_account.key, "name": feed_account.name, "bank": feed_account.connection, "number": number,
                 "type": _guess_type(feed_account.name) or "checking", "balance": feed_account.balance / 100,
                 "count": len(feed_account.rows), "currency": feed_account.currency, "account": match,
+                "rate": self.rates.get(feed_account.currency), "convertible": known_currency(feed_account.currency),
                 "skipped": feed_account.key in self.state.get("skipped", [])}
 
     def _new_account(self, choice: dict, feed_account) -> str:
@@ -178,15 +250,22 @@ class BankSync:
                 feed_account = by_key.get(key)
                 if feed_account is None:
                     continue
-                if choice.get("account") == "skip" or feed_account.currency != "USD":
+                code = feed_account.currency
+                if choice.get("account") == "skip" or not known_currency(code):
                     skipped.append(key)
                     continue
+                if code != HOME_CURRENCY:
+                    rate = read_rate(choice.get("rate", "")) or self.rates.get(code)
+                    if rate is None:
+                        raise BudgetError(f"Enter what 1 {code} is worth in dollars for {feed_account.name}, like 1.08.")
+                    self.state["rates"] = {**self.rates, code: rate}
                 account = choice.get("account") or self._new_account(choice, feed_account)
                 if account not in ledger.accounts:
                     raise BudgetError(f"Choose an account for {feed_account.name}.")
                 if any(link["account"] == account for link in links.values()):
                     raise BudgetError(f"Two bank accounts can't share {ledger.accounts[account]['name']}.")
-                links[key] = {"account": account, "since": self._since(key, account)}
+                links[key] = {"account": account, "since": self._since(key, account),
+                              **({"currency": code} if code != HOME_CURRENCY else {})}
             self.state.update(links=links, skipped=skipped)
             results.extend(self._apply(self._feed))
 
@@ -219,11 +298,14 @@ class BankSync:
             if feed_account is None or info is None:
                 continue
             since = date.fromisoformat(link["since"]) if link["since"] else None
-            added = ledger.merge_synced(link["account"], feed_account.rows, since)
-            owed = info["type"] == "credit"  # entered balances count what a card owes
-            info["balance_anchor"] = {"date": feed_account.balance_date.isoformat(), "live": True,
-                                      "amount": (-feed_account.balance if owed else feed_account.balance) / 100}
-            info.pop("balance_skipped", None)
+            rows, balance = feed_account.rows, feed_account.balance
+            if feed_account.currency != HOME_CURRENCY:
+                rate = self.rates.get(feed_account.currency)
+                if rate is None or not known_currency(feed_account.currency):
+                    continue  # no rate to convert at: it waits until one is entered
+                rows, balance = converted(feed_account, rate)
+            added = ledger.merge_synced(link["account"], rows, since)
+            pin_balance(info, entered_balance(info["type"], balance), feed_account.balance_date, live=True)
             results.append({"account": info["name"], "added": added})
         return results
 
@@ -233,7 +315,7 @@ class BankSync:
         or the days between the real last sync and the review would never arrive."""
         handled = {*self.links, *self.state.get("skipped", [])}
         self.state.update(problems=feed.problems,
-                          unlinked=sum(a.key not in handled and a.currency == "USD" for a in feed.accounts))
+                          unlinked=sum(a.key not in handled and known_currency(a.currency) for a in feed.accounts))
         if synced:
             self.state["last_sync"] = datetime.now().isoformat(timespec="seconds")
         self._save()

@@ -5,6 +5,7 @@ to finish, and Enter in a field presses the dialog's main button.
 """
 from __future__ import annotations
 
+import html
 import logging
 from collections.abc import Callable
 
@@ -25,6 +26,7 @@ from . import motion, theme, widgets
 
 log = logging.getLogger("budgetier")
 TOAST_SECONDS = 5
+ACTION_SECONDS = 8  # longer when it offers something, like Undo, to give time to reach it
 
 
 def attempt(work: Callable, *args) -> tuple[bool, object]:
@@ -84,6 +86,7 @@ class Dialog(QDialog):
         column.addLayout(foot)
         self.buttons: list[QPushButton] = []
         self.main: QPushButton | None = None  # pressed by Enter in a field
+        self.remove: QPushButton | None = None  # at the far left, apart from the rest
 
     def showEvent(self, event):  # noqa: N802 - Qt's name
         super().showEvent(event)
@@ -113,6 +116,20 @@ class Dialog(QDialog):
             self.buttons_row.addWidget(button)
             self.buttons.append(button)
         self.main = self.buttons[-1] if self.buttons else None
+
+    def set_remove(self, label: str | None, run: Callable[[], None] | None = None) -> None:
+        """A way to remove what's being edited, kept at the far left, away from Save. It closes
+        this dialog first, and what it runs asks before anything is removed."""
+        if self.remove is not None:
+            self.buttons_row.removeWidget(self.remove)
+            self.remove.deleteLater()
+            self.remove = None
+        if label and run:
+            self.remove = QPushButton(label)
+            self.remove.setProperty("kind", "remove")
+            self.remove.setAutoDefault(False)
+            self.remove.clicked.connect(lambda _=False: (self.dismiss(), run()))
+            self.buttons_row.insertWidget(0, self.remove)
 
     def keyPressEvent(self, event):  # noqa: N802 - Qt's name
         if event.key() == Qt.Key_Escape:
@@ -179,17 +196,39 @@ class Toast(QLabel):
         self.timer = QTimer(self)
         self.timer.setSingleShot(True)
         self.timer.timeout.connect(lambda: motion.reveal(self, ms=motion.NORMAL, out=True, then=self.hide))
+        self.action: tuple[str, Callable[[], None]] | None = None
+        self.words = ""  # what it says, without the link
+        self.linkActivated.connect(lambda _link: self.act())
 
     def stay(self, words: str) -> None:
         """Until told otherwise, for work that may take a while."""
         self.say(words)
         self.timer.stop()
 
-    def say(self, words: str) -> None:
+    def act(self) -> None:
+        """Do what the note offers, once."""
+        action, self.action = self.action, None
+        if action:
+            self.hide()
+            action[1]()
+
+    def say(self, words: str, action: tuple[str, Callable[[], None]] | None = None) -> None:
+        """action: (label, what it does), offered as a link after the words, like Undo."""
         if not words:
             return
-        self.setText(words)
-        self.setAccessibleName(words)
+        self.action, self.words = action, words
+        if action:
+            # The words can hold a merchant's name, so they're escaped before they're shown as rich text.
+            link = theme.current().get("page", "#ffffff")
+            self.setTextFormat(Qt.RichText)
+            self.setTextInteractionFlags(Qt.LinksAccessibleByMouse)
+            self.setText(f'{html.escape(words)}&nbsp;&nbsp;<a href="act" style="color: {link}; font-weight: 600;">'
+                         f'{html.escape(action[0])}</a>')
+        else:
+            self.setTextFormat(Qt.PlainText)
+            self.setTextInteractionFlags(Qt.NoTextInteraction)
+            self.setText(words)
+        self.setAccessibleName(f"{words} {action[0]}" if action else words)
         self.adjustSize()
         at = self.spot()
         if self.isVisible() and self.graphicsEffect() is None:
@@ -199,7 +238,7 @@ class Toast(QLabel):
             motion.reveal(self)
             motion.slide(self, at, start=at + QPoint(0, theme.SPACE[2]))
         self.raise_()
-        self.timer.start(TOAST_SECONDS * 1000)
+        self.timer.start((ACTION_SECONDS if action else TOAST_SECONDS) * 1000)
         announce(self)
 
     def spot(self) -> QPoint:

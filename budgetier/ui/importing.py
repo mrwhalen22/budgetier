@@ -21,7 +21,8 @@ from . import fmt, theme, widgets
 from .dialogs import Dialog, attempt, busy
 from .popup import Dropdown
 
-TYPES = (("checking", "Checking"), ("savings", "Savings"), ("credit", "Credit card"))
+TYPES = (("checking", "Checking"), ("savings", "Savings"), ("credit", "Credit card"), ("loan", "Loan"),
+         ("investment", "Investing"), ("retirement", "Retirement"))
 LIST_HEIGHT = 520  # the review scrolls past this
 
 
@@ -126,6 +127,8 @@ class Importing:
         return self.window.budget
 
     def add_files(self) -> None:
+        if self.window.blocked_by_sample():
+            return
         paths = self.window.ask_files()
         if not paths:
             return

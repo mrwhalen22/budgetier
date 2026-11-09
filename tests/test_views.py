@@ -156,7 +156,9 @@ class Largest(Made):
     def test_biggest_first(self):
         found = views.largest(self.s, self.all, include_bills=True)
         self.assertEqual([t.cents for t in found.expenses], sorted(t.cents for t in found.expenses))
-        self.assertLessEqual(len(found.expenses), 25)
+        self.assertLessEqual(len(found.expenses), views.LARGEST)
+        names = [t.merchant for t in found.expenses]
+        self.assertEqual(len(names), len(set(names)))  # one from each merchant
         self.assertEqual([m[1] for m in found.merchants], sorted((m[1] for m in found.merchants), reverse=True))
 
 
