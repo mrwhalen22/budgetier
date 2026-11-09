@@ -229,8 +229,8 @@ class Editing:
     def remove_rule(self, rule: dict) -> None:
         confirm(self.window, "Remove this rule?",
                 f'Transactions matching "{rule["text"]}" go back to their automatic category. You can add the rule again '
-                "any time.", lambda: attempt(self.budget.delete_rule, rule["line"]),
-                done=lambda _: self.window.changed("Removed."))
+                "any time.", lambda: attempt(self.budget.undoable, self.budget.delete_rule, rule["line"]),
+                done=lambda _: self.window.changed("Removed.", undo=True))
 
     def start_queue(self, merchant: str) -> None:
         items = views.uncategorized(self.snapshot)
@@ -267,7 +267,10 @@ class Editing:
         else:
             tx = o.get("tx")
             buttons = [("Cancel", dialog.dismiss, ""),
-                       *([("Undo change", self._clear_edit, "")] if tx is not None and tx.edited else []),
+                       *([("Undo change", self._clear_edit, "")] if tx is not None and tx.edited and not tx.split else []),
+                       *([("Change split" if tx.split else "Split", lambda: self._split(tx), "")] if tx is not None else []),
+                       *([("Edit note" if tx.note or tx.tags else "Add note", lambda: self._note(tx), "")]
+                         if tx is not None else []),
                        ("Save", self._save, "primary")]
         dialog.load(o, lead, buttons)
         if not dialog.isVisible():
@@ -312,32 +315,45 @@ class Editing:
     def _saving(self, dialog: RuleDialog) -> None:
         o, category, merchant = dialog.o, dialog.chosen_category(), dialog.name.text()
         if dialog.just_this():
-            ok, result = attempt(self.budget.save_edit, views.edit_target(self.snapshot, o["tx"]), category, merchant)
+            ok, result = attempt(self.budget.undoable, self.budget.save_edit, views.edit_target(self.snapshot, o["tx"]),
+                                 category, merchant)
             if not ok:
                 return dialog.show_error(str(result))
             dialog.accept()
-            return self.window.changed("Saved. Nothing else changed.")
-        ok, result = attempt(self.budget.save_rule, o.get("line") or None, dialog.match.text(), category, merchant,
-                             bool(o.get("advanced")))
+            return self.window.changed("Saved. Nothing else changed.", undo=True)
+        ok, result = attempt(self.budget.undoable, self.budget.save_rule, o.get("line") or None, dialog.match.text(),
+                             category, merchant, bool(o.get("advanced")))
         if not ok:
             return dialog.show_error(str(result))
         matched = fmt.plural(result["count"], "transaction")
         if not self.queue:
             dialog.accept()
-            return self.window.changed(f"Rule saved. It matches {matched}.")
+            return self.window.changed(f"Rule saved. It matches {matched}.", undo=True)
         q = self.queue
         q["saved"] += 1
         q["at"] += 1
         q["note"] = f"Saved. That rule matches {matched}."
         self._next()
 
+    def _split(self, tx: views.Tx) -> None:
+        """Into parts with their own categories, in a dialog of its own."""
+        from .splitting import split
+        self.dialog.dismiss()
+        split(self.window, tx)
+
+    def _note(self, tx: views.Tx) -> None:
+        """A note and tags, in a dialog of their own."""
+        from .noting import note
+        self.dialog.dismiss()
+        note(self.window, tx)
+
     def _clear_edit(self) -> None:
         dialog = self.dialog
 
         def work():
-            ok, result = attempt(self.budget.clear_edit, views.edit_target(self.snapshot, dialog.o["tx"]))
+            ok, result = attempt(self.budget.undoable, self.budget.clear_edit, views.edit_target(self.snapshot, dialog.o["tx"]))
             if not ok:
                 return dialog.show_error(str(result))
             dialog.accept()
-            self.window.changed("Change undone.")
+            self.window.changed("Change undone.", undo=True)
         busy(dialog.buttons[1], "Working...", work)

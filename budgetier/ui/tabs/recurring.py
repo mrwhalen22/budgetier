@@ -1,10 +1,13 @@
 """Recurring: bills, subscriptions and regular income, found over all history."""
 from __future__ import annotations
 
+from datetime import date
+
 from PySide6.QtWidgets import QWidget
 
 from ... import views
 from .. import fmt, theme, widgets
+from ..charts import Chart, Series
 from ..context import Context
 
 HEADERS = ["Name", "Category", "Every", "Amount", "Monthly", "Change", "Last", "Next", "Account"]
@@ -36,6 +39,50 @@ def table(ctx: Context, found: list[views.Recurring]) -> QWidget:
                          numeric={3, 4})
 
 
+def _short_day(day: str) -> str:
+    when = date.fromisoformat(day)
+    return f"{when:%b} {when.day}"
+
+
+def _about(amount: str) -> str:
+    """~ after the sign: -~$600.00, where ~-$600.00 reads as a smudge."""
+    return amount.replace("-", "-~", 1) if amount.startswith("-") else "~" + amount
+
+
+def coming_up(ctx: Context, f: views.Forecast) -> QWidget | None:
+    """The next 30 days: what's due, and what it does to checking."""
+    if not f.items:
+        return None
+    t = ctx.tokens
+    parts: list[QWidget | None] = []
+    if f.path:
+        parts.append(widgets.tiles(
+            widgets.tile("Checking now", fmt.money(f.balance), f"as of {fmt.day_name(f.start)}"),
+            widgets.tile("Bills due", fmt.money(-f.bills), f"next {views.AHEAD_DAYS} days, cards too"),
+            widgets.tile("Income expected", fmt.money(f.income), f"next {views.AHEAD_DAYS} days", "pos"),
+            widgets.tile("Lowest point", fmt.money(f.low), f"around {fmt.day_name(f.low_day)}", "neg" if f.short else "")))
+        labels = [_short_day(d) if i % 7 == 0 else "" for i, d in enumerate(f.days)]
+        parts.append(Chart(f.days, [Series("Checking", f.path, t["accent"])], t, kind="lines", labels=labels,
+                           titles=[fmt.day_name(d) for d in f.days]))
+    rows = []
+    for u in f.items:
+        late = u.day < f.today
+        note = ("estimated from recent payments" if u.estimated else "due, not in yet" if late
+                else "amount varies" if u.variable else "")
+        rows.append([widgets.Cell(fmt.day_name(u.day), tone="dim"),
+                     widgets.Cell(u.merchant, bold=True, icon=widgets.mono_icon(u.merchant, ctx.color(u.category))),
+                     widgets.Cell(_about(fmt.cents(u.cents)) if u.variable or u.estimated else fmt.cents(u.cents), right=True,
+                                  tone="pos" if u.cents > 0 else ""),
+                     widgets.Cell(u.account, tone="dim"), widgets.Cell(note, tone="dim")])
+    parts.append(widgets.Table(["Due", "Name", "Amount", "Account", ""], rows, t, numeric={2},
+                               on_row=lambda i: ctx.open_transactions(query=f.items[i].merchant)))
+    note = (f"Starting from checking's balance on {fmt.day_name(f.start)}, with each bill, paycheck and card payment as it "
+            "comes due. Bills on a card leave checking when the card is paid, so only its payment moves the line, and a loan's "
+            "payment is guessed from recent ones."
+            if f.path else "Set your checking balance on the Accounts tab to see what these do to it.")
+    return widgets.card(*parts, title=f"Next {views.AHEAD_DAYS} days", note=note)
+
+
 def build(ctx: Context) -> QWidget:
     stopped = ctx.options.get("recurring_all", False)
     r = views.recurring(ctx.snapshot, stopped)
@@ -47,4 +94,5 @@ def build(ctx: Context) -> QWidget:
     bills = widgets.card(table(ctx, r.expenses), title="Bills and subscriptions",
                          note="~ means the amount varies. Found from the full history, so the period filter doesn't apply here.")
     income = widgets.card(table(ctx, r.incomes), title="Regular income")
-    return widgets.column(figures, toggle, bills, income, spacing=theme.SPACE[4])
+    return widgets.column(figures, coming_up(ctx, views.forecast(ctx.snapshot)), toggle, bills, income,
+                          spacing=theme.SPACE[4])

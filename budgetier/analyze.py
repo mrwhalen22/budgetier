@@ -29,7 +29,7 @@ from collections import Counter, defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
-from .accounts import INVESTED
+from .accounts import INVESTED, OWED
 from .rules import read as read_rules
 from .storage import read_text
 
@@ -134,6 +134,8 @@ CONTRIBUTED, WITHDRAWN, ACTIVITY = "Contributions", "Withdrawals", "Investment A
 INVESTING_CATEGORIES = (CONTRIBUTED, WITHDRAWN, ACTIVITY)
 SPENDING_KINDS = ("expense", "refund", "estimate")
 TRANSFER_CATEGORIES = ("Transfer", SAVED, *INVESTING_CATEGORIES)
+INTEREST = "Interest"  # what a loan charges, which is spending; what's paid off it is not
+LOAN_PAYMENT = "Loan payment"
 NOT_BUDGETED = ("Income", "Transfer", SAVED, ESTIMATED, UNCATEGORIZED, *INVESTING_CATEGORIES)
 INCOME_MONTHS = 3  # complete months averaged to stand in for a month still in progress
 _SAVED_AT = [
@@ -155,6 +157,10 @@ _MOVED = re.compile(r"CONTRIBUT|DEPOSIT|TRANSFER|\bXFER\b|\bTFR\b|\bACH\b|\bEFT\
 PAIR_DAYS = 7  # the slowest real payment seen took 5; a miss would count purchases twice
 ISSUER_WORDS = {"American Express": r"AMEX|AMERICAN EXPRESS", "Bank of America": r"BANK OF AMERICA|BK OF AM"}
 _LOAN = re.compile(r"MORTGAGE|MTG|HOME LOAN|AUTO LOAN|CAR LOAN|STUDENT LOAN|LOAN PMT|LOAN PAYMENT")
+# A bank-side payment that could be to a loan, for pairing with the loan's own side.
+_TO_LOAN = re.compile(r"MORTGAGE|\bMTG\b|\bLOAN\b|\bLN\b|HELOC|NAVIENT|NELNET|MOHELA|AIDVANTAGE|FEDLOAN|GREAT LAKES|"
+                      r"SALLIE MAE|AUTO ?(FINANCE|FINANCIAL|PAY)|MOTOR (CREDIT|ACCEPTANCE)|FINANCIAL SERVICES|LENDING")
+_LOAN_INTEREST = re.compile(r"INTEREST|\bINT\b|FINANCE CHARGE")
 _ISSUER = (r"\b(CHASE|CITI|AMEX|AMERICAN EXPRESS|CAPITAL ONE|DISCOVER|BARCLAY|SYNCHRONY|"
            r"BANK OF AMERICA|BK OF AM|WELLS FARGO|APPLE CARD|GOLDMAN SACHS)\b")
 _CARD_PAYMENT = re.compile(rf"CREDIT ?(CARD|CRD)|CRCARDPMT|CARD ?(PAYMENT|PMT)|\bCC (PAYMENT|PMT)\b|"
@@ -222,7 +228,7 @@ def edit_keys(rows: list[dict]) -> list[str]:
 
 def category_names() -> list[str]:
     """Every category the built-in rules can produce, for the app's pick lists."""
-    names = {c for _, c, _ in DEFAULT_RULES} | {c for _, c in BANK_CATEGORIES}
+    names = {c for _, c, _ in DEFAULT_RULES} | {c for _, c in BANK_CATEGORIES} | {INTEREST}
     return sorted(names - {UNCATEGORIZED})
 
 
@@ -280,6 +286,14 @@ def is_transfer(description: str, cents: int, account_type: str, bank_category: 
     return bool(_CARD_PAYMENT.search(text) or _OWN_TRANSFER.search(text))
 
 
+def is_card_payment(text: str) -> bool:
+    return bool(_CARD_PAYMENT.search(text.upper()))
+
+
+def is_loan_payment(text: str) -> bool:
+    return bool(_TO_LOAN.search(text.upper()))
+
+
 def paid_cards(text: str, accounts: dict) -> list[str]:
     """Imported card accounts this bank-side payment description names."""
     found = []
@@ -303,19 +317,31 @@ def investing_category(text: str, positive: bool) -> str:
     return CONTRIBUTED if positive else WITHDRAWN
 
 
+def loan_category(text: str, positive: bool) -> tuple[str, str | None] | None:
+    """A row inside a loan: a payment toward it, the interest it charges, or neither. Other
+    charges, like an escrow payment of property tax, are left to the usual rules."""
+    if positive:
+        return "Transfer", LOAN_PAYMENT
+    if _LOAN_INTEREST.search(text):
+        return INTEREST, None
+    return None
+
+
 def _kind(category: str, cents: int, account_type: str) -> str:
     if category in TRANSFER_CATEGORIES:
         return "transfer"
     if cents < 0:
         return "expense"
-    if category == "Income" or (category == UNCATEGORIZED and account_type != "credit"):
+    if category == "Income" or (category == UNCATEGORIZED and account_type not in OWED):
         return "income"
     return "refund"
 
 
-def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: dict | None = None) -> list[dict]:
-    """A transaction changed by hand beats everything, then your rules, then what's built in."""
-    keys = edit_keys(rows) if edits else [""] * len(rows)
+def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: dict | None = None,
+             splits: dict | None = None, keyed: bool = False) -> list[dict]:
+    """A transaction changed by hand beats everything, then your rules, then what's built in.
+    keyed: give every row its key even with no edits or splits, for notes to find them by."""
+    keys = edit_keys(rows) if edits or splits or keyed else [""] * len(rows)
     default_rules = [(re.compile(p), c, m) for p, c, m in DEFAULT_RULES]
     saved_at = [(re.compile(p), SAVED, m) for p, m in _SAVED_AT]
 
@@ -325,6 +351,10 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: d
         ruled = hit is not None
         if not hit and account_type in INVESTED:
             return investing_category(text, positive), None, False
+        if not hit and account_type == "loan":
+            found = loan_category(text, positive)
+            if found:
+                return found[0], found[1], False
         if not hit:
             hit = next((rule for rule in saved_at if rule[0].search(text)), None)
         if not hit and is_transfer(text, 1 if positive else -1, account_type, bank_category):
@@ -355,7 +385,7 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: d
             "date": r["date"], "account": r["account"], "description": r["description"],
             "merchant": merchant, "category": category, "cents": r["cents"],
             "balance": r["balance"], "kind": _kind(category, r["cents"], account_type),
-            "ruled": ruled, "edited": bool(edit), "matched": False, "source": r.get("source", ""),
+            "ruled": ruled, "edited": bool(edit), "matched": False, "source": r.get("source", ""), "key": key,
         })
     _pair_transfers(out, accounts)
     first_seen: dict[str, date] = {}
@@ -370,6 +400,56 @@ def classify(rows: list[dict], accounts: dict, user_rules: list[tuple], edits: d
             cards = paid_cards(r["description"], accounts)
             if not cards or any((r["date"] - first_seen[c]).days < 31 for c in cards if c in first_seen):
                 r["kind"], r["category"] = "estimate", ESTIMATED
+    return _split(out, accounts, splits) if splits else out
+
+
+TAG_LONGEST, NOTE_LONGEST = 30, 500
+
+
+def valid_note(note) -> bool:
+    """Words about one transaction, and tags to gather it with others: a trip, a project."""
+    return (isinstance(note, dict) and isinstance(note.get("note", ""), str) and len(note.get("note", "")) <= NOTE_LONGEST
+            and isinstance(note.get("tags", []), list)
+            and all(isinstance(t, str) and t.strip() and len(t) <= TAG_LONGEST for t in note.get("tags", []))
+            and bool(note.get("note", "").strip() or note.get("tags")))
+
+
+def read_tags(text: str) -> list[str]:
+    """Tags as typed: separated by commas, with or without a #, in the spelling first used."""
+    found: dict[str, str] = {}
+    for part in text.split(","):
+        tag = " ".join(part.strip().lstrip("#").split())[:TAG_LONGEST].strip()
+        if tag:
+            found.setdefault(tag.lower(), tag)
+    return list(found.values())
+
+
+def valid_split(split) -> bool:
+    """Two or more parts, each with a category and an amount above zero, in cents."""
+    parts = split.get("parts") if isinstance(split, dict) else None
+    return (isinstance(parts, list) and len(parts) >= 2
+            and all(isinstance(p, dict) and isinstance(p.get("category"), str) and p["category"].strip()
+                    and type(p.get("cents")) is int and p["cents"] > 0 and isinstance(p.get("merchant", ""), str)
+                    for p in parts))
+
+
+def _split(rows: list[dict], accounts: dict, splits: dict) -> list[dict]:
+    """A transaction split by hand stands as its parts, each with its own category, all on
+    the same day and in the same direction. A split that no longer adds up to the amount,
+    because the transaction changed since, is left out rather than guessed at."""
+    out = []
+    for r in rows:
+        split = splits.get(r["key"])
+        if not split or sum(p["cents"] for p in split["parts"]) != abs(r["cents"]):
+            out.append(r)
+            continue
+        sign = 1 if r["cents"] > 0 else -1
+        for part in split["parts"]:
+            cents = sign * part["cents"]
+            out.append({**r, "cents": cents, "category": part["category"].strip(),
+                        "merchant": part.get("merchant", "").strip() or r["merchant"],
+                        "kind": _kind(part["category"].strip(), cents, accounts[r["account"]]["type"]),
+                        "edited": True, "split": True, "whole": r["cents"], "matched": False})
     return out
 
 
@@ -380,16 +460,26 @@ def _pair_transfers(rows: list[dict], accounts: dict) -> None:
     must be a transfer too or something unexplained. So a card payment can't swallow
     a same-sized rent payment or paycheck, and a $20 refund can't pair off with an
     unrelated $20 purchase.
+
+    A payment into a loan is the exception: the bank's side is usually filed as Housing or
+    Education by its name, so it may claim any payment out of a bank account worded like
+    one to a lender. Paired, it's a transfer, and only the loan's interest is spending.
     """
     by_amount = defaultdict(list)
     for r in rows:
         by_amount[r["cents"]].append(r)
+
+    def could_be(c: dict, r: dict) -> bool:
+        if c["category"] in (*TRANSFER_CATEGORIES, UNCATEGORIZED):
+            return c["category"] != ACTIVITY
+        return (accounts[r["account"]]["type"] == "loan" and c["cents"] < 0 and not c["edited"]
+                and accounts[c["account"]]["type"] not in (*OWED, *INVESTED) and _lender(c["description"], accounts[r["account"]]))
+
     for r in rows:
         if r["kind"] != "transfer" or r["matched"] or r["category"] == ACTIVITY:
             continue
         candidates = [c for c in by_amount[-r["cents"]]
-                      if c["account"] != r["account"] and not c["matched"] and not c["ruled"]
-                      and c["category"] in (*TRANSFER_CATEGORIES, UNCATEGORIZED) and c["category"] != ACTIVITY
+                      if c["account"] != r["account"] and not c["matched"] and not c["ruled"] and could_be(c, r)
                       and abs((c["date"] - r["date"]).days) <= PAIR_DAYS]
         if candidates:
             other = min(candidates, key=lambda c: (c["kind"] != "transfer",
@@ -402,6 +492,13 @@ def _pair_transfers(rows: list[dict], accounts: dict) -> None:
             for half in (r, other):
                 if accounts[half["account"]]["type"] not in INVESTED:
                     half["category"] = "Transfer"
+
+
+def _lender(description: str, loan: dict) -> bool:
+    """Whether a payment's wording could be one to this loan: a lender's words, or its bank's name."""
+    text = description.upper()
+    bank = (loan.get("bank") or "").upper().strip()
+    return bool(_TO_LOAN.search(text) or (len(bank) >= 3 and bank in text))
 
 
 def _cadence(days: list[date]) -> tuple | None:
@@ -538,11 +635,11 @@ def _month_ends(first: date, last: date):
 def _calculated(own: list[dict], info: dict) -> dict:
     """Walk an entered balance forward and back through the account's transactions.
 
-    Entered as a card's amount owed, so it's flipped: a card balance is negative,
+    Entered as a card's or loan's amount owed, so it's flipped: a card balance is negative,
     which lets the same sum work for purchases and payments on any account."""
     anchor = info["balance_anchor"]
     pinned = date.fromisoformat(anchor["date"])
-    start = round(anchor["amount"] * 100) * (-1 if info["type"] == "credit" else 1)
+    start = round(anchor["amount"] * 100) * (-1 if info["type"] in OWED else 1)
     if not own:  # a linked account that's been quiet still has a balance
         return {"months": {anchor["date"][:7]: start}, "current": start, "as_of": anchor["date"], "calculated": True}
 
@@ -614,6 +711,9 @@ def account_balances(rows: list[dict], accounts: dict) -> dict[str, dict]:
                               "as_of": with_balance[-1]["date"].isoformat(), "calculated": False}
         elif own and info.get("balance_anchor"):
             found[account] = _calculated(own, info)
+        if info["type"] == "loan" and account in found:  # what's owed, however the bank signed it
+            b = found[account]
+            found[account] = {**b, "current": -abs(b["current"]), "months": {m: -abs(c) for m, c in b["months"].items()}}
     return found
 
 
@@ -633,7 +733,8 @@ def budget_report(rows: list[dict], accounts: dict, budgets: dict[str, dict]) ->
     """Spending against each target, by month. A percent target follows that month's
     income, except in the month in progress, where pay may not have landed yet: that
     one uses recent income, or it would read as over budget until payday."""
-    targets = [{"category": c, "mode": b["mode"], "value": b["value"] / 100 if b["mode"] == "amount" else b["value"]}
+    targets = [{"category": c, "mode": b["mode"], "value": b["value"] / 100 if b["mode"] == "amount" else b["value"],
+                "rollover": bool(b.get("rollover")), "since": b.get("since")}
                for c, b in sorted(budgets.items())]
     if not rows:
         return {"targets": targets, "months": []}
@@ -744,7 +845,7 @@ def _unmatched_checks(rows: list[dict], accounts: dict) -> list[dict]:
     """Money that left a bank account for somewhere we can't see."""
     found = []
     unmatched = [r for r in rows if (r["category"] == "Transfer" or r["kind"] == "estimate")
-                 and not r["matched"] and r["cents"] < 0 and accounts[r["account"]]["type"] != "credit"]
+                 and not r["matched"] and r["cents"] < 0 and accounts[r["account"]]["type"] not in OWED]
 
     # A payment dated before a card's history starts isn't a mystery, just a short export.
     first_by_account = _first_dates(rows)
@@ -837,7 +938,7 @@ def _account_checks(rows: list[dict], accounts: dict) -> list[dict]:
                                     f"{latest}. Recent months undercount spending."})
     balances = account_balances(rows, accounts)
     for account, info in accounts.items():
-        if info["type"] == "credit" and account not in balances and account in last_by_account:
+        if info["type"] in OWED and account not in balances and account in last_by_account:
             found.append({"level": "info", "title": f"No balance yet: {info['name']}",
                           "detail": "Its export doesn't include one. Add it with Edit in the "
                                     "Accounts list."})

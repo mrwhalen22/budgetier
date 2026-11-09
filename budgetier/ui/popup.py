@@ -106,7 +106,7 @@ class Rows(QStyledItemDelegate):
         width = QFontMetrics(option.font).horizontalAdvance(str(index.data() or "")) + 2 * theme.SPACE[3] + 24
         if self.box.dot_for:
             width += 16
-        return QSize(width, HEADING if _is_heading(index) else ROW)
+        return QSize(width, theme.px(HEADING if _is_heading(index) else ROW))
 
     def paint(self, painter, option, index):
         t = theme.current()
@@ -126,7 +126,7 @@ class Rows(QStyledItemDelegate):
         x = r.left() + theme.SPACE[3]
         if _is_heading(index):
             font = QFont(option.font)
-            font.setPixelSize(theme.TEXT["xs"])
+            font.setPixelSize(theme.px("xs"))
             font.setWeight(QFont.DemiBold)
             painter.setFont(font)
             painter.setPen(QColor(t["muted"]))
@@ -147,7 +147,7 @@ class Rows(QStyledItemDelegate):
                 painter.drawEllipse(QPointF(x + 4, r.center().y()), 4, 4)
             x += 16
         font = QFont(option.font)
-        font.setPixelSize(theme.TEXT["sm"])
+        font.setPixelSize(theme.px("sm"))
         if chosen:
             font.setWeight(QFont.DemiBold)
         painter.setFont(font)
