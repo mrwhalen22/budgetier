@@ -90,6 +90,7 @@ def edit_account(window, account: views.Account) -> Dialog:
         busy(dialog.main, "Saving...", work)
 
     dialog.set_buttons([("Cancel", dialog.dismiss, ""), ("Save", save, "primary")])
+    dialog.set_remove("Remove account", lambda: remove_account(window, account))
     dialog.open()
     return dialog
 
@@ -129,8 +130,7 @@ def accounts_table(ctx: Context, found: list[views.Account]) -> QWidget:
     table = widgets.Table(["Account", "Type", "History", "Rows", "Latest balance", "", ""], rows, t,
                           on_row=lambda r: edit_account(w, found[r]), numeric={3, 4})
     for r, a in enumerate(found):
-        table.setCellWidget(r, 6, _actions(_button("Edit", lambda a=a: edit_account(w, a)),
-                                           _button("Remove", lambda a=a: remove_account(w, a), "small-danger")))
+        table.setCellWidget(r, 6, _actions(_button("Edit", lambda a=a: edit_account(w, a))))
     table.resizeColumnsToContents()
     return table
 
@@ -157,23 +157,28 @@ def build(ctx: Context) -> QWidget:
     owed = None
     if a.owed:
         sub = f"{fmt.plural(a.owed.missing, 'card')} not set" if a.owed.missing else "calculated from what you entered"
-        owed = widgets.tile("Owed on cards", fmt.money(a.owed.owed), sub, fmt.gain(a.owed.owed))
+        owed = widgets.tile("Owed on cards", fmt.owed(a.owed.owed), sub, fmt.gain(a.owed.owed))
     figures = widgets.tiles(
         widgets.tile("Cash and savings", fmt.money(a.cash), f"{a.cash_accounts} of {a.banked_accounts} accounts",
                      fmt.tone(a.cash)) if a.cash is not None else None,
         owed,
         widgets.tile("Net of cards", fmt.money(a.net), "cash and savings minus cards", fmt.tone(a.net))
         if a.net is not None else None,
-        widgets.tile("Owed on loans", fmt.money(a.loans), "see Net worth for everything together")
+        widgets.tile("Owed on loans", fmt.owed(a.loans), "see Net worth for everything together")
         if a.loans is not None else None)
-    tools = widgets.row(_button("Export workbook", lambda: export(w), ""),
-                        _button("Open data folder", lambda: open_folder(w), ""),
-                        _button("Encryption" if locking.saved(w.mine.home) else "Encrypt data", lambda: locking.setup(w), ""))
-    parts = [figures, tools, widgets.notices(a.warnings, ctx.tokens), sync_card(w)]
+    tools = widgets.card(
+        widgets.row(_button("Export workbook", lambda: export(w), ""),
+                    _button("Open data folder", lambda: open_folder(w), ""),
+                    _button("Encryption" if locking.saved(w.mine.home) else "Encrypt data", lambda: locking.setup(w), "")),
+        title="Your data",
+        note="Everything stays in one folder on this computer. Export it to Excel, open the folder, or encrypt it with a "
+             "passcode.")
+    parts = [figures, widgets.notices(a.warnings, ctx.tokens), sync_card(w)]
     if a.accounts:
         parts.append(widgets.Grid([widgets.card(accounts_table(ctx, a.accounts), title="Accounts"),
                                    widgets.card(imports_table(ctx, a.imports), title="Recent imports")], 520, most=2, top=True))
     if a.notes:
         parts.append(widgets.card(*(widgets.banner(c["level"], c["title"], c["detail"], ctx.tokens) for c in a.notes),
                                   title="Worth checking", note="Things that could make the numbers wrong."))
+    parts.append(tools)  # the things done now and then, below the accounts themselves
     return widgets.column(*parts, spacing=theme.SPACE[4])

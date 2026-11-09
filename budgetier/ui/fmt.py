@@ -5,7 +5,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from ..views import day_name, month_name
 
-__all__ = ["money", "cents", "short", "tone", "gain", "month_name", "day_name", "plural"]
+__all__ = ["money", "cents", "short", "tone", "gain", "owed", "month_name", "day_name", "plural"]
 
 
 def _round(value: float, decimals: int) -> Decimal:
@@ -44,6 +44,12 @@ def tone(amount: float) -> str:
 def gain(amount: float) -> str:
     """Green for money in. Ordinary spending isn't a problem, so it isn't red."""
     return "pos" if amount > 0 else ""
+
+
+def owed(amount: float) -> str:
+    """What's owed, under a label that already says so: $613, not -$613. A card in credit
+    shows as -$50 owed."""
+    return money(-amount)
 
 
 def plural(count: int, one: str, many: str | None = None) -> str:

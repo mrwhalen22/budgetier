@@ -273,6 +273,8 @@ class Editing:
                          if tx is not None else []),
                        ("Save", self._save, "primary")]
         dialog.load(o, lead, buttons)
+        rule = dict(o) if o.get("line") and not self.queue else None
+        dialog.set_remove("Remove rule" if rule else None, (lambda: self.remove_rule(rule)) if rule else None)
         if not dialog.isVisible():
             dialog.open()
         if self.queue:

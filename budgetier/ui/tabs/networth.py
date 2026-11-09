@@ -1,14 +1,13 @@
-"""Net worth: everything you have, less everything you owe, and how that's changed."""
+"""Net worth, on the Savings tab: everything you have, less everything you owe, and how that's changed."""
 from __future__ import annotations
 
 from PySide6.QtWidgets import QPushButton, QWidget
 
 from ... import views
-from .. import fmt, theme, widgets
+from .. import fmt, widgets
 from ..charts import Chart, Series
 from ..context import Context
 from .accounts import TYPE_COLOR, TYPE_NAMES, edit_account
-from .overview import welcome
 
 
 def holdings(ctx: Context, found: list[views.Holding], empty: str) -> QWidget:
@@ -23,39 +22,42 @@ def holdings(ctx: Context, found: list[views.Holding], empty: str) -> QWidget:
                           tone=fmt.tone(h.change) if h.change else "dim")]
             for h in found]
     window = ctx.window
-    table = widgets.Table(["Account", "Type", "Balance", "Change"], rows, t, numeric={2, 3},
-                          on_row=(lambda r: edit_account(window, found[r].account)) if window is not None else None)
-    table.resizeColumnsToContents()
-    return table
+    # The name gives way in a narrow card, rather than the table scrolling sideways.
+    return widgets.Table(["Account", "Type", "Balance", "Change"], rows, t, numeric={2, 3}, stretch=0,
+                         on_row=(lambda r: edit_account(window, found[r].account)) if window is not None else None)
 
 
-def build(ctx: Context) -> QWidget:
-    s, t = ctx.snapshot, ctx.tokens
-    if not s.txns and not s.accounts:
-        return welcome(ctx)
-    v = views.net_worth(s, ctx.choice)
-    parts: list[QWidget | None] = []
-    period = views.range_label(s, ctx.choice).lower()
-    have, owe = (next((x for x in reversed(line) if x is not None), None) for line in (v.assets, v.debts))
-    parts.append(widgets.tiles(
-        widgets.tile("Net worth", fmt.money(v.now) if v.now is not None else "n/a",
-                     "what you have, less what you owe" if v.now is not None else "needs an account balance",
-                     fmt.tone(v.now or 0)),
-        widgets.tile("You have", fmt.money(have or 0), fmt.plural(len(v.have), "account")),
-        widgets.tile("You owe", fmt.money(owe or 0), fmt.plural(len(v.owe), "card or loan", "cards and loans"),
-                     fmt.gain(owe or 0)),
-        widgets.tile("Change", fmt.money(v.change) if v.change is not None else "n/a",
-                     f"in balances, {period}" if v.change is not None else "needs balances in two months",
-                     fmt.tone(v.change or 0))))
+def figures(ctx: Context, v: views.NetWorth) -> list[QWidget]:
+    """Net worth now, and how it changed over the period."""
+    period = views.range_label(ctx.snapshot, ctx.choice).lower()
+    return [widgets.tile("Net worth", fmt.money(v.now) if v.now is not None else "n/a",
+                         "what you have, less what you owe" if v.now is not None else "needs an account balance",
+                         fmt.tone(v.now or 0)),
+            widgets.tile("Net worth change", fmt.money(v.change) if v.change is not None else "n/a",
+                         period if v.change is not None else "needs balances in two months", fmt.tone(v.change or 0))]
+
+
+def missing(ctx: Context, v: views.NetWorth) -> QWidget | None:
+    """Accounts left out of net worth until they have a balance."""
+    t = ctx.tokens
     if v.missing:
         go = QPushButton("Open Accounts")
         go.setProperty("kind", "small")
         go.clicked.connect(lambda _=False: ctx.window.show_tab("Accounts"))
         names = ", ".join(a.name for a in v.missing[:3]) + (" and others" if len(v.missing) > 3 else "")
-        parts.append(widgets.banner(
+        return widgets.banner(
             "info", f"{fmt.plural(len(v.missing), 'account')} without a balance",
             f"{names} {'is' if len(v.missing) == 1 else 'are'} left out until a balance is set: choose Edit on the "
-            "Accounts tab, or link it through bank sync.", t, action=go if ctx.window is not None else None))
+            "Accounts tab, or link it through bank sync.", t, action=go if ctx.window is not None else None)
+    return None
+
+
+def sections(ctx: Context, v: views.NetWorth) -> list[QWidget | None]:
+    """Net worth over time, what's paid toward loans, and each account on either side."""
+    t = ctx.tokens
+    period = views.range_label(ctx.snapshot, ctx.choice).lower()
+    have, owe = (next((x for x in reversed(line) if x is not None), None) for line in (v.assets, v.debts))
+    parts: list[QWidget | None] = []
     if any(n is not None for n in v.net):
         parts.append(widgets.card(
             widgets.legend([("Net worth", t["accent"]), ("You have", t["c2"]), ("You owe", t["c1"])]),
@@ -71,8 +73,9 @@ def build(ctx: Context) -> QWidget:
             widgets.tile("Paid off the balance", fmt.money(v.loan_paid + v.loan_interest), "after interest")
             if v.loan_paid else None))
     parts.append(widgets.Grid([
-        widgets.card(holdings(ctx, v.have, "No bank, savings or investing accounts with a balance."), title="What you have"),
-        widgets.card(holdings(ctx, v.owe, "No cards or loans with a balance."), title="What you owe",
+        widgets.card(holdings(ctx, v.have, "No bank, savings or investing accounts with a balance."),
+                     title=f"What you have: {fmt.money(have or 0)}"),
+        widgets.card(holdings(ctx, v.owe, "No cards or loans with a balance."), title=f"What you owe: {fmt.owed(owe or 0)}",
                      note="Add a mortgage, car or student loan as a Loan, so its payments count as paying it down.")],
         460, most=2, top=True))
-    return widgets.column(*parts, spacing=theme.SPACE[4])
+    return parts

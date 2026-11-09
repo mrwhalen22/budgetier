@@ -142,8 +142,9 @@ class TheTab(QtCase):
         budget.ledger.rows.append(fake.row("mtg-0004", date(2026, 10, 2), "PAYMENT", 200000))
         budget.ledger.save()
         win = self.window(budget)
-        win.show_tab("Net worth")
-        page = win.pages["Net worth"].widget()
+        win.show_tab("Net worth")  # where it was: now part of Savings
+        self.assertEqual(win.tab, "Savings")
+        page = win.pages["Savings"].widget()
         words = [label.text() for label in page.findChildren(QLabel)]
         self.assertIn("Net worth", words)
         cells = [table.item(r, c).text() for table in page.findChildren(QTableWidget)

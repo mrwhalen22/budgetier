@@ -4,8 +4,6 @@ from . import (
             budgets,
             help,
             investments,
-            largest,
-            networth,
             overview,
             recurring,
             rules,
@@ -16,6 +14,6 @@ from . import (
 )
 
 BUILDERS = {"Overview": overview.build, "Spending": spending.build, "Recurring": recurring.build,
-            "Largest": largest.build, "Savings": savings.build, "Investments": investments.build,
-            "Net worth": networth.build, "Year in review": year.build, "Transactions": transactions.build,
-            "Rules": rules.build, "Accounts": accounts.build, "Budgets": budgets.build, "Help": help.build}
+            "Savings": savings.build, "Investments": investments.build, "Year in review": year.build,
+            "Transactions": transactions.build, "Rules": rules.build, "Accounts": accounts.build,
+            "Budgets": budgets.build, "Help": help.build}

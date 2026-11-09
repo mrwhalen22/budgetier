@@ -15,17 +15,16 @@ TAX_NOTE = ("Totals of what's categorized this way, to help gather your records.
             "depends on your situation, so check each one before you use it.")
 
 
-def _versus(now: int, before: int | None, more_is_good: bool) -> tuple[str, str]:
+def _versus(now: int, before: int | None, last_year: str) -> str:
+    """How it compares, in words. The amount keeps its usual color: income in red for being
+    lower than last year reads as something wrong with it."""
     if not before:
-        return "", ""
+        return ""
     gap = now - before
     if not gap:
-        return "same as last year", ""
+        return f"same as {last_year}"
     share = f" ({abs(gap) / before:.0%})" if before > 0 else ""
-    word = "more" if gap > 0 else "less"
-    if before > 0 and abs(gap) / before < 0.05:
-        return f"{fmt.money(abs(gap))} {word} than last year{share}", ""  # about the same: no color
-    return f"{fmt.money(abs(gap))} {word} than last year{share}", "pos" if (gap > 0) == more_is_good else "neg"
+    return f"{fmt.money(abs(gap))} {'more' if gap > 0 else 'less'} than {last_year}{share}"
 
 
 def open_year(ctx: Context, year: str, category: str = "", query: str = "") -> None:
@@ -39,7 +38,7 @@ def change_rows(ctx: Context, year: str, found: list[views.Change], rising: bool
         return widgets.empty("Nothing went up." if rising else "Nothing went down.")
     return widgets.hbars([(c.category, abs(c.gap), ctx.color(c.category),
                            lambda c=c: open_year(ctx, year, category=c.category)) for c in found],
-                         lambda v: ("+" if rising else "-") + fmt.money(v), ctx.tokens)
+                         lambda v: ("+" if rising else "-") + fmt.money(v), ctx.tokens, shares=False)
 
 
 def export_tax(ctx: Context, year: str) -> None:
@@ -72,19 +71,19 @@ def build(ctx: Context) -> QWidget:
     parts: list[QWidget | None] = [widgets.row(year, widgets.text(covered, "sub"), spacing=theme.SPACE[3])]
     before_income, before_spending = y.before or (None, None)
     rate = "n/a" if y.rate is None else f"{round(y.rate * 100)}%"
-    over = f"over the {fmt.plural(y.compared, 'month')} both years have" if y.before and y.compared < len(y.months) else ""
+    # Only the months both years have are compared, which the words say when that's fewer.
+    last_year = (f"the same {fmt.plural(y.compared, 'month')} last year" if y.before and y.compared < len(y.months)
+                 else "last year")
     now_income, now_spending = y.matched or (0, 0)
-    income_sub, income_tone = _versus(now_income, before_income, True)
-    spent_sub, spent_tone = _versus(now_spending, before_spending, False)
+    income_sub = _versus(now_income, before_income, last_year)
+    spent_sub = _versus(now_spending, before_spending, last_year)
     parts.append(widgets.tiles(
-        widgets.tile("Income", fmt.money(y.income), income_sub, income_tone or "pos"),
-        widgets.tile("Spending", fmt.money(y.spending), spent_sub, spent_tone),
+        widgets.tile("Income", fmt.money(y.income), income_sub, "pos"),
+        widgets.tile("Spending", fmt.money(y.spending), spent_sub),
         widgets.tile("Kept", fmt.money(y.kept), f"{rate} of income", fmt.tone(y.kept)),
         widgets.tile("Busiest month", fmt.month_name(y.busiest.month, False) if y.busiest else "n/a",
                      f"{fmt.money(y.busiest.spending)} spent" + (f", {fmt.month_name(y.quietest.month, False)} the least"
                                                                  if y.quietest else "") if y.busiest else "")))
-    if over:
-        parts.append(widgets.text(f"Compared with last year {over}.", "sub"))
     if y.months:
         parts.append(widgets.card(
             widgets.legend([("Income", t["income"]), ("Spending", t["spending"])]),

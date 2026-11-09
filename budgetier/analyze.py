@@ -501,6 +501,25 @@ def _lender(description: str, loan: dict) -> bool:
     return bool(_TO_LOAN.search(text) or (len(bank) >= 3 and bank in text))
 
 
+MONTHS_APART = {"Monthly": 1, "Quarterly": 3, "Annual": 12}
+
+
+def add_months(day: date, months: int, keep: int) -> date:
+    """The same day of the month, months on: the 31st becomes the 30th in a 30-day month."""
+    year, month = divmod(day.month - 1 + months, 12)
+    year, month = day.year + year, month + 1
+    return date(year, month, min(keep, calendar.monthrange(year, month)[1]))
+
+
+def due_after(last: date, cadence: str, n: int = 1) -> date:
+    """The nth time a payment is due after the last one. A monthly bill keeps its day of the
+    month, where 30 days on would drift a day or two each time."""
+    months = MONTHS_APART.get(cadence)
+    if months:
+        return add_months(last, months * n, last.day)
+    return last + timedelta(days={"Weekly": 7, "Biweekly": 14}.get(cadence, 30) * n)
+
+
 def _cadence(days: list[date]) -> tuple | None:
     gaps = [(b - a).days for a, b in zip(days, days[1:])]
     if not gaps:
@@ -543,7 +562,7 @@ def _recurring_entry(group: list[dict], cadence: tuple, last_seen: dict) -> dict
         "amount": typical / 100, "per_month": typical * per_month / 100,
         "low": min(amounts) / 100, "high": max(amounts) / 100,
         "first": group[0]["date"].isoformat(), "last": latest["date"].isoformat(),
-        "next": (latest["date"] + timedelta(days=span)).isoformat(),
+        "next": due_after(latest["date"], name).isoformat(),
         "active": (last_seen[latest["account"]] - latest["date"]).days <= span * 1.5 + tolerance,
         "variable": variable,
         "price_change": (amounts[-1] - previous) / 100
@@ -565,15 +584,16 @@ def _follow_to_new_card(entry: dict, cadence: tuple, merchant_rows: list[dict], 
     moved, not stopped, even if the new card's short export misses the usual day."""
     if entry["active"]:
         return
-    _, span, tolerance, _, _ = cadence
+    name, span, tolerance, _, _ = cadence
     ended = date.fromisoformat(entry["last"])
     later = [r for r in merchant_rows if r["account"] != entry["account"] and r["date"] > ended
              and (last_seen[r["account"]] - r["date"]).days <= span * 1.5 + tolerance]
     if later:
         card = later[-1]["account"]
-        upcoming = ended + timedelta(days=span)
-        while upcoming <= last_seen[card]:
-            upcoming += timedelta(days=span)
+        n = 1
+        while due_after(ended, name, n) <= last_seen[card]:
+            n += 1
+        upcoming = due_after(ended, name, n)
         entry.update(active=True, account=card, next=upcoming.isoformat())
 
 

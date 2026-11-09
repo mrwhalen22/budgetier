@@ -10,6 +10,7 @@ from ... import views
 from .. import fmt, theme, widgets
 from ..charts import PICK, Chart, Series
 from ..context import Context
+from . import largest
 from .overview import welcome
 
 
@@ -39,7 +40,7 @@ def build(ctx: Context) -> QWidget:
                           numeric=set(range(1, len(headers))))
     heat = widgets.card(table, title="Category by month",
                         note=f"Darker means more spent{longer}. Refunds are netted out.")
-    return widgets.column(chart, heat, tagged(ctx), spacing=theme.SPACE[4])
+    return widgets.column(chart, heat, largest.sections(ctx), tagged(ctx), spacing=theme.SPACE[4])
 
 
 def tagged(ctx: Context) -> QWidget | None:

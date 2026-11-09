@@ -43,13 +43,16 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   work", and tags gather transactions across categories: tag everything a trip cost
   "Japan trip" and the Spending tab shows what it came to. Search `#Japan trip` on the
   Transactions tab to list them.
+- **Spending** shows each category by month, then your top merchants and your biggest
+  purchases: the largest from each merchant, leaving out regular bills unless you ask.
 - **Budgets** sets a monthly target for a category, as a dollar amount or a percent of
   income, and shows what's left. A percent target follows each month's income. While a
   month is still in progress it uses the average of the last 3 complete months instead,
   because your pay may not have landed yet. Tick **Carry what's left into next month** for
   costs that come and go, like gifts or car repairs: what's left at a month's end adds to the
   next month's target, and going over takes from it, starting from last month.
-- **Savings goals**, also on the Budgets tab, track saving toward something: an emergency
+- **Savings** shows your savings rate, what you kept each month, and your net worth.
+  **Savings goals** there track saving toward something: an emergency
   fund, a trip, next year's car insurance. Keep a goal in a savings or investing account, so
   its balance is the progress, or in an amount you update yourself. Give it a date and it
   shows what a month gets it there, and whether you're on track from where it started.
@@ -64,7 +67,12 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   education, loan interest and retirement contributions, and exports those rows as a CSV.
   It's to help gather your records, not tax advice.
 - **Accounts** is where you edit an account, set a balance, remove one imported file or
-  a whole account, export the Excel workbook, and open the data folder.
+  a whole account, export the Excel workbook, and open the data folder. To remove an
+  account, a budget, a goal or a rule, choose **Edit**, then **Remove** at the bottom left.
+
+The sidebar groups the tabs: day to day first, then **Long term** and **Manage**, with Help
+at the bottom. Until there's data it shows only the welcome and Help, and **Investments**
+appears once an account is marked as investing or retirement.
 - **Help** shows which banks work, tips for accurate numbers, the keyboard shortcuts, and a
   short tour.
 
@@ -104,7 +112,7 @@ reading while **Updating...** shows beside the tab's title.
 
 | Keys | Does |
 | --- | --- |
-| Ctrl+1 to Ctrl+9 | Show the first nine tabs, in the sidebar's order |
+| Ctrl+1 to Ctrl+9 | Show the first nine tabs, in the sidebar's order, when they're showing |
 | Ctrl+F | Find a transaction |
 | Ctrl+Z | Undo the last change |
 | Ctrl+I | Add files |
@@ -285,7 +293,7 @@ or naming its bank, is a transfer: it pays the loan down rather than counting as
 and only the loan's interest counts, as `Interest`. Without the loan imported, a mortgage
 payment is still Housing, as before.
 
-The **Net worth** tab adds up everything you have, less everything you owe, at the end of
+Net worth, on the **Savings** tab, adds up everything you have, less everything you owe, at the end of
 each month. An account counts from its first known balance, so one added partway through
 shows as a step, and the change it reports is only how balances moved. Accounts without a
 balance are left out, and it says which. It also shows what went to loans in the period:

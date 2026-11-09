@@ -12,12 +12,9 @@ TABS = {
     "Budgets": '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><path d="M12 12h.01"/>',
     "Recurring": '<path d="M4 11a8 8 0 0 1 13.7-5.2L20 8"/><path d="M20 3.5V8h-4.5"/><path d="M20 13a8 8 0 0 1-13.7 5.2L4 16"/>'
                  '<path d="M4 20.5V16h4.5"/>',
-    "Largest": '<path d="M4 20h16"/><path d="M7 16V10"/><path d="M12 16V5"/><path d="M17 16v-3"/>',
     "Savings": '<path d="M3.5 17 9.5 11l4 4 7-8"/><path d="M15.5 7h5v5"/>',
     "Investments": '<ellipse cx="12" cy="6" rx="7" ry="2.5"/><path d="M5 6v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5V6"/>'
                    '<path d="M5 12v6c0 1.4 3.1 2.5 7 2.5s7-1.1 7-2.5v-6"/>',
-    "Net worth": '<path d="M12 3.5v17"/><path d="M5 7.5h14"/><path d="M5 7.5 2.5 14a3 3 0 0 0 5 0z"/>'
-                 '<path d="M19 7.5 16.5 14a3 3 0 0 0 5 0z"/><path d="M8.5 20.5h7"/>',
     "Year in review": '<rect x="3.5" y="5" width="17" height="15.5" rx="2"/><path d="M3.5 10h17"/><path d="M8 3v4"/>'
                       '<path d="M16 3v4"/><path d="M8 14h3"/><path d="M8 17h6"/>',
     "Transactions": '<path d="M8 6h12"/><path d="M8 12h12"/><path d="M8 18h12"/><path d="M4 6h.01"/><path d="M4 12h.01"/>'

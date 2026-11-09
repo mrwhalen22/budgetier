@@ -86,6 +86,7 @@ class Dialog(QDialog):
         column.addLayout(foot)
         self.buttons: list[QPushButton] = []
         self.main: QPushButton | None = None  # pressed by Enter in a field
+        self.remove: QPushButton | None = None  # at the far left, apart from the rest
 
     def showEvent(self, event):  # noqa: N802 - Qt's name
         super().showEvent(event)
@@ -115,6 +116,20 @@ class Dialog(QDialog):
             self.buttons_row.addWidget(button)
             self.buttons.append(button)
         self.main = self.buttons[-1] if self.buttons else None
+
+    def set_remove(self, label: str | None, run: Callable[[], None] | None = None) -> None:
+        """A way to remove what's being edited, kept at the far left, away from Save. It closes
+        this dialog first, and what it runs asks before anything is removed."""
+        if self.remove is not None:
+            self.buttons_row.removeWidget(self.remove)
+            self.remove.deleteLater()
+            self.remove = None
+        if label and run:
+            self.remove = QPushButton(label)
+            self.remove.setProperty("kind", "remove")
+            self.remove.setAutoDefault(False)
+            self.remove.clicked.connect(lambda _=False: (self.dismiss(), run()))
+            self.buttons_row.insertWidget(0, self.remove)
 
     def keyPressEvent(self, event):  # noqa: N802 - Qt's name
         if event.key() == Qt.Key_Escape:

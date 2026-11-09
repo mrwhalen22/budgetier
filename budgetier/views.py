@@ -17,7 +17,7 @@ SUBSCRIPTIONS = "Subscriptions"
 COLORED = 8  # categories with their own color; the rest share "Other"
 RECENT = (("12", "Last 12 months"), ("6", "Last 6 months"), ("3", "Last 3 months"), ("all", "All time"))
 SPARK_MONTHS = 18
-LARGEST, TOP_MERCHANTS = 25, 15
+LARGEST, TOP_MERCHANTS = 10, 10
 HEAT_MONTHS, BUDGET_HISTORY, BUDGET_PREVIEW = 12, 6, 6
 BALANCE_LINES = 8
 KINDS = (("", "All kinds"), ("expense", "Expenses"), ("refund", "Refunds"), ("estimate", "Estimated"),
@@ -514,7 +514,7 @@ def is_bill(s: Snapshot, t: Tx) -> bool:
 @dataclass(frozen=True)
 class Largest:
     merchants: list[tuple[str, int, int]]  # name, total spent, how many
-    expenses: list[Tx]
+    expenses: list[Tx]  # the biggest from each merchant, biggest first
     hidden: int  # bills left out
 
 
@@ -527,7 +527,14 @@ def largest(s: Snapshot, choice: Choice, include_bills: bool = False) -> Largest
         total[0] -= t.cents
         total[1] += 1
     merchants = sorted(((name, v, n) for name, (v, n) in by.items()), key=lambda m: -m[1])[:TOP_MERCHANTS]
-    return Largest(merchants, sorted(shown, key=lambda t: t.cents)[:LARGEST], len(expenses) - len(shown))
+    # One from each merchant: otherwise a weekly grocery run fills the list, and the one-off
+    # purchases it's for get pushed off it.
+    biggest, seen = [], set()
+    for t in sorted(shown, key=lambda t: t.cents):
+        if t.merchant not in seen:
+            seen.add(t.merchant)
+            biggest.append(t)
+    return Largest(merchants, biggest[:LARGEST], len(expenses) - len(shown))
 
 
 # ---- Savings
@@ -1207,24 +1214,12 @@ class Forecast:
         return self.low is not None and self.low < 0
 
 
-def _add_months(day: date, months: int, keep: int) -> date:
-    """The same day of the month, months on: the 31st becomes the 30th in a 30-day month."""
-    year, month = divmod(day.month - 1 + months, 12)
-    year, month = day.year + year, month + 1
-    return date(year, month, min(keep, calendar.monthrange(year, month)[1]))
-
-
-MONTHS_APART = {"Monthly": 1, "Quarterly": 3, "Annual": 12}
-
-
 def _repeats(last: date, cadence: str, until: date):
-    """Each day a payment is due after the last one, through until. A monthly bill keeps its
-    day of the month, where 30 days on would drift a day or two each time."""
-    months = MONTHS_APART.get(cadence)
-    step = {"Weekly": 7, "Biweekly": 14}.get(cadence, 30)
+    """Each day a payment is due after the last one, through until: the same days Recurring
+    shows as next."""
     n = 1
     while True:
-        day = _add_months(last, months * n, last.day) if months else last + timedelta(days=step * n)
+        day = analyze.due_after(last, cadence, n)
         if day > until:
             return
         yield day
