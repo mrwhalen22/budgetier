@@ -119,7 +119,10 @@ class Transactions(QWidget):
         found = views.transactions(ctx.snapshot, ctx.choice, st["query"], st["category"], st["kind"], st["sort"],
                                    st["descending"])
         self.found = found.txns
-        self.count.setText(f"{len(found.txns):,} transactions, net {fmt.cents(found.net)}")
+        # What's spent and what came in, as the other tabs count them; transfers move money, so they're neither.
+        money = [m for m in (f"{fmt.cents(found.spent)} spent" if found.spent else "",
+                             f"{fmt.cents(found.received)} in" if found.received else "") if m]
+        self.count.setText(fmt.plural(len(found.txns), "transaction") + (": " + ", ".join(money) if money else ""))
         self.clear.setVisible(bool(st["query"] or st["category"] or st["kind"]))
         names = {a.id: a.name for a in ctx.snapshot.accounts}
         shown = found.txns[:st["shown"]]

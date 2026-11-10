@@ -183,6 +183,17 @@ class Tour(Window):
         self.assertIsNotNone(win.tour)
         self.assertEqual(win.tour.title.text(), "Add more history")
 
+    def test_it_starts_once_the_first_data_arrives(self):
+        empty = build(Path(self.dir) / "later", rows=[])
+        win = self.window(empty, toured=False)
+        self.settle(.8)
+        self.assertIsNone(win.tour)
+        empty.ledger.rows = build(Path(self.dir) / "rows").ledger.rows
+        empty.ledger.save()
+        win.reload_now()
+        self.settle(.8)
+        self.assertIsNotNone(win.tour)
+
     def test_not_without_data_or_once_seen(self):
         empty = self.window(build(Path(self.dir) / "empty", rows=[]), toured=False)
         self.settle(.8)

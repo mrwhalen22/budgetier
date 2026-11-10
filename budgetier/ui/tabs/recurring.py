@@ -9,6 +9,7 @@ from ... import views
 from .. import fmt, theme, widgets
 from ..charts import Chart, Series
 from ..context import Context
+from .overview import stat
 
 HEADERS = ["Name", "Category", "Every", "Amount", "Monthly", "Change", "Last", "Next", "Account"]
 
@@ -51,11 +52,13 @@ def coming_up(ctx: Context, f: views.Forecast) -> QWidget | None:
     t = ctx.tokens
     parts: list[QWidget | None] = []
     if f.path:
-        parts.append(widgets.tiles(
-            widgets.tile("Checking now", fmt.money(f.balance), f"as of {fmt.day_name(f.start)}"),
-            widgets.tile("Bills due", fmt.money(-f.bills), f"next {views.AHEAD_DAYS} days, cards too"),
-            widgets.tile("Income expected", fmt.money(f.income), f"next {views.AHEAD_DAYS} days", "pos"),
-            widgets.tile("Lowest point", fmt.money(f.low), f"around {fmt.day_name(f.low_day)}", "neg" if f.short else "")))
+        # Plain figures, as in the Overview's month so far: cards inside a card would be a box in a box.
+        parts.append(widgets.Grid([
+            stat("Checking now", fmt.money(f.balance), f"as of {fmt.day_name(f.start)}"),
+            stat("Bills due", fmt.money(-f.bills), f"next {views.AHEAD_DAYS} days, cards too"),
+            stat("Income expected", fmt.money(f.income), f"next {views.AHEAD_DAYS} days", "pos"),
+            stat("Lowest point", fmt.money(f.low), f"around {fmt.day_name(f.low_day)}", "neg" if f.short else "")],
+            150, most=4, top=True))
         labels = [_short_day(d) if i % 7 == 0 else "" for i, d in enumerate(f.days)]
         parts.append(Chart(f.days, [Series("Checking", f.path, t["accent"])], t, kind="lines", labels=labels,
                            titles=[fmt.day_name(d) for d in f.days]))
@@ -84,7 +87,10 @@ def build(ctx: Context) -> QWidget:
     figures = widgets.tiles(
         widgets.tile("Recurring bills", fmt.money(r.bills) + "/mo", fmt.money(r.bills * 12) + " a year"),
         widgets.tile("Subscriptions", fmt.money(r.subscriptions) + "/mo", f"{r.subscription_count} active"),
-        widgets.tile("Regular income", fmt.money(r.income) + "/mo", fmt.plural(r.income_count, "source"), "pos"))
+        # Paid every two weeks comes to more than two paychecks a month, over a year: this is that
+        # typical month, where the Overview averages what actually came in over the period.
+        widgets.tile("Regular income", fmt.money(r.income) + "/mo",
+                     fmt.plural(r.income_count, "source") + ", in a typical month", "pos"))
     toggle = widgets.check("Include stopped payments", stopped, ctx.toggle("recurring_all"))
     bills = widgets.card(toggle, table(ctx, r.expenses), title="Bills and subscriptions",
                          note="~ means the amount varies. Found from the full history, so the period filter doesn't apply here.")

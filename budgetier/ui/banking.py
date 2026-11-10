@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from PySide6.QtWidgets import QFrame, QGridLayout, QLineEdit, QVBoxLayout
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QLineEdit, QVBoxLayout
 
 from ..sync import AUTO
 from . import fmt, theme, widgets
@@ -131,6 +132,16 @@ class Banking:
             return None
         dialog = Dialog(self.window, "Connect SimpleFIN",
                         "Paste the setup token from your SimpleFIN account. It only works once.")
+        # Where a token comes from, for someone who hasn't signed up yet. A fixed link, never bank text.
+        accent = self.window.tokens()["accent"]
+        where = QLabel(f'No token yet? Sign up at <a href="https://bridge.simplefin.org/" style="color: {accent};">'
+                       "SimpleFIN Bridge</a>, connect your banks there, then create a setup token and paste it here.")
+        where.setObjectName("dialogLink")
+        where.setWordWrap(True)
+        where.setTextFormat(Qt.RichText)
+        where.setOpenExternalLinks(True)
+        where.setProperty("kind", "dim")
+        dialog.body.addWidget(where)
         self.token = QLineEdit()
         self.token.setEchoMode(QLineEdit.Password)
         self.token.setAccessibleName("Setup token")

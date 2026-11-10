@@ -177,8 +177,8 @@ class RuleDialog(Dialog):
                        "Select a row on the Transactions tab to start from the bank's wording.", "panel-text"))
             return
         n = found["count"]
-        lines = [(f"{fmt.plural(n, 'transaction')} {'matches' if n == 1 else 'match'}, totalling "
-                  f"{fmt.cents(round(found['total'] * 100))}.", "b")]
+        lines = [(f"{fmt.plural(n, 'transaction')} {'matches' if n == 1 else 'match'}, totaling "
+                  f"{fmt.cents(abs(round(found['total'] * 100)))}.", "b")]
         if found["share"] > .25:
             lines.append(("That is a lot of your history. Try more specific text.", "warn"))
         if self.chosen_category() == "Transfer":

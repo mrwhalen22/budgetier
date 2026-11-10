@@ -53,7 +53,7 @@ class TransactionsTab(Editing):
     def test_newest_first_with_a_count(self):
         tab = self.transactions()
         self.assertEqual(tab.found[0].date, max(t.date for t in tab.found))
-        self.assertRegex(tab.count.text(), r"^[\d,]+ transactions, net -?\$")
+        self.assertRegex(tab.count.text(), r"^[\d,]+ transactions?(: |$)")
 
     def test_search_and_clear(self):
         tab = self.transactions()
@@ -151,7 +151,7 @@ class OneTransaction(Editing):
         dialog = self.open_row("kroger")
         dialog.match.setText("KROGER")
         dialog.preview()
-        self.assertRegex(self.panel(), r"\d+ transactions match, totalling")
+        self.assertRegex(self.panel(), r"\d+ transactions match, totaling \$")
         dialog.match.setText("NOTHING LIKE THIS")
         dialog.preview()
         self.assertIn("No transactions match yet.", self.panel())
