@@ -1,7 +1,8 @@
 """The tour: a few steps, each pointing at one part of the window.
 
-It starts by itself the first time there's data to show, and from Help any time after. Seeing
-it to the end, or skipping it, is remembered in settings.json.
+It starts by itself the first time there's data to show, whether that's when Budgetier opens,
+after your first files or sync, or in the sample data, and from Help any time after. Seeing it
+to the end, or skipping it, is remembered in your own settings.json, not the sample's.
 """
 from __future__ import annotations
 
@@ -128,7 +129,7 @@ class Tour(QWidget):
     def end(self) -> None:
         self.hide()
         self.window.removeEventFilter(self)
-        settings.save(self.window.budget.home, toured=True)
+        settings.save(self.window.mine.home, toured=True)
         self.deleteLater()
         self.window.tour = None
 
@@ -143,5 +144,5 @@ def start(window) -> Tour:
 
 def maybe_start(window) -> None:
     """The first time there's data, once the window has drawn."""
-    if window.snapshot.txns and not seen(window.budget.home):
-        QTimer.singleShot(START_AFTER, lambda: window.tour is None and not seen(window.budget.home) and start(window))
+    if window.snapshot.txns and not seen(window.mine.home):
+        QTimer.singleShot(START_AFTER, lambda: window.tour is None and not seen(window.mine.home) and start(window))

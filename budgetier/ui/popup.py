@@ -9,12 +9,13 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from PySide6.QtCore import QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt
+from PySide6.QtCore import QDate, QEvent, QPoint, QPointF, QRect, QRectF, QSize, Qt
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
     QComboBox,
+    QDateEdit,
     QFrame,
     QListView,
     QMenu,
@@ -298,6 +299,21 @@ class Dropdown(QComboBox):
         color = t["ink"] if self.underMouse() or self._popup else t["muted"]
         paint_chevron(painter, QPointF(self.width() - CHEVRON / 2 - 2, self.height() / 2 + .5),
                       color if self.isEnabled() else t["line"])
+
+
+class DateBox(QDateEdit):
+    """A date field drawn like a Dropdown, with a calendar to pick from."""
+
+    def __init__(self, day: QDate, parent: QWidget | None = None):
+        super().__init__(day, parent)
+        self.setCalendarPopup(True)
+
+    def paintEvent(self, event):  # noqa: N802 - Qt's name
+        super().paintEvent(event)
+        t = theme.current()
+        painter = QPainter(self)
+        paint_chevron(painter, QPointF(self.width() - CHEVRON / 2 - 2, self.height() / 2 + .5),
+                      (t["ink"] if self.underMouse() else t["muted"]) if self.isEnabled() else t["line"])
 
 
 class Picker(QToolButton):

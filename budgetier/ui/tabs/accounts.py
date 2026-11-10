@@ -127,7 +127,7 @@ def accounts_table(ctx: Context, found: list[views.Account]) -> QWidget:
                      widgets.Cell(span(a.first, a.last) if a.first else "No recent activity", tone="dim"),
                      widgets.Cell(f"{a.count:,}", right=True),
                      balance, widgets.Cell(source, tone="dim"), widgets.Cell("")])
-    table = widgets.Table(["Account", "Type", "History", "Rows", "Latest balance", "", ""], rows, t,
+    table = widgets.Table(["Account", "Type", "History", "Rows", "Latest balance", "Balance from", ""], rows, t,
                           on_row=lambda r: edit_account(w, found[r]), numeric={3, 4})
     for r, a in enumerate(found):
         table.setCellWidget(r, 6, _actions(_button("Edit", lambda a=a: edit_account(w, a))))
@@ -159,7 +159,9 @@ def build(ctx: Context) -> QWidget:
         sub = f"{fmt.plural(a.owed.missing, 'card')} not set" if a.owed.missing else "calculated from what you entered"
         owed = widgets.tile("Owed on cards", fmt.owed(a.owed.owed), sub, fmt.gain(a.owed.owed))
     figures = widgets.tiles(
-        widgets.tile("Cash and savings", fmt.money(a.cash), f"{a.cash_accounts} of {a.banked_accounts} accounts",
+        widgets.tile("Cash and savings", fmt.money(a.cash),
+                     "checking and savings" if a.cash_accounts == a.banked_accounts
+                     else f"{a.cash_accounts} of {a.banked_accounts} accounts have a balance",
                      fmt.tone(a.cash)) if a.cash is not None else None,
         owed,
         widgets.tile("Net of cards", fmt.money(a.net), "cash and savings minus cards", fmt.tone(a.net))
@@ -173,10 +175,11 @@ def build(ctx: Context) -> QWidget:
         title="Your data",
         note="Everything stays in one folder on this computer. Export it to Excel, open the folder, or encrypt it with a "
              "passcode.")
-    parts = [figures, widgets.notices(a.warnings, ctx.tokens), sync_card(w)]
+    parts = [figures, widgets.notices(a.warnings, ctx.tokens)]
     if a.accounts:
         parts.append(widgets.Grid([widgets.card(accounts_table(ctx, a.accounts), title="Accounts"),
                                    widgets.card(imports_table(ctx, a.imports), title="Recent imports")], 520, most=2, top=True))
+    parts.append(sync_card(w))  # your accounts first; how they're kept up to date after
     if a.notes:
         parts.append(widgets.card(*(widgets.banner(c["level"], c["title"], c["detail"], ctx.tokens) for c in a.notes),
                                   title="Worth checking", note="Things that could make the numbers wrong."))

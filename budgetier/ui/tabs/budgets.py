@@ -5,14 +5,14 @@ from datetime import date
 
 from PySide6.QtCore import QDate, QRectF, Qt
 from PySide6.QtGui import QColor, QPainter
-from PySide6.QtWidgets import QDateEdit, QFrame, QGridLayout, QLineEdit, QPushButton, QVBoxLayout, QWidget
+from PySide6.QtWidgets import QFrame, QGridLayout, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from ... import views
 from .. import fmt, theme, widgets
 from ..context import Context
 from ..dialogs import Dialog, attempt, busy, confirm
 from ..importing import field
-from ..popup import Dropdown
+from ..popup import DateBox, Dropdown
 
 MODES = (("amount", "Dollar amount"), ("percent", "Percent of income"))
 
@@ -203,8 +203,7 @@ def goal_form(ctx: Context, goal: views.Goal | None = None) -> Dialog:
     saved = QLineEdit(f"{goal.saved / 100:.2f}" if goal and not goal.accounts and goal.saved is not None else "")
     saved.setAccessibleName("Saved so far")
     saved.setPlaceholderText("0")
-    by = QDateEdit(QDate.fromString(goal.by, "yyyy-MM-dd") if goal and goal.by else QDate.currentDate().addYears(1))
-    by.setCalendarPopup(True)
+    by = DateBox(QDate.fromString(goal.by, "yyyy-MM-dd") if goal and goal.by else QDate.currentDate().addYears(1))
     by.setDisplayFormat("MMM d, yyyy")
     by.setAccessibleName("Reach it by")
     by.setMinimumDate(QDate.currentDate().addDays(1))

@@ -11,7 +11,7 @@ from pathlib import Path
 from . import settings
 
 MODES = ("system", "light", "dark")
-PALETTES = (("pine", "Pine"), ("ocean", "Ocean"), ("plum", "Plum"))
+PALETTES = (("pine", "Brass"), ("ocean", "Ocean"), ("plum", "Plum"))  # "pine" stays the saved name, so choices carry over
 
 # Sizes in pixels, the same in every theme. Text is scaled by the size chosen in Appearance.
 TEXT = {"xs": 12, "sm": 13, "md": 14, "lg": 16, "xl": 20, "2xl": 26, "3xl": 34, "4xl": 52}
@@ -183,17 +183,22 @@ QPushButton[kind="danger"] {{ background: {c['bad']}; border-color: {c['bad']}; 
 QPushButton[kind="danger"]:hover {{ background: {c['bad-hover']}; border-color: {c['bad-hover']}; }}
 QPushButton[kind="primary"]:focus, QPushButton[kind="danger"]:focus {{ border-color: {c['ink']}; }}
 
-QLineEdit, QComboBox {{
+QLineEdit, QComboBox, QDateEdit {{
     min-height: {CONTROL - 2}px; padding: 0 {SPACE[3]}px; font-size: {text['sm']}px; color: {c['ink']};
     background: {c['surface']}; border: 1px solid {c['line']}; border-radius: {RADIUS['md']}px; }}
-QComboBox {{ padding-right: {CHEVRON + 4}px; }}
-QLineEdit:hover, QComboBox:hover {{ border-color: {c['line-strong']}; }}
-QLineEdit:focus, QComboBox:focus {{ border: 2px solid {c['accent']}; padding: 0 {SPACE[3] - 1}px;
+QComboBox, QDateEdit {{ padding-right: {CHEVRON + 4}px; }}
+QLineEdit:hover, QComboBox:hover, QDateEdit:hover {{ border-color: {c['line-strong']}; }}
+QLineEdit:focus, QComboBox:focus, QDateEdit:focus {{ border: 2px solid {c['accent']}; padding: 0 {SPACE[3] - 1}px;
     min-height: {CONTROL - 4}px; }}
-QComboBox:focus {{ padding-right: {CHEVRON + 3}px; }}
-QComboBox:disabled, QLineEdit:disabled {{ color: {c['muted']}; background: {c['raised']}; border-color: {c['line-soft']}; }}
-QComboBox::drop-down {{ border: none; width: {CHEVRON}px; subcontrol-origin: padding; subcontrol-position: top right; }}
-QComboBox::down-arrow {{ image: none; width: 0; height: 0; }}
+QComboBox:focus, QDateEdit:focus {{ padding-right: {CHEVRON + 3}px; }}
+QComboBox:disabled, QLineEdit:disabled, QDateEdit:disabled {{ color: {c['muted']}; background: {c['raised']};
+    border-color: {c['line-soft']}; }}
+QComboBox::drop-down, QDateEdit::drop-down {{ border: none; width: {CHEVRON}px; subcontrol-origin: padding;
+    subcontrol-position: top right; }}
+QComboBox::down-arrow, QDateEdit::down-arrow {{ image: none; width: 0; height: 0; }}
+QCalendarWidget QWidget {{ background: {c['surface']}; color: {c['ink']}; alternate-background-color: {c['raised']}; }}
+QCalendarWidget QAbstractItemView {{ selection-background-color: {c['accent']}; selection-color: {c['on-accent']}; }}
+QCalendarWidget QToolButton {{ color: {c['ink']}; background: transparent; border: none; padding: {SPACE[1]}px; }}
 #popup-list {{ background: transparent; border: none; outline: none; }}
 
 QFrame[kind="card"] {{ background: {c['surface']}; border: 1px solid {c['line-soft']}; border-radius: {RADIUS['lg']}px; }}
