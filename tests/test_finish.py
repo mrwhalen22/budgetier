@@ -109,7 +109,7 @@ class Budgets(Window):
         self.assertEqual(ask.windowTitle(), "Remove the Dining budget?")
         ask.buttons[-1].click()
         self.assertEqual(self.toast(), "Removed.")
-        self.assertIn("Set your first budget", self.labels(self.win.pages["Budgets"].widget()))
+        self.assertIn("Budget guide", self.labels(self.win.pages["Budgets"].widget()))  # no budgets: the guide leads
 
 
 class Updates(Window):

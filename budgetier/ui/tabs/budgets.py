@@ -8,7 +8,7 @@ from PySide6.QtGui import QColor, QPainter
 from PySide6.QtWidgets import QFrame, QGridLayout, QLineEdit, QPushButton, QVBoxLayout, QWidget
 
 from ... import views
-from .. import fmt, theme, widgets
+from .. import fmt, planner, theme, widgets
 from ..context import Context
 from ..dialogs import Dialog, attempt, busy, confirm
 from ..importing import field
@@ -100,8 +100,10 @@ def build(ctx: Context) -> QWidget:
     s = ctx.snapshot
     add = _button("Add budget", lambda: budget_form(ctx), "primary")
     if not s.budget_targets:
+        # The guide first: for someone starting out, a suggested set is easier than one at a time.
         return widgets.column(
-            widgets.card(widgets.row(add), title="Set your first budget",
+            planner.guide(ctx) if s.txns else None,
+            widgets.card(widgets.row(add), title="Or set one yourself" if s.txns else "Set your first budget",
                          note="Choose a category and give it a monthly target: a dollar amount, or a percent of your "
                               "income. Budgetier shows what's left each month."),
             spacing=theme.SPACE[4])
@@ -135,7 +137,7 @@ def build(ctx: Context) -> QWidget:
     else:
         note = f"Percent targets use this month's income of {fmt.money(m.base)}." if b.uses_percent else ""
     lines = widgets.card(*(line_row(ctx, line) for line in b.lines), title=fmt.month_name(m.month), note=note)
-    return widgets.column(head, figures, lines, history(ctx, b), spacing=theme.SPACE[4])
+    return widgets.column(head, figures, lines, history(ctx, b), planner.guide(ctx), spacing=theme.SPACE[4])
 
 
 # ---- savings goals
