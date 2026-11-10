@@ -53,6 +53,11 @@ def main(home: Path | None = None) -> int:
     logging.basicConfig(handlers=[logging.handlers.RotatingFileHandler(
                             home / "logs" / "app.log", maxBytes=1_000_000, backupCount=2, encoding="utf-8")],
                         level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    if getattr(sys, "frozen", False):
+        # The shortcut opens it in the program folder. Anything started from here, like the
+        # update's installer or a workbook opened in Excel, would work in that folder too and
+        # keep Windows from replacing it, so work from your data folder instead.
+        os.chdir(home)
     lock = hold_lock(home)
     if lock is None:  # two windows on one folder would overwrite each other's saves
         _alert("Budgetier is already open.")

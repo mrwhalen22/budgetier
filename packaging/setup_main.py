@@ -30,6 +30,7 @@ from pathlib import Path
 UNINSTALL_KEY = r"Software\Microsoft\Windows\CurrentVersion\Uninstall\Budgetier"
 NO_WINDOW = subprocess.CREATE_NO_WINDOW
 CLOSE_WAIT = 30  # seconds for the app to finish closing after it starts an update
+MOVE_TRIES, MOVE_PAUSE = 20, .5  # the old program folder, while something lets go of it
 PROGRAM_FILES = {"budgetier.exe", "uninstall.exe", "uninstall.ps1", "_internal"}  # lowercase
 log = logging.getLogger("budgetier.setup")
 
@@ -142,7 +143,7 @@ def unpack(payload: Path, target: Path, progress=lambda share: None) -> None:
         if not (fresh / "Budgetier.exe").exists():
             raise SetupError("This installer is damaged. Build or download it again.")
         if target.exists():
-            target.rename(old)
+            move_aside(target, old)
         try:
             fresh.rename(target)
         except OSError:
@@ -154,6 +155,21 @@ def unpack(payload: Path, target: Path, progress=lambda share: None) -> None:
     finally:
         shutil.rmtree(fresh, ignore_errors=True)
     shutil.rmtree(old, ignore_errors=True)
+
+
+def move_aside(target: Path, old: Path) -> None:
+    """Rename the installed folder out of the way. Windows refuses while anything has a file in
+    it open or is working in it: the app a moment after it closes, or a virus scan of it. Those
+    let go within seconds, so wait for them rather than failing the update."""
+    for attempt in range(MOVE_TRIES):
+        try:
+            target.rename(old)
+            return
+        except PermissionError:
+            if attempt + 1 == MOVE_TRIES:
+                raise
+            log.info("%s is in use, waiting", target)
+            time.sleep(MOVE_PAUSE)
 
 
 def remove_moved_install(previous: Path | None, target: Path) -> None:
@@ -492,6 +508,9 @@ def main() -> int:
     parser.add_argument("--no-start-menu", action="store_true")
     args, _ = parser.parse_known_args()
     start_log()
+    # Work from outside the program folder, which this may have been started inside: Windows
+    # won't let it be replaced while a program is working in it, even this one.
+    os.chdir(os.environ.get("SystemRoot") or Path.home())
     if args.update:
         return update()
     if not args.silent:
