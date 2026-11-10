@@ -110,8 +110,11 @@ def checksum_for(text: str, name: str) -> str:
 
 def _run_installer(path: Path) -> None:
     if sys.platform == "win32":
-        # ShellExecute, because plain process creation can't show the permission prompt.
-        result = ctypes.windll.shell32.ShellExecuteW(None, "runas", str(path), UPDATE_FLAG, None, 1)
+        # ShellExecute, because plain process creation can't show the permission prompt. It
+        # starts in the download's folder: left to inherit this app's, it would start inside
+        # the program folder its shortcut opens in, and Windows won't move a folder a running
+        # program is working in, so the update would block itself.
+        result = ctypes.windll.shell32.ShellExecuteW(None, "runas", str(path), UPDATE_FLAG, str(path.parent), 1)
         if result <= 32:
             raise UpdateError("The update didn't start, so nothing changed. Windows needs your permission to install it.")
     else:
