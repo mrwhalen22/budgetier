@@ -1,4 +1,4 @@
-"""Appearance: light, dark or the system's, the Pine, Ocean or Plum theme, text size, and motion."""
+"""Appearance: light, dark or the system's, the Brass, Ocean or Plum theme, text size, and motion."""
 from __future__ import annotations
 
 from dataclasses import replace

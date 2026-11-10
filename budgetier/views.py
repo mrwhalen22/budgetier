@@ -950,7 +950,9 @@ SORTS = {"date": lambda t, names: t.date, "merchant": lambda t, names: t.merchan
 @dataclass(frozen=True)
 class Found:
     txns: list[Tx]
-    net: int
+    net: int  # everything listed, transfers too
+    spent: int = 0  # spending, less refunds, as everywhere else
+    received: int = 0  # income
 
 
 def transactions(s: Snapshot, choice: Choice, query: str = "", category: str = "", kind: str = "",
@@ -965,7 +967,8 @@ def transactions(s: Snapshot, choice: Choice, query: str = "", category: str = "
     names = {a.id: a.name for a in s.accounts}
     key = SORTS[sort]
     found.sort(key=lambda t: key(t, names), reverse=descending)
-    return Found(found, sum(t.cents for t in found))
+    return Found(found, sum(t.cents for t in found), -sum(t.cents for t in found if t.kind in analyze.SPENDING_KINDS),
+                 sum(t.cents for t in found if t.kind == "income"))
 
 
 def edit_target(s: Snapshot, t: Tx) -> dict:
@@ -1451,8 +1454,15 @@ def year_review(s: Snapshot, year: str | None = None) -> YearReview:
         sorted(((n, sum(v), len(v)) for n, v in merchants.items()), key=lambda x: -x[1])[:TOP_MERCHANTS],
         sorted(spent, key=lambda t: t.cents)[:5],
         max(rows, key=lambda m: m.spending) if rows else None,
-        min(rows, key=lambda m: m.spending) if len(rows) > 1 else None,
+        _quietest(rows, s.partial_month),
         tax)
+
+
+def _quietest(rows: list[Month], partial: str | None) -> Month | None:
+    """The month with the least spending, of the whole months: one still in progress has had
+    only days to spend in, so it would nearly always win."""
+    whole = [m for m in rows if m.month != partial]
+    return min(whole, key=lambda m: m.spending) if len(whole) > 1 else None
 
 
 def tax_rows(s: Snapshot, year: str) -> list[Tx]:

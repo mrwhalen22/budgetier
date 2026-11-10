@@ -50,6 +50,8 @@ MOVED = {"Largest": "Spending", "Net worth": "Savings"}
 COMING: dict[str, int] = {}
 # These cover all of history, so the period and account filters don't apply.
 FULL_HISTORY = {"Budgets", "Recurring", "Year in review", "Accounts", "Rules", "Help"}
+# Of those, the ones that choose their own month or year, or have no data to cover: "All history" would be wrong.
+NO_SUBTITLE = {"Budgets", "Year in review", "Help"}
 SIDE_WIDTH = 232
 ICON = 18
 PLACE = "window"  # where the window was left, in settings.json
@@ -122,6 +124,7 @@ class Window(QMainWindow):
         self.dismissed = [k for k in gone if isinstance(k, str)] if isinstance(gone, list) else []
         self.restyle()
         self._ready = True
+        self._tour_offered = bool(self.snapshot.txns)  # offered below as it opens; otherwise once data arrives
         self.show_tab(place["tab"])
         self.stack.setFocus()  # not the first tab's button, which would show a focus ring at once
         self.auto_sync = QTimer(self)
@@ -344,6 +347,9 @@ class Window(QMainWindow):
         version = f" Version {app_version()}." if app_version() else ""
         self.foot.setText(through + stays + version)
         self._fit_sidebar()
+        if self._ready and s.txns and not self._tour_offered:
+            self._tour_offered = True  # the first files, sync or sample: the moment the tour is for
+            tour.maybe_start(self)
         if self._ready:
             if not self.offered(self.tab):
                 self.show_tab("Overview")
@@ -517,8 +523,8 @@ class Window(QMainWindow):
         self._looked = self._looked or tab == "Overview"
         full = tab in FULL_HISTORY
         self.filters.setVisible(not full and bool(self.snapshot.txns))
-        subtitle = "All history" if full else views.range_label(self.snapshot, self.choice)
-        self.subtitle.setText(subtitle if self.snapshot.txns or tab == "Help" else "")  # no data: just the welcome
+        subtitle = "" if tab in NO_SUBTITLE else "All history" if full else views.range_label(self.snapshot, self.choice)
+        self.subtitle.setText(subtitle if self.snapshot.txns else "")  # no data: just the welcome
         view = (tab, self.choice)
         charts.grow_next = view != self._viewed  # bars grow in for a new tab or period, not after each change
         self._viewed = view
