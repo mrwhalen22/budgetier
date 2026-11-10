@@ -51,6 +51,15 @@ Trash. The app isn't signed by Apple, so macOS blocks it the first time:
   because your pay may not have landed yet. Tick **Carry what's left into next month** for
   costs that come and go, like gifts or car repairs: what's left at a month's end adds to the
   next month's target, and going over takes from it, starting from last month.
+- **Budget guide**, on the Budgets tab, splits your income by a rule of thumb (50/30/20,
+  60/30/10 or 70/20/10: needs, wants and what's kept) and sets it beside what you really
+  spend, averaged over recent complete months. Needs are housing, groceries, utilities,
+  transport, insurance, health, interest, education, taxes and fees; everything else is a
+  want. **Suggest budgets** offers a budget for each category, starting from what you spend
+  there. When you keep less than the rule's share, it trims only what isn't a regular bill,
+  wants first, by no more than a quarter; when you already keep enough, nothing is trimmed.
+  Tick the ones you want and they're set in one step, which Undo takes back. It's a rule of
+  thumb to start from, not financial advice.
 - **Savings** shows your savings rate, what you kept each month, and your net worth.
   **Savings goals** there track saving toward something: an emergency
   fund, a trip, next year's car insurance. Keep a goal in a savings or investing account, so

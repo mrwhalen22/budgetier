@@ -613,6 +613,18 @@ class Budget:
                          else _last_month(today or date.today()))
         self._write_budgets({**self.budgets(), category: saved})
 
+    def save_budgets(self, amounts: dict[str, str], today: date | None = None) -> int:
+        """Several dollar budgets at once, as the budget guide suggests them: each checked as
+        one would be, and any that roll over keep doing so. Nothing is saved if one is wrong."""
+        before = self.budgets()
+        try:
+            for category, value in amounts.items():
+                self.save_budget(category, "amount", value, bool(before.get(category, {}).get("rollover")), today)
+        except BudgetError as e:
+            self._write_budgets(before)
+            raise BudgetError(f"{category}: {e}") from e
+        return len(amounts)
+
     def delete_budget(self, category: str) -> None:
         budgets = self.budgets()
         if category not in budgets:

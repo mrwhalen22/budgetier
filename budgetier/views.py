@@ -1102,6 +1102,123 @@ def budget_preview(s: Snapshot, category: str, mode: str, value: str) -> BudgetP
     return BudgetPreview(average, income, amount, share)
 
 
+# ---- Budget planner
+
+# Rules of thumb for splitting take-home pay: needs, wants, and what's kept.
+RULES = {
+    "50/30/20": (50, 30, 20, "Half to needs, under a third to wants, and a fifth kept. The usual starting point."),
+    "60/30/10": (60, 30, 10, "For when rent or other bills take more, as they often do in an expensive city."),
+    "70/20/10": (70, 20, 10, "A tighter plan, for paying down debt or a lean stretch."),
+}
+DEFAULT_RULE = "50/30/20"
+# Spending you'd have whatever happens. Everything else counts as a want, until it's in a budget of its own.
+NEEDS = frozenset({"Housing", "Groceries", "Utilities", "Transport", "Insurance", "Health", analyze.INTEREST,
+                   "Education", "Taxes", "Fees"})
+MOST_CUT = .25  # off what's spent in a category now: deeper than this isn't a plan anyone keeps
+PLAN_LEAST = 2500  # cents a month: a category smaller than this isn't worth a budget
+
+
+@dataclass(frozen=True)
+class PlanLine:
+    category: str
+    need: bool
+    average: int  # a month, over recent complete months
+    fixed: int  # of that, regular bills, which a budget can't trim
+    suggested: int  # a month, rounded up to a round number
+    budgeted: int | None  # its budget now, a month, if it has one
+
+
+@dataclass(frozen=True)
+class PlanGroup:
+    name: str  # Needs, Wants or Savings
+    share: int  # percent of income the rule gives it
+    target: int
+    actual: int  # spent, or for Savings, kept
+    planned: int  # with every suggested budget kept to
+
+
+@dataclass(frozen=True)
+class BudgetPlan:
+    rule: str
+    about: str
+    income: int  # a month
+    months: int  # complete months it's taken from
+    groups: list[PlanGroup]
+    lines: list[PlanLine]  # needs first, then the most spent
+    unsorted: int  # spending with no category a budget can take, a month: counted as a want
+    over: int  # a month the rule's savings share is still out of reach, with bills that can't be trimmed
+    for_goals: int  # what savings goals with a date need a month
+
+
+def _round_up(cents: float) -> int:
+    """Up to a round number: $5 steps under $100, $10 steps above."""
+    step = 1000 if cents >= 10000 else 500
+    return int(-(-cents // step) * step)
+
+
+def plan(s: Snapshot, rule: str = DEFAULT_RULE) -> BudgetPlan:
+    """What a rule of thumb says to spend, beside what's spent now, and a budget for each
+    category that starts from what's really spent there. When less is kept than the rule's
+    savings share, only what isn't a regular bill is trimmed, wants first, and by no more than
+    a quarter, so it stays doable."""
+    rule = rule if rule in RULES else DEFAULT_RULE
+    need_share, want_share, keep_share, about = RULES[rule]
+    months = complete_budget_months(s)
+    n = len(months) or 1
+    income = round(sum(m.income for m in months) / n)
+    totals: dict[str, int] = {}
+    for m in months:
+        for category, cents in m.spent.items():
+            totals[category] = totals.get(category, 0) + cents
+    average = {c: round(v / n) for c, v in totals.items()}
+    bills: dict[str, int] = {}
+    for r in active_bills(s):
+        bills[r.category] = bills.get(r.category, 0) + r.per_month
+    targets = {t["category"]: t for t in s.budget_targets}
+
+    def budgeted(category: str) -> int | None:
+        t = targets.get(category)
+        if t is None:
+            return None
+        return int(t["value"]) if t["mode"] == "amount" else round(income * t["value"] / 100)
+
+    chosen = sorted((c for c, v in average.items() if c not in analyze.NOT_BUDGETED and (v >= PLAN_LEAST or c in targets)),
+                    key=lambda c: (c not in NEEDS, -average[c]))
+    unsorted = sum(v for c, v in average.items() if c in analyze.NOT_BUDGETED and v > 0)
+    # Categories too small for a budget still count toward their group, as they are.
+    small = {need: sum(max(v, 0) for c, v in average.items() if c not in chosen and c not in analyze.NOT_BUDGETED
+                       and (c in NEEDS) == need) for need in (True, False)}
+    # Trim only what the rule's savings share needs: someone already keeping enough isn't asked to
+    # spend less, wherever their needs and wants fall. Wants give first, then needs.
+    spending = sum(max(v, 0) for v in average.values())
+    short = max(0, round(income * keep_share / 100) - (income - spending))
+    cuts = {}
+    for need in (False, True):
+        group = [c for c in chosen if (c in NEEDS) == need]
+        room = sum(max(average[c], 0) - min(max(average[c], 0), bills.get(c, 0)) for c in group)
+        take = min(short, room * MOST_CUT)
+        cuts[need] = take / room if room else 0
+        short -= take
+    lines = []
+    for c in chosen:
+        need = c in NEEDS
+        spent = max(average[c], 0)
+        fixed = min(spent, bills.get(c, 0))
+        lines.append(PlanLine(c, need, average[c], fixed, _round_up(fixed + (spent - fixed) * (1 - cuts[need])), budgeted(c)))
+    over = round(short)
+    planned = sum(line.suggested for line in lines) + unsorted + small[True] + small[False]
+    groups = [
+        PlanGroup("Needs", need_share, round(income * need_share / 100),
+                  sum(max(average[c], 0) for c in chosen if c in NEEDS) + small[True],
+                  sum(line.suggested for line in lines if line.need) + small[True]),
+        PlanGroup("Wants", want_share, round(income * want_share / 100),
+                  sum(max(average[c], 0) for c in chosen if c not in NEEDS) + unsorted + small[False],
+                  sum(line.suggested for line in lines if not line.need) + unsorted + small[False]),
+        PlanGroup("Savings", keep_share, round(income * keep_share / 100), income - spending, income - planned)]
+    for_goals = sum(g.monthly or 0 for g in goals(s) if g.state not in ("reached",))
+    return BudgetPlan(rule, about, income, len(months), groups, lines, unsorted, over, for_goals)
+
+
 # ---- Savings goals
 
 
