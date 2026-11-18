@@ -4,7 +4,7 @@ import unittest
 from datetime import date
 from pathlib import Path
 
-from budgetier import views
+from budgetier import analyze, views
 from tests.fake import FIRST, LAST, UNSORTED, build
 
 
@@ -203,6 +203,8 @@ class Transactions(Made):
         found = views.transactions(self.s, self.all)
         self.assertEqual([t.date for t in found.txns], sorted((t.date for t in found.txns), reverse=True))
         self.assertEqual(found.net, sum(t.cents for t in found.txns))
+        self.assertEqual(found.spent, -sum(t.cents for t in found.txns if t.kind in analyze.SPENDING_KINDS))
+        self.assertEqual(found.received, sum(t.cents for t in found.txns if t.kind == "income"))
 
     def test_search_reads_the_description_and_the_merchant_in_any_case(self):
         by_merchant = views.transactions(self.s, self.all, query="lakeside apts")

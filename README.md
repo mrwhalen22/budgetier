@@ -166,7 +166,7 @@ check, or to check by hand, use the buttons at the bottom of the Help tab.
 
 ## Appearance
 
-Choose **Appearance** at the bottom of the sidebar to pick a theme (Pine, Ocean or Plum) and
+Choose **Appearance** at the bottom of the sidebar to pick a theme (Brass, Ocean or Plum) and
 light, dark or matching your system. **Text size** makes all the text smaller or larger, up to
 about a third bigger. **Reduce motion** turns off the short fades, slides and
 growing bars. The choice is kept in your data folder.

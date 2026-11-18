@@ -41,6 +41,7 @@ class Reviewing(Tmp):
         self.assertEqual(y.merchants[0], ("Lakeside Apts Rent", 10 * 185000, 10))
         self.assertEqual(y.largest[0].description, "ACH DEBIT LAKESIDE APTS RENT")
         self.assertEqual(y.busiest.month, "2026-06")  # the Best Buy month
+        self.assertNotEqual(y.quietest.month, "2026-10")  # half of October is in: not a quiet month
 
     def test_tax_time_lines(self):
         a = self.budget.ledger.accounts

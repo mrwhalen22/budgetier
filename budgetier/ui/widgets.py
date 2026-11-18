@@ -114,8 +114,17 @@ class Grid(QWidget):
 
     def resizeEvent(self, event):  # noqa: N802 - Qt's name
         fits = max(1, (event.size().width() + self.gap) // (self.least + self.gap))
-        self._place(max(1, min(fits, len(self.children_), self.most)))
+        self._place(balanced(len(self.children_), min(fits, self.most)))
         super().resizeEvent(event)
+
+
+def balanced(count: int, fits: int) -> int:
+    """Columns for count children when fits would fit: as few rows as fits allows, filled
+    evenly, so four go two and two rather than three and one left on its own."""
+    if count <= 1 or fits <= 1:
+        return 1
+    rows = -(-count // fits)
+    return -(-count // rows)
 
 
 def tile(key: str, value: str, sub: str = "", tone: str = "") -> QFrame:

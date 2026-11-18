@@ -894,7 +894,7 @@ def _unmatched_checks(rows: list[dict], accounts: dict) -> list[dict]:
                                 "purchases behind them."})
     if missing_from_card:
         found.append({"level": "warning", "title": "Card payments not found on the card",
-                      "detail": f"{len(missing_from_card)} payment(s) totalling "
+                      "detail": f"{len(missing_from_card)} payment{'s' if len(missing_from_card) != 1 else ''} totaling "
                                 f"{_dollars(sum(r['cents'] for r in missing_from_card))} left your bank "
                                 "but aren't on the imported card. They're left out of spending, "
                                 "because that card's purchases already count. Check for a second "
@@ -909,7 +909,7 @@ def _unmatched_checks(rows: list[dict], accounts: dict) -> list[dict]:
         names = ", ".join(f"{name} ({_dollars(c)})" for name, c in top)
         count = f"{len(unmatched)} payment{'s' if len(unmatched) != 1 else ''}"
         found.append({"level": "warning", "title": "Transfers out with no matching account",
-                      "detail": f"{count} totalling "
+                      "detail": f"{count} totaling "
                                 f"{_dollars(sum(r['cents'] for r in unmatched))} went somewhere "
                                 f"not imported: {names}. Card payments here count as estimated "
                                 "spending until that card's purchases are imported."})

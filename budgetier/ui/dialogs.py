@@ -89,8 +89,16 @@ class Dialog(QDialog):
         self.remove: QPushButton | None = None  # at the far left, apart from the rest
 
     def showEvent(self, event):  # noqa: N802 - Qt's name
+        self.fit()
         super().showEvent(event)
         motion.fade_in(self)
+
+    def fit(self) -> None:
+        """As tall as the contents need at the dialog's real width. Qt sizes a dialog from its
+        narrowest wrap of each paragraph, then spreads the extra height out as gaps."""
+        layout = self.layout()
+        if layout.hasHeightForWidth():
+            self.resize(self.width(), max(layout.heightForWidth(self.width()), layout.minimumSize().height()))
 
     def set_lead(self, words: str) -> None:
         self.lead.setText(words)

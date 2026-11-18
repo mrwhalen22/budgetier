@@ -235,6 +235,42 @@ class Installer(Tmp):
         self.assertEqual((self.target / "Budgetier.exe").read_text(), "old")
         self.assertEqual([p.name for p in self.target.parent.iterdir()], ["Budgetier"])
 
+    def test_waits_for_the_old_folder_to_be_let_go(self):
+        setup_main.unpack(self.payload({"Budgetier.exe": "old"}), self.target)
+        real, calls = Path.rename, []
+
+        def busy_twice(path, to):
+            calls.append(path)
+            if path == self.target and len(calls) <= 2:
+                raise PermissionError(32, "being used by another process")
+            return real(path, to)
+        with mock.patch.object(setup_main.Path, "rename", busy_twice), mock.patch.object(setup_main, "MOVE_PAUSE", 0):
+            setup_main.unpack(self.payload({"Budgetier.exe": "new"}), self.target)
+        self.assertEqual((self.target / "Budgetier.exe").read_text(), "new")
+
+    def test_a_folder_that_stays_in_use_keeps_the_working_install(self):
+        setup_main.unpack(self.payload({"Budgetier.exe": "old"}), self.target)
+        real = Path.rename
+
+        def always_busy(path, to):
+            if path == self.target:
+                raise PermissionError(32, "being used by another process")
+            return real(path, to)
+        with mock.patch.object(setup_main.Path, "rename", always_busy), mock.patch.object(setup_main, "MOVE_PAUSE", 0), \
+                self.assertRaises(PermissionError):
+            setup_main.unpack(self.payload({"Budgetier.exe": "new"}), self.target)
+        self.assertEqual((self.target / "Budgetier.exe").read_text(), "old")
+
+    def test_a_program_working_in_the_folder_no_longer_blocks_it(self):
+        """The real cause: the installer inherited the program folder as its working folder."""
+        import subprocess
+        setup_main.unpack(self.payload({"Budgetier.exe": "old"}), self.target)
+        holder = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(1.5)"], cwd=self.target)
+        self.addCleanup(holder.wait)
+        with mock.patch.object(setup_main, "MOVE_PAUSE", .25):
+            setup_main.unpack(self.payload({"Budgetier.exe": "new"}), self.target)
+        self.assertEqual((self.target / "Budgetier.exe").read_text(), "new")
+
     def test_interrupted_earlier_update_is_cleaned_up(self):
         (self.target.parent / "Budgetier.new").mkdir(parents=True)
         (self.target.parent / "Budgetier.old").mkdir()

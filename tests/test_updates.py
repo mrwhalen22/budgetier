@@ -172,6 +172,8 @@ class Installing(Case):
             self.updater.install()
         args = shell.shell32.ShellExecuteW.call_args[0]
         self.assertEqual((args[1], args[3]), ("runas", updates.UPDATE_FLAG))
+        # Started in the download's folder, never the program folder it would otherwise inherit
+        self.assertEqual(Path(args[4]), Path(args[2]).parent)
 
     def test_a_mac_opens_the_download_and_stays_open(self):
         with mock.patch.object(updates.sys, "platform", "darwin"), \
